@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "327670792817",
+    "project_id": "voltrike-v2",
+    "storage_bucket": "voltrike-v2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:327670792817:android:9ce6477d6ed8f1a1c5d1d0",
+        "android_client_info": {
+          "package_name": "com.example.voltrike_v2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfC9Mb-mS80-NM7afC587gzOUYdoJ4FBM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
