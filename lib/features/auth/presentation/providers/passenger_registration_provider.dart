@@ -9,8 +9,15 @@ final passengerRegistrationControllerProvider =
         AsyncValue<void>>(
   (ref) {
     return PassengerRegistrationController(
-      authRepository: ref.read(authRepositoryProvider),
-      userRepository: ref.read(userRepositoryProvider),
+      authRepository: ref.read(
+        authRepositoryProvider,
+      ),
+      userRepository: ref.read(
+        userRepositoryProvider,
+      ),
+      passengerRepository: ref.read(
+        passengerRepositoryProvider,
+      ),
     );
   },
 );

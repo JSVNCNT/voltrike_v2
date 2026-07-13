@@ -27,15 +27,30 @@ class LoginController extends StateNotifier<AsyncValue<AppUser?>> {
         password: password,
       );
 
+      await _authRepository.reloadUser();
+
+      if (!_authRepository.isEmailVerified) {
+        throw Exception(
+          'Please verify your email before logging in.',
+        );
+      }
+
       final firebaseUser = _authRepository.currentUser;
 
       if (firebaseUser == null) {
-        state = const AsyncData(null);
-        return null;
+        throw Exception(
+          'Unable to retrieve the authenticated user.',
+        );
       }
 
       final appUser =
           await _userRepository.getUser(firebaseUser.uid);
+
+      if (appUser == null) {
+        throw Exception(
+          'Your account profile could not be found.',
+        );
+      }
 
       state = AsyncData(appUser);
 
@@ -47,18 +62,7 @@ class LoginController extends StateNotifier<AsyncValue<AppUser?>> {
   }
 
   Future<void> logout() async {
-    state = const AsyncLoading();
-
-    try {
-      await _authRepository.signOut();
-      state = const AsyncData(null);
-    } catch (e, stackTrace) {
-      state = AsyncError(e, stackTrace);
-    }
-  }
-
-  Future<bool> reloadEmailVerification() async {
-    await _authRepository.reloadUser();
-    return _authRepository.isEmailVerified;
+    await _authRepository.signOut();
+    state = const AsyncData(null);
   }
 }

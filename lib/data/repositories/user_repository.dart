@@ -42,8 +42,7 @@ class UserRepository {
   Future<AppUser?> getUser(
     String uid,
   ) async {
-    final snapshot =
-        await _firestoreService.getDocument(
+    final snapshot = await _firestoreService.getDocument(
       FirestoreConstants.users,
       uid,
     );
@@ -59,6 +58,18 @@ class UserRepository {
     }
 
     return AppUser.fromMap(data);
+  }
+
+  /// Returns true if the user's Firestore document exists.
+  Future<bool> userExists(
+    String uid,
+  ) async {
+    final snapshot = await _firestoreService.getDocument(
+      FirestoreConstants.users,
+      uid,
+    );
+
+    return snapshot.exists;
   }
 
   Stream<AppUser?> userStream(

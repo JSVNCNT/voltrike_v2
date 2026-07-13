@@ -1,31 +1,26 @@
 class Validators {
   const Validators._();
 
-  // ===========================================================================
-  // Required Field
-  // ===========================================================================
+  static String? Function(String?)? get required => null;
 
-  static String? requiredField(
+  static String? validateRequired(
     String? value, {
     String fieldName = 'This field',
   }) {
     if (value == null || value.trim().isEmpty) {
       return '$fieldName is required.';
     }
+
     return null;
   }
 
-  // ===========================================================================
-  // Email
-  // ===========================================================================
-
-  static String? email(String? value) {
+  static String? validateEmail(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Email is required.';
     }
 
     final emailRegex = RegExp(
-      r'^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$',
+      r'^[\w\-.]+@([\w-]+\.)+[\w-]{2,4}$',
     );
 
     if (!emailRegex.hasMatch(value.trim())) {
@@ -35,29 +30,7 @@ class Validators {
     return null;
   }
 
-  // ===========================================================================
-  // Phone Number (Philippines)
-  // ===========================================================================
-
-  static String? phone(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Phone number is required.';
-    }
-
-    final phoneRegex = RegExp(r'^(09|\+639)\d{9}$');
-
-    if (!phoneRegex.hasMatch(value.trim())) {
-      return 'Enter a valid Philippine mobile number.';
-    }
-
-    return null;
-  }
-
-  // ===========================================================================
-  // Password
-  // ===========================================================================
-
-  static String? password(String? value) {
+  static String? validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'Password is required.';
     }
@@ -69,32 +42,30 @@ class Validators {
     return null;
   }
 
-  // ===========================================================================
-  // Confirm Password
-  // ===========================================================================
-
-  static String? confirmPassword(
-    String? password,
-    String? confirmPassword,
+  static String? validateConfirmPassword(
+    String? value,
+    String password,
   ) {
-    if (confirmPassword == null || confirmPassword.isEmpty) {
-      return 'Please confirm your password.';
+    if (value == null || value.isEmpty) {
+      return 'Confirm your password.';
     }
 
-    if (password != confirmPassword) {
+    if (value != password) {
       return 'Passwords do not match.';
     }
 
     return null;
   }
 
-  // ===========================================================================
-  // OTP
-  // ===========================================================================
+  static String? validatePhoneNumber(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Phone number is required.';
+    }
 
-  static String? otp(String? value) {
-    if (value == null || value.length != 6) {
-      return 'Enter the 6-digit verification code.';
+    final phoneRegex = RegExp(r'^[0-9]{11}$');
+
+    if (!phoneRegex.hasMatch(value.trim())) {
+      return 'Enter a valid 11-digit phone number.';
     }
 
     return null;

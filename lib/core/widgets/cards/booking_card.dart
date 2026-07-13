@@ -84,6 +84,7 @@ class BookingCard extends StatelessWidget {
                     ),
                   ),
 
+                  // ignore: use_null_aware_elements
                   if (trailingWidget != null) trailingWidget,
                 ],
               ),

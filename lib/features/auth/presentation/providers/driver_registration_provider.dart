@@ -9,8 +9,21 @@ final driverRegistrationControllerProvider =
         AsyncValue<void>>(
   (ref) {
     return DriverRegistrationController(
-      authRepository: ref.read(authRepositoryProvider),
-      userRepository: ref.read(userRepositoryProvider),
+      authRepository: ref.read(
+        authRepositoryProvider,
+      ),
+      userRepository: ref.read(
+        userRepositoryProvider,
+      ),
+      driverRepository: ref.read(
+        driverRepositoryProvider,
+      ),
+      vehicleRepository: ref.read(
+        vehicleRepositoryProvider,
+      ),
+      storageRepository: ref.read(
+        storageRepositoryProvider,
+      ),
     );
   },
 );
