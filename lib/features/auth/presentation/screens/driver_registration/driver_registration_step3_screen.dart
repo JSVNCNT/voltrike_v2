@@ -53,9 +53,8 @@ class _DriverRegistrationStep3ScreenState
   String? _error;
 
   final List<String> _vehicleTypes = [
-    'Tricycle',
+    'Electric Tuktuk',
     'E-Trike',
-    'Motorcycle',
   ];
 
   @override
