@@ -54,7 +54,7 @@ class _LoginScreenState
     });
 
     try {
-      await ref
+      final appUser = await ref
           .read(loginControllerProvider.notifier)
           .login(
             email: _emailController.text.trim(),
@@ -62,6 +62,38 @@ class _LoginScreenState
           );
 
       if (!mounted) return;
+
+      if (appUser == null) {
+        return;
+      }
+
+      if (appUser.isPassenger) {
+        context.go(
+          AppRoutes.passengerHome,
+        );
+        return;
+      }
+
+      if (appUser.isDriver) {
+        context.go(
+          AppRoutes.driverUnderReview,
+        );
+        return;
+      }
+
+      if (appUser.isDeveloperAdmin) {
+        context.go(
+          AppRoutes.intro,
+        );
+        return;
+      }
+
+      if (appUser.isTodaAdmin) {
+        context.go(
+          AppRoutes.intro,
+        );
+        return;
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -81,13 +113,17 @@ class _LoginScreenState
           key: _formKey,
           child: Column(
             children: [
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(
+                height: AppSpacing.lg,
+              ),
 
               const AuthLogo(
                 logoSize: 100,
               ),
 
-              const SizedBox(height: AppSpacing.xl),
+              const SizedBox(
+                height: AppSpacing.xl,
+              ),
 
               const AuthHeader(
                 title: AppStrings.welcomeBack,
@@ -95,20 +131,25 @@ class _LoginScreenState
                     AppStrings.loginSubtitle,
               ),
 
-              const SizedBox(height: AppSpacing.xl),
+              const SizedBox(
+                height: AppSpacing.xl,
+              ),
 
               if (_error != null) ...[
                 ValidationMessage(
                   message: _error!,
                 ),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(
+                  height: AppSpacing.md,
+                ),
               ],
 
               AppTextField(
                 controller: _emailController,
                 label: AppStrings.email,
                 hint: 'example@email.com',
-                prefixIcon: Icons.email_outlined,
+                prefixIcon:
+                    Icons.email_outlined,
                 keyboardType:
                     TextInputType.emailAddress,
                 textInputAction:
@@ -117,13 +158,16 @@ class _LoginScreenState
                     Validators.validateEmail,
               ),
 
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(
+                height: AppSpacing.md,
+              ),
 
               PasswordField(
                 controller:
                     _passwordController,
                 label: AppStrings.password,
-                hint: 'Enter your password',
+                hint:
+                    'Enter your password',
                 textInputAction:
                     TextInputAction.done,
                 validator:
@@ -139,46 +183,57 @@ class _LoginScreenState
                 child: TextButton(
                   onPressed: () {
                     context.go(
-                      AppRoutes.forgotPassword,
+                      AppRoutes
+                          .forgotPassword,
                     );
                   },
                   child: const Text(
-                    AppStrings.forgotPassword,
+                    AppStrings
+                        .forgotPassword,
                   ),
                 ),
               ),
 
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(
+                height: AppSpacing.md,
+              ),
 
               PrimaryButton(
                 text: AppStrings.login,
                 onPressed: _login,
-                isLoading: state.isLoading,
+                isLoading:
+                    state.isLoading,
               ),
 
-              const SizedBox(height: AppSpacing.xl),
+              const SizedBox(
+                height: AppSpacing.xl,
+              ),
 
               AuthFooter(
-                text:
-                    AppStrings.dontHaveAccount,
-                actionText:
-                    AppStrings.registerPassenger,
+                text: AppStrings
+                    .dontHaveAccount,
+                actionText: AppStrings
+                    .registerPassenger,
                 onPressed: () {
                   context.go(
-                    AppRoutes.passengerRegister,
+                    AppRoutes
+                        .passengerRegister,
                   );
                 },
               ),
 
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(
+                height: AppSpacing.sm,
+              ),
 
               AuthFooter(
                 text: '',
-                actionText:
-                    AppStrings.registerDriver,
+                actionText: AppStrings
+                    .registerDriver,
                 onPressed: () {
                   context.go(
-                    AppRoutes.driverRegister,
+                    AppRoutes
+                        .driverRegister,
                   );
                 },
               ),

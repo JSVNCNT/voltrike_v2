@@ -46,6 +46,7 @@ class NavigationService {
   /// Stop Navigation
   /// =========================================================================
 
+
   Future<void> stopNavigation() async {
     await LocationService.instance
         .stopTracking();

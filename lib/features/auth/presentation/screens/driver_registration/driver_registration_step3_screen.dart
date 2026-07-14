@@ -240,7 +240,7 @@ class _DriverRegistrationStep3ScreenState
                   controller:
                       _brandController,
                   label: 'Vehicle Brand',
-                  hint: 'Toyota',
+                  hint: 'Bajaj',
                   prefixIcon:
                       Icons.directions_car,
                   textInputAction:

@@ -2,16 +2,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class PolylineService {
   PolylineService._();
-
-  /// ==========================================================================
-  /// Decode Encoded Polyline
-  /// ==========================================================================
-  ///
-  /// Converts Google's encoded polyline into
-  /// `List<LatLng>`. 
-  ///
-  /// Used for drawing routes on Google Maps.
-  ///
   static List<LatLng> decodePolyline(
     String encoded,
   ) {
