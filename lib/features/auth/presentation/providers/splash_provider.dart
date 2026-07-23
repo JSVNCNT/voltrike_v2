@@ -4,11 +4,20 @@ import '../controllers/splash_controller.dart';
 import 'auth_provider.dart';
 
 final splashControllerProvider =
-    StateNotifierProvider<SplashController, AsyncValue<SplashDestination>>(
+    StateNotifierProvider<
+        SplashController,
+        AsyncValue<SplashDestination>>(
   (ref) {
     return SplashController(
-      authRepository: ref.read(authRepositoryProvider),
-      userRepository: ref.read(userRepositoryProvider),
+      authRepository: ref.read(
+        authRepositoryProvider,
+      ),
+      userRepository: ref.read(
+        userRepositoryProvider,
+      ),
+      driverRepository: ref.read(
+        driverRepositoryProvider,
+      ),
     );
   },
 );

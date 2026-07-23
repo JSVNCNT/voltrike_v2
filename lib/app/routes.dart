@@ -50,7 +50,6 @@ class AppRoutes {
   static const String uploadDocuments =
       '/register/driver/upload-documents';
 
-  /// Driver has submitted registration and is awaiting approval.
   static const String driverUnderReview =
       '/driver/under-review';
 
@@ -58,14 +57,12 @@ class AppRoutes {
   // Passenger
   //==========================================================================
 
+  /// Passenger shell
   static const String passengerHome =
       '/passenger';
 
   static const String passengerDashboard =
       '/passenger/dashboard';
-
-  static const String passengerSettings =
-      '/passenger/settings';
 
   static const String passengerProfile =
       '/passenger/profile';
@@ -73,24 +70,70 @@ class AppRoutes {
   static const String passengerTripHistory =
       '/passenger/trips';
 
+  static const String passengerSettings =
+      '/passenger/settings';
+
+      static const String editPassengerProfile =
+    '/passenger/edit-profile';
+
+
+
   //==========================================================================
-  // Driver
+  // Passenger Booking Flow
   //==========================================================================
 
-  static const String driverHome =
-      '/driver';
+  static const String searchingDriver =
+      '/passenger/searching-driver';
 
-  static const String driverDashboard =
-      '/driver/dashboard';
+  static const String driverTracking =
+      '/passenger/driver-tracking';
 
-  static const String driverSettings =
-      '/driver/settings';
+  static const String passengerTrip =
+      '/passenger/trip';
 
-  static const String driverProfile =
-      '/driver/profile';
+  static const String rateDriver =
+      '/passenger/rate-driver';
 
-  static const String driverTrips =
-      '/driver/trips';
+  //==========================================================================
+// Driver
+//==========================================================================
+
+/// Driver home
+static const String driverHome =
+    '/driver';
+
+static const String driverDashboard =
+    '/driver/dashboard';
+
+static const String driverProfile =
+    '/driver/profile';
+
+static const String editDriverProfile =
+    '/driver/edit-profile';
+
+static const String driverTripHistory =
+    '/driver/trips';
+
+static const String driverEarnings =
+    '/driver/earnings';
+
+static const String driverSettings =
+    '/driver/settings';
+
+static const String aboutVoltrike =
+    '/driver/aboutVoltrike';
+
+static const String privacyPolicy =
+    '/driver/privacy-policy';
+
+static const String termsAndConditions =
+    '/driver/termsAndConditions';
+  //==========================================================================
+  // Driver Booking Flow
+  //==========================================================================
+
+  static const String currentBooking =
+      '/driver/current-booking';
 
   //==========================================================================
   // Booking
@@ -101,6 +144,10 @@ class AppRoutes {
 
   static const String bookingDetails =
       '/booking/details';
+
+  //==========================================================================
+  // Trip
+  //==========================================================================
 
   static const String trip =
       '/trip';
@@ -120,4 +167,20 @@ class AppRoutes {
 
   static const String notifications =
       '/notifications';
+
+  //==========================================================================
+  // Future
+  //==========================================================================
+
+  static const String adminDashboard =
+      '/admin/dashboard';
+
+  static const String todaManagement =
+      '/admin/todas';
+
+  static const String userManagement =
+      '/admin/users';
+
+  static const String reports =
+      '/admin/reports';
 }

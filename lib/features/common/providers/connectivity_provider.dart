@@ -5,11 +5,10 @@ import '../../../core/services/connectivity_service.dart';
 /// ===========================================================================
 /// Connectivity Provider
 ///
-/// Provides the current internet connectivity state.
+/// Exposes the application's internet connection state.
 ///
-/// Returns:
-/// • true  -> Internet available
-/// • false -> No internet
+/// true  -> Connected
+/// false -> Offline
 /// ===========================================================================
 final connectivityProvider =
     StreamProvider<bool>(

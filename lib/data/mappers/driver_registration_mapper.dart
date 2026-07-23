@@ -6,6 +6,10 @@ import '../models/vehicle.dart';
 class DriverRegistrationMapper {
   const DriverRegistrationMapper._();
 
+  //==========================================================================
+  // App User
+  //==========================================================================
+
   static AppUser toAppUser({
     required String uid,
     required DriverRegistrationData registration,
@@ -30,11 +34,14 @@ class DriverRegistrationMapper {
     );
   }
 
+  //==========================================================================
+  // Driver
+  //==========================================================================
+
   static Driver toDriver({
     required String uid,
     required String vehicleId,
     required DriverRegistrationData registration,
-
     required String profilePhotoUrl,
     required String driverLicenseFrontUrl,
     required String driverLicenseBackUrl,
@@ -44,12 +51,24 @@ class DriverRegistrationMapper {
     required String vehiclePhotoUrl,
   }) {
     return Driver(
+      //======================================================================
+      // Identity
+      //======================================================================
+
       uid: uid,
       todaId: registration.todaId,
       vehicleId: vehicleId,
 
+      //======================================================================
+      // License
+      //======================================================================
+
       licenseNumber: registration.licenseNumber,
       licenseExpiry: registration.licenseExpiry!,
+
+      //======================================================================
+      // Uploaded Documents
+      //======================================================================
 
       profilePhotoUrl: profilePhotoUrl,
       driverLicenseFrontUrl: driverLicenseFrontUrl,
@@ -59,16 +78,39 @@ class DriverRegistrationMapper {
       crDocumentUrl: crDocumentUrl,
       vehiclePhotoUrl: vehiclePhotoUrl,
 
+      //======================================================================
+      // Driver Status
+      //======================================================================
+
       driverStatus: 'pending',
       isOnline: false,
+      isAvailable: true,
+
+      currentBookingId: null,
+      currentLatitude: null,
+      currentLongitude: null,
+
+      //======================================================================
+      // Statistics
+      //======================================================================
+
       rating: 0,
       completedTrips: 0,
       totalEarnings: 0,
+
+      //======================================================================
+      // Dates
+      //======================================================================
+
       createdAt: DateTime.now(),
       approvedAt: null,
       approvedBy: null,
     );
   }
+
+  //==========================================================================
+  // Vehicle
+  //==========================================================================
 
   static Vehicle toVehicle({
     required String uid,
@@ -78,20 +120,13 @@ class DriverRegistrationMapper {
     return Vehicle(
       id: vehicleId,
       driverId: uid,
-
       plateNumber: registration.plateNumber,
-
       vehicleNumber: registration.vehicleType,
-
       model:
           '${registration.vehicleBrand} ${registration.vehicleModel}',
-
       color: registration.vehicleColor,
-
       capacity: registration.seatingCapacity,
-
       isVerified: false,
-
       createdAt: DateTime.now(),
     );
   }

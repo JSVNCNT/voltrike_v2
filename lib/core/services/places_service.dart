@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../data/models/place_prediction.dart';
 import '../config/api_keys.dart';
 
 class PlacesService {
@@ -12,28 +13,34 @@ class PlacesService {
 
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        'X-Goog-Api-Key':
-            ApiKeys.googleMapsApiKey,
+        'X-Goog-Api-Key': ApiKeys.googleMapsApiKey,
       };
+
+  //==========================================================================
+  // Search Places
+  //==========================================================================
+
+  static Future<List<PlacePrediction>> searchPlaces(
+    String query,
+  ) {
+    return autocomplete(query);
+  }
 
   //==========================================================================
   // Autocomplete
   //==========================================================================
 
-  static Future<List<Map<String, dynamic>>>
-      autocomplete(
+  static Future<List<PlacePrediction>> autocomplete(
     String query,
   ) async {
     if (query.trim().isEmpty) {
       return [];
     }
 
-    final uri = Uri.parse(
-      '$_baseUrl/places:autocomplete',
-    );
-
     final response = await http.post(
-      uri,
+      Uri.parse(
+        '$_baseUrl/places:autocomplete',
+      ),
       headers: _headers,
       body: jsonEncode({
         'input': query,
@@ -44,26 +51,30 @@ class PlacesService {
       return [];
     }
 
-    final data =
-        jsonDecode(response.body);
+    final json =
+        jsonDecode(response.body)
+            as Map<String, dynamic>;
 
     final suggestions =
-        data['suggestions'] as List? ?? [];
+        json['suggestions'] as List? ?? [];
 
     return suggestions
-        .map<Map<String, dynamic>>(
-      (item) {
-        final place =
-            item['placePrediction'];
+        .map<PlacePrediction>((item) {
+      final place =
+          item['placePrediction']
+              as Map<String, dynamic>;
 
-        return {
-          'placeId':
-              place['placeId'],
-          'text': place['text']
-              ['text'],
-        };
-      },
-    ).toList();
+      return PlacePrediction(
+        placeId:
+            place['placeId'] as String,
+        title:
+            place['text']['text']
+                as String,
+        subtitle:
+            place['text']
+                ['secondaryText'] as String?,
+      );
+    }).toList();
   }
 
   //==========================================================================
@@ -74,12 +85,10 @@ class PlacesService {
       getPlaceDetails(
     String placeId,
   ) async {
-    final uri = Uri.parse(
-      '$_baseUrl/places/$placeId',
-    );
-
     final response = await http.get(
-      uri,
+      Uri.parse(
+        '$_baseUrl/places/$placeId',
+      ),
       headers: {
         ..._headers,
         'X-Goog-FieldMask':
@@ -91,19 +100,20 @@ class PlacesService {
       return null;
     }
 
-    final data =
-        jsonDecode(response.body);
+    final json =
+        jsonDecode(response.body)
+            as Map<String, dynamic>;
 
     return {
-      'id': data['id'],
-      'name': data['displayName']
-          ['text'],
+      'id': json['id'],
+      'name':
+          json['displayName']['text'],
       'address':
-          data['formattedAddress'],
+          json['formattedAddress'],
       'latitude':
-          data['location']['latitude'],
+          json['location']['latitude'],
       'longitude':
-          data['location']['longitude'],
+          json['location']['longitude'],
     };
   }
 }

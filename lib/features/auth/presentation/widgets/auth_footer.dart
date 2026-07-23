@@ -22,20 +22,32 @@ class AuthFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text(
-          text,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: textColor,
+        if (text.isNotEmpty)
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: textColor,
+            ),
           ),
-        ),
 
         TextButton(
           onPressed: onPressed,
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 4,
+            ),
+            minimumSize: Size.zero,
+            tapTargetSize:
+                MaterialTapTargetSize.shrinkWrap,
+          ),
           child: Text(
             actionText,
+            textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium.copyWith(
               color: actionColor,
               fontWeight: FontWeight.w600,

@@ -25,6 +25,8 @@ class FirestoreConstants {
 
   static const String reviews = 'reviews';
 
+  static const String ratings = 'ratings';
+
   static const String settings = 'settings';
 
   static const String geofences = 'geofences';

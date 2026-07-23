@@ -1,18 +1,28 @@
+import 'dart:io';
+
 import '../../core/constants/firestore_constants.dart';
 import '../models/passenger.dart';
 import '../services/firestore_service.dart';
+import 'storage_repository.dart';
 
 class PassengerRepository {
   PassengerRepository({
     FirestoreService? firestoreService,
-  }) : _firestoreService =
-            firestoreService ?? FirestoreService.instance;
+    StorageRepository? storageRepository,
+  })  : _firestoreService =
+            firestoreService ??
+                FirestoreService.instance,
+        _storageRepository =
+            storageRepository ??
+                StorageRepository();
 
   final FirestoreService _firestoreService;
 
-  /// -------------------------------------------------------------------------
-  /// Create Passenger
-  /// -------------------------------------------------------------------------
+  final StorageRepository _storageRepository;
+
+  //==========================================================================
+  // Create Passenger
+  //==========================================================================
 
   Future<void> createPassenger(
     Passenger passenger,
@@ -24,9 +34,9 @@ class PassengerRepository {
     );
   }
 
-  /// -------------------------------------------------------------------------
-  /// Update Passenger
-  /// -------------------------------------------------------------------------
+  //==========================================================================
+  // Update Passenger
+  //==========================================================================
 
   Future<void> updatePassenger(
     Passenger passenger,
@@ -38,9 +48,9 @@ class PassengerRepository {
     );
   }
 
-  /// -------------------------------------------------------------------------
-  /// Delete Passenger
-  /// -------------------------------------------------------------------------
+  //==========================================================================
+  // Delete Passenger
+  //==========================================================================
 
   Future<void> deletePassenger(
     String uid,
@@ -51,9 +61,9 @@ class PassengerRepository {
     );
   }
 
-  /// -------------------------------------------------------------------------
-  /// Get Passenger
-  /// -------------------------------------------------------------------------
+  //==========================================================================
+  // Get Passenger
+  //==========================================================================
 
   Future<Passenger?> getPassenger(
     String uid,
@@ -77,9 +87,9 @@ class PassengerRepository {
     return Passenger.fromMap(data);
   }
 
-  /// -------------------------------------------------------------------------
-  /// Passenger Stream
-  /// -------------------------------------------------------------------------
+  //==========================================================================
+  // Passenger Stream
+  //==========================================================================
 
   Stream<Passenger?> passengerStream(
     String uid,
@@ -89,18 +99,34 @@ class PassengerRepository {
           FirestoreConstants.passengers,
           uid,
         )
-        .map((snapshot) {
-      if (!snapshot.exists) {
-        return null;
-      }
+        .map(
+      (snapshot) {
+        if (!snapshot.exists) {
+          return null;
+        }
 
-      final data = snapshot.data();
+        final data = snapshot.data();
 
-      if (data == null) {
-        return null;
-      }
+        if (data == null) {
+          return null;
+        }
 
-      return Passenger.fromMap(data);
-    });
+        return Passenger.fromMap(data);
+      },
+    );
+  }
+
+  //==========================================================================
+  // Upload Profile Photo
+  //==========================================================================
+
+  Future<String> uploadProfilePhoto({
+    required String uid,
+    required File image,
+  }) {
+    return _storageRepository.uploadFile(
+      path: 'passenger_profiles/$uid.jpg',
+      file: image,
+    );
   }
 }

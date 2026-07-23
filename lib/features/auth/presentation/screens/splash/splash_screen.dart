@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../../app/routes.dart';
 import '../../../../../core/constants/app_constants.dart';
 import '../../../../../core/theme/app_colors.dart';
-import '../../../presentation/providers/splash_provider.dart';
 import '../../../presentation/controllers/splash_controller.dart';
+import '../../../presentation/providers/splash_provider.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
 
@@ -14,6 +14,7 @@ class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
+
   ConsumerState<SplashScreen> createState() =>
       _SplashScreenState();
 }
@@ -39,7 +40,9 @@ class _SplashScreenState
         next.whenData((destination) {
           switch (destination) {
             case SplashDestination.intro:
-              context.go(AppRoutes.intro);
+              context.go(
+                AppRoutes.intro,
+              );
               break;
 
             case SplashDestination.verifyEmail:
@@ -57,6 +60,12 @@ class _SplashScreenState
             case SplashDestination.driverHome:
               context.go(
                 AppRoutes.driverHome,
+              );
+              break;
+
+            case SplashDestination.driverUnderReview:
+              context.go(
+                AppRoutes.driverUnderReview,
               );
               break;
           }

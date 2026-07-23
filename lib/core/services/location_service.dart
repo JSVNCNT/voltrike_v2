@@ -93,4 +93,8 @@ class LocationService {
     await stopTracking();
     await _locationController.close();
   }
+
+  Future<Position> currentPosition() async {
+    return getCurrentLocation();
+  }
 }

@@ -49,6 +49,8 @@ class _LoginScreenState
       return;
     }
 
+    FocusScope.of(context).unfocus();
+
     setState(() {
       _error = null;
     });
@@ -61,11 +63,13 @@ class _LoginScreenState
             password: _passwordController.text,
           );
 
-      if (!mounted) return;
-
-      if (appUser == null) {
+      if (!mounted || appUser == null) {
         return;
       }
+
+      // ==========================================================
+      // Passenger
+      // ==========================================================
 
       if (appUser.isPassenger) {
         context.go(
@@ -74,29 +78,47 @@ class _LoginScreenState
         return;
       }
 
+      // ==========================================================
+      // Driver
+      // ==========================================================
+
       if (appUser.isDriver) {
-        context.go(
-          AppRoutes.driverUnderReview,
-        );
+  context.go(
+    AppRoutes.splash,
+  );
+  return;
+}
+
+      // ==========================================================
+      // Admin Accounts
+      // (Handled by the Web Portal)
+      // ==========================================================
+
+      if (appUser.isDeveloperAdmin ||
+          appUser.isTodaAdmin) {
+        setState(() {
+          _error =
+              'Administrator accounts use the VolTrike Web Portal.';
+        });
         return;
       }
 
-      if (appUser.isDeveloperAdmin) {
-        context.go(
-          AppRoutes.intro,
-        );
-        return;
-      }
+      // ==========================================================
+      // Unknown Role
+      // ==========================================================
 
-      if (appUser.isTodaAdmin) {
-        context.go(
-          AppRoutes.intro,
-        );
-        return;
-      }
-    } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error =
+            'Your account does not have a valid role.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = e.toString().replaceFirst(
+              'Exception: ',
+              '',
+            );
       });
     }
   }
