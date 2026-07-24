@@ -6,14 +6,21 @@ import 'package:voltrike_v2/features/passenger/providers/places_search_provider.
 import 'package:voltrike_v2/features/passenger/presentation/widgets/place_tile.dart';
 
 /// ===========================================================================
-/// Destination Search Screen
+/// Location Search Screen
 ///
-/// Searches destinations using the Google Places API.
+/// Used for:
+/// • Pickup
+/// • Destination
 /// ===========================================================================
 class DestinationSearchScreen extends ConsumerStatefulWidget {
   const DestinationSearchScreen({
     super.key,
+    this.title = 'Choose Destination',
+    this.hintText = 'Search destination',
   });
+
+  final String title;
+  final String hintText;
 
   @override
   ConsumerState<DestinationSearchScreen> createState() =>
@@ -28,12 +35,14 @@ class _DestinationSearchScreenState
   void initState() {
     super.initState();
 
-    _searchController = TextEditingController();
-
-    _searchController.addListener(_onSearchChanged);
+    _searchController = TextEditingController()
+      ..addListener(_onSearchChanged);
   }
 
   void _onSearchChanged() {
+    // Refresh the suffix icon when text changes.
+    setState(() {});
+
     ref
         .read(placesSearchProvider.notifier)
         .search(_searchController.text);
@@ -41,8 +50,10 @@ class _DestinationSearchScreenState
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
-    _searchController.dispose();
+    _searchController
+      ..removeListener(_onSearchChanged)
+      ..dispose();
+
     super.dispose();
   }
 
@@ -53,49 +64,94 @@ class _DestinationSearchScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Choose Destination',
-        ),
+        title: Text(widget.title),
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding:
+                const EdgeInsets.all(16),
             child: TextField(
               controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: 'Search destination',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
+              autofocus: true,
+              textInputAction:
+                  TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: widget.hintText,
+                prefixIcon:
+                    const Icon(Icons.search),
+                suffixIcon:
+                    _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(
+                              Icons.clear,
+                            ),
+                            onPressed: () {
+                              _searchController.clear();
+
+                              ref
+                                  .read(
+                                    placesSearchProvider
+                                        .notifier,
+                                  )
+                                  .search('');
+                            },
+                          ),
+                border:
+                    const OutlineInputBorder(),
               ),
             ),
           ),
           Expanded(
             child: searchState.when(
-              loading: () => const Center(
+              loading: () =>
+                  const Center(
                 child:
                     CircularProgressIndicator(),
               ),
-              error: (error, _) => Center(
-                child: Text(
-                  error.toString(),
+              error: (error, _) =>
+                  Center(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.all(24),
+                  child: Text(
+                    error.toString(),
+                    textAlign:
+                        TextAlign.center,
+                  ),
                 ),
               ),
               data: (
                 List<PlacePrediction>
                     predictions,
               ) {
-                if (predictions.isEmpty) {
-                  return const Center(
+                if (_searchController.text
+                    .trim()
+                    .isEmpty) {
+                  return Center(
                     child: Text(
-                      'Search for a destination.',
+                      widget.hintText,
                     ),
                   );
                 }
 
-                return ListView.builder(
+                if (predictions.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No places found.',
+                    ),
+                  );
+                }
+
+                return ListView.separated(
                   itemCount:
                       predictions.length,
+                  separatorBuilder:
+                      (_, _) =>
+                          const Divider(
+                    height: 1,
+                  ),
                   itemBuilder:
                       (context, index) {
                     final prediction =
@@ -108,6 +164,10 @@ class _DestinationSearchScreenState
                           prediction.subtitle ??
                               '',
                       onTap: () {
+                        if (!mounted) {
+                          return;
+                        }
+
                         Navigator.of(context)
                             .pop(
                           prediction,

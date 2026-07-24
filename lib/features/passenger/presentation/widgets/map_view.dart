@@ -9,7 +9,8 @@ import '../../providers/passenger_location_provider.dart';
 /// Map View
 ///
 /// Displays:
-/// • Passenger Location
+/// • Passenger Current Location
+/// • Pickup Marker
 /// • Destination Marker
 /// • Route Polyline
 /// • Google Traffic
@@ -18,122 +19,121 @@ import '../../providers/passenger_location_provider.dart';
 class MapView extends ConsumerStatefulWidget {
   const MapView({
     super.key,
+    this.pickup,
     this.destination,
     this.routePoints = const [],
   });
 
+  /// Selected pickup.
+  final LatLng? pickup;
+
   /// Selected destination.
   final LatLng? destination;
 
-  /// Decoded route polyline points.
+  /// Decoded route polyline.
   final List<LatLng> routePoints;
 
   @override
-  ConsumerState<MapView> createState() =>
-      _MapViewState();
+  ConsumerState<MapView> createState() => _MapViewState();
 }
 
-class _MapViewState
-    extends ConsumerState<MapView> {
+class _MapViewState extends ConsumerState<MapView> {
   GoogleMapController? _mapController;
 
   bool _cameraInitialized = false;
 
-  static const CameraPosition _defaultCamera =
-      CameraPosition(
-    target: LatLng(
-      14.5995,
-      120.9842,
-    ),
+  static const CameraPosition _defaultCamera = CameraPosition(
+    target: LatLng(14.5995, 120.9842),
     zoom: 15,
   );
 
   @override
   Widget build(BuildContext context) {
-    final location =
-        ref.watch(
-      passengerLocationProvider,
-    );
+    final location = ref.watch(passengerLocationProvider);
 
     return location.when(
-      loading: () {
-        return const Center(
-          child:
-              CircularProgressIndicator(),
-        );
-      },
-      error: (error, _) {
-        return Center(
-          child: Text(
-            error.toString(),
-          ),
-        );
-      },
+      loading: () =>
+          const Center(child: CircularProgressIndicator()),
+      error: (error, _) =>
+          Center(child: Text(error.toString())),
       data: (Position position) {
-        final passengerLocation =
-            LatLng(
+        final currentLocation = LatLng(
           position.latitude,
           position.longitude,
         );
 
-        //--------------------------------------------------------------
-        // Move camera only once after GPS is obtained.
-        //--------------------------------------------------------------
+        //------------------------------------------------------------------
+        // Use selected pickup if available.
+        //------------------------------------------------------------------
+
+        final pickupLocation =
+            widget.pickup ?? currentLocation;
+
+        //------------------------------------------------------------------
+        // Move camera once.
+        //------------------------------------------------------------------
 
         if (_mapController != null &&
             !_cameraInitialized) {
           _cameraInitialized = true;
 
-          WidgetsBinding.instance
-              .addPostFrameCallback((_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
             _mapController?.animateCamera(
               CameraUpdate.newLatLngZoom(
-                passengerLocation,
+                pickupLocation,
                 17,
               ),
             );
           });
         }
 
-        //--------------------------------------------------------------
-        // Passenger + Destination Markers
-        //--------------------------------------------------------------
+        //------------------------------------------------------------------
+        // Markers
+        //------------------------------------------------------------------
 
         final markers = <Marker>{
           Marker(
-            markerId:
-                const MarkerId(
-              'passenger',
-            ),
-            position:
-                passengerLocation,
-            infoWindow:
-                const InfoWindow(
-              title: 'Your Location',
+            markerId: const MarkerId('current_location'),
+            position: currentLocation,
+            infoWindow: const InfoWindow(
+              title: 'Current Location',
             ),
           ),
         };
 
-        if (widget.destination != null) {
+        if (widget.pickup != null) {
           markers.add(
             Marker(
-              markerId:
-                  const MarkerId(
-                'destination',
+              markerId: const MarkerId('pickup'),
+              position: widget.pickup!,
+              infoWindow: const InfoWindow(
+                title: 'Pickup',
               ),
-              position:
-                  widget.destination!,
-              infoWindow:
-                  const InfoWindow(
-                title: 'Destination',
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueAzure,
               ),
             ),
           );
         }
 
-        //--------------------------------------------------------------
+        if (widget.destination != null) {
+          markers.add(
+            Marker(
+              markerId: const MarkerId('destination'),
+              position: widget.destination!,
+              infoWindow: const InfoWindow(
+                title: 'Destination',
+              ),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueRed,
+              ),
+            ),
+          );
+        }
+
+        //------------------------------------------------------------------
         // Route Polyline
-        //--------------------------------------------------------------
+        //------------------------------------------------------------------
 
         final polylines = <Polyline>{};
 
@@ -141,11 +141,8 @@ class _MapViewState
           polylines.add(
             Polyline(
               polylineId:
-                  const PolylineId(
-                'route',
-              ),
-              points:
-                  widget.routePoints,
+                  const PolylineId('route'),
+              points: widget.routePoints,
               width: 6,
               geodesic: true,
             ),
@@ -153,31 +150,24 @@ class _MapViewState
         }
 
         return GoogleMap(
-          initialCameraPosition:
-              _defaultCamera,
+          initialCameraPosition: _defaultCamera,
 
           onMapCreated:
               (GoogleMapController controller) {
-            _mapController =
-                controller;
+            _mapController = controller;
           },
 
           myLocationEnabled: true,
-
           myLocationButtonEnabled: true,
 
           trafficEnabled: true,
-
           compassEnabled: true,
-
           buildingsEnabled: true,
 
           mapToolbarEnabled: false,
-
           zoomControlsEnabled: false,
 
           markers: markers,
-
           polylines: polylines,
         );
       },

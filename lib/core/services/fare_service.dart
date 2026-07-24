@@ -3,31 +3,79 @@ import 'dart:math';
 /// ===========================================================================
 /// Fare Configuration
 ///
-/// Loaded from Firestore (Admin Portal).
+/// Pricing configuration.
+///
+/// During development this can be hardcoded.
+/// Later it will be loaded from Firestore and managed
+/// through the Admin Portal.
 /// ===========================================================================
 class FareConfiguration {
   const FareConfiguration({
     required this.baseFare,
     required this.includedMeters,
-    required this.additionalPerMeter,
+    required this.distanceStepMeters,
+    required this.distanceStepPrice,
     required this.additionalPassengerFee,
     required this.baggageFee,
     required this.outsideTodaSurcharge,
   });
 
+  /// Base fare.
   final double baseFare;
 
+  /// Distance included in the base fare.
   final int includedMeters;
 
-  /// Charge per meter after the included distance.
-  final double additionalPerMeter;
+  /// Charge interval.
+  ///
+  /// Example:
+  /// Every 500 meters.
+  final int distanceStepMeters;
 
+  /// Price charged every distance step.
+  ///
+  /// Example:
+  /// ₱5 every 500 meters.
+  final double distanceStepPrice;
+
+  /// Fee for every additional passenger.
   final double additionalPassengerFee;
 
+  /// Fee per baggage.
   final double baggageFee;
 
+  /// Outside TODA surcharge.
   final double outsideTodaSurcharge;
 }
+
+/// ===========================================================================
+/// Development Configuration
+///
+/// Placeholder values until Firestore Admin Settings
+/// are implemented.
+/// ===========================================================================
+const FareConfiguration devFareConfiguration =
+    FareConfiguration(
+  baseFare: 20,
+
+  // First kilometer included.
+  includedMeters: 1000,
+
+  // Every additional 500 meters.
+  distanceStepMeters: 500,
+
+  // ₱5 every 500 meters.
+  distanceStepPrice: 5,
+
+  // Every additional passenger.
+  additionalPassengerFee: 40,
+
+  // Per baggage.
+  baggageFee: 20,
+
+  // Outside TODA.
+  outsideTodaSurcharge: 20,
+);
 
 /// ===========================================================================
 /// Fare Result
@@ -41,6 +89,8 @@ class FareResult {
     required this.boundarySurcharge,
     required this.totalFare,
     required this.distanceMeters,
+    required this.additionalPassengers,
+    required this.baggageCount,
   });
 
   final double baseFare;
@@ -56,15 +106,24 @@ class FareResult {
   final double totalFare;
 
   final int distanceMeters;
+
+  final int additionalPassengers;
+
+  final int baggageCount;
 }
 
 /// ===========================================================================
 /// Fare Service
 ///
-/// Calculates passenger fares.
+/// Calculates the passenger fare.
 ///
-/// Pricing values should eventually be loaded from Firestore
-/// and managed through the Admin Portal.
+/// Formula
+///
+/// Base Fare
+/// + Distance Charge
+/// + Additional Passenger Fee
+/// + Baggage Fee
+/// + Outside TODA Surcharge
 /// ===========================================================================
 class FareService {
   const FareService._();
@@ -73,58 +132,60 @@ class FareService {
     required FareConfiguration config,
     required int distanceMeters,
 
-    /// Total passengers including the booking passenger.
+    /// Total passengers including the passenger
+    /// making the booking.
     int passengerCount = 1,
 
     int baggageCount = 0,
 
     bool isOutsideToda = false,
   }) {
-    //=======================================================================
-    // Distance Fare
-    //=======================================================================
+    //----------------------------------------------------------------------
+    // Distance Charge
+    //----------------------------------------------------------------------
 
-    final int chargeableMeters = max(
-      0,
-      distanceMeters - config.includedMeters,
-    );
+    final chargeableMeters =
+        max(0, distanceMeters - config.includedMeters);
 
-    final double distanceFare =
-        chargeableMeters *
-            config.additionalPerMeter;
+    final distanceSteps =
+        (chargeableMeters / config.distanceStepMeters)
+            .ceil();
 
-    //=======================================================================
-    // Additional Passenger Fee
-    //=======================================================================
+    final distanceFare =
+        distanceSteps * config.distanceStepPrice;
 
-    final int additionalPassengers =
+    //----------------------------------------------------------------------
+    // Additional Passenger
+    //----------------------------------------------------------------------
+
+    final additionalPassengers =
         max(0, passengerCount - 1);
 
-    final double passengerFee =
+    final passengerFee =
         additionalPassengers *
             config.additionalPassengerFee;
 
-    //=======================================================================
-    // Baggage Fee
-    //=======================================================================
+    //----------------------------------------------------------------------
+    // Baggage
+    //----------------------------------------------------------------------
 
-    final double baggageFee =
+    final baggageFee =
         baggageCount * config.baggageFee;
 
-    //=======================================================================
-    // Outside TODA Surcharge
-    //=======================================================================
+    //----------------------------------------------------------------------
+    // Outside TODA
+    //----------------------------------------------------------------------
 
-    final double boundaryFee =
+    final boundaryFee =
         isOutsideToda
             ? config.outsideTodaSurcharge
             : 0.0;
 
-    //=======================================================================
+    //----------------------------------------------------------------------
     // Total
-    //=======================================================================
+    //----------------------------------------------------------------------
 
-    final double total =
+    final total =
         config.baseFare +
         distanceFare +
         passengerFee +
@@ -134,14 +195,14 @@ class FareService {
     return FareResult(
       baseFare: config.baseFare,
       distanceFare: distanceFare,
-      additionalPassengerFee:
-          passengerFee,
+      additionalPassengerFee: passengerFee,
       baggageFee: baggageFee,
-      boundarySurcharge:
-          boundaryFee,
+      boundarySurcharge: boundaryFee,
       totalFare: total,
-      distanceMeters:
-          distanceMeters,
+      distanceMeters: distanceMeters,
+      additionalPassengers:
+          additionalPassengers,
+      baggageCount: baggageCount,
     );
   }
 }

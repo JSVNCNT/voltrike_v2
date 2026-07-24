@@ -4,85 +4,138 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 /// ===========================================================================
 /// Booking Session
 ///
-/// Stores the temporary booking information while the passenger
-/// is selecting a destination and before a booking is created.
+/// Temporary booking information before creating a Firestore booking.
 ///
-/// This is NOT the Firestore booking.
-///
-/// Used by:
-/// • PassengerHomeScreen
-/// • MapView
-/// • HomeBottomSheet
-/// • FareCard
+/// Stores:
+/// • Pickup
+/// • Destination
+/// • Route
+/// • Fare
+/// • Passenger booking options
 /// ===========================================================================
 class BookingSession {
   const BookingSession({
+    this.pickup,
+    this.pickupName,
     this.destination,
     this.destinationName,
     this.routePoints = const [],
     this.distanceMeters = 0,
     this.duration = '',
+
+    // Fare breakdown
+    this.baseFare = 0,
+    this.distanceFare = 0,
+    this.additionalPassengerFee = 0,
+    this.baggageFee = 0,
+    this.boundarySurcharge = 0,
     this.estimatedFare = 0,
+
+    // Booking options
     this.additionalPassengers = 0,
     this.baggageCount = 0,
     this.isOutsideToda = false,
+
     this.hasRoute = false,
   });
 
-  /// Destination marker position.
+  /// Pickup location selected by the passenger.
+  final LatLng? pickup;
+
+  /// Pickup place name.
+  final String? pickupName;
+
+  /// Destination location.
   final LatLng? destination;
 
-  /// Destination name shown to the passenger.
+  /// Destination place name.
   final String? destinationName;
 
-  /// Decoded Google polyline.
+  /// Decoded Google Routes polyline.
   final List<LatLng> routePoints;
 
-  /// Distance returned by Google Routes.
+  /// Route distance in meters.
   final int distanceMeters;
 
-  /// Example:
-  /// "480s"
+  /// Example: "11 mins"
   final String duration;
 
-  /// Total estimated fare.
+  /// Base fare.
+  final double baseFare;
+
+  /// Distance charge.
+  final double distanceFare;
+
+  /// Additional passenger charge.
+  final double additionalPassengerFee;
+
+  /// Baggage charge.
+  final double baggageFee;
+
+  /// Outside TODA surcharge.
+  final double boundarySurcharge;
+
+  /// Estimated total fare.
   final double estimatedFare;
 
-  /// Additional passengers excluding the booking passenger.
+  /// Additional passengers.
   final int additionalPassengers;
 
   /// Number of baggage items.
   final int baggageCount;
 
-  /// Whether destination is outside the TODA boundary.
+  /// Whether the trip is outside the TODA boundary.
   final bool isOutsideToda;
 
-  /// True when a valid route has been computed.
+  /// True when pickup, destination, and route exist.
   final bool hasRoute;
 
   BookingSession copyWith({
+    LatLng? pickup,
+    String? pickupName,
     LatLng? destination,
     String? destinationName,
     List<LatLng>? routePoints,
     int? distanceMeters,
     String? duration,
+
+    double? baseFare,
+    double? distanceFare,
+    double? additionalPassengerFee,
+    double? baggageFee,
+    double? boundarySurcharge,
     double? estimatedFare,
+
     int? additionalPassengers,
     int? baggageCount,
     bool? isOutsideToda,
     bool? hasRoute,
   }) {
     return BookingSession(
+      pickup: pickup ?? this.pickup,
+      pickupName: pickupName ?? this.pickupName,
       destination: destination ?? this.destination,
       destinationName:
           destinationName ?? this.destinationName,
-      routePoints:
-          routePoints ?? this.routePoints,
+      routePoints: routePoints ?? this.routePoints,
       distanceMeters:
           distanceMeters ?? this.distanceMeters,
       duration: duration ?? this.duration,
+
+      baseFare: baseFare ?? this.baseFare,
+      distanceFare:
+          distanceFare ?? this.distanceFare,
+      additionalPassengerFee:
+          additionalPassengerFee ??
+              this.additionalPassengerFee,
+      baggageFee:
+          baggageFee ?? this.baggageFee,
+      boundarySurcharge:
+          boundarySurcharge ??
+              this.boundarySurcharge,
       estimatedFare:
           estimatedFare ?? this.estimatedFare,
+
       additionalPassengers:
           additionalPassengers ??
               this.additionalPassengers,
@@ -90,10 +143,11 @@ class BookingSession {
           baggageCount ?? this.baggageCount,
       isOutsideToda:
           isOutsideToda ?? this.isOutsideToda,
-      hasRoute:
-          hasRoute ?? this.hasRoute,
+      hasRoute: hasRoute ?? this.hasRoute,
     );
   }
+
+  static const empty = BookingSession();
 }
 
 /// ===========================================================================
@@ -104,16 +158,69 @@ class BookingSessionNotifier
   BookingSessionNotifier()
       : super(const BookingSession());
 
-  /// Updates the current booking preview.
+  /// Replace the current session.
   void update(
     BookingSession session,
   ) {
     state = session;
   }
 
-  /// Clears the current booking preview.
+  /// Update only the pickup.
+  void updatePickup({
+    required LatLng pickup,
+    required String pickupName,
+  }) {
+    state = state.copyWith(
+      pickup: pickup,
+      pickupName: pickupName,
+    );
+  }
+
+  /// Update only the destination.
+  void updateDestination({
+    required LatLng destination,
+    required String destinationName,
+  }) {
+    state = state.copyWith(
+      destination: destination,
+      destinationName: destinationName,
+    );
+  }
+
+  /// Update the calculated route and fare.
+  void updateRoute({
+    required List<LatLng> routePoints,
+    required int distanceMeters,
+    required String duration,
+
+    required double baseFare,
+    required double distanceFare,
+    required double additionalPassengerFee,
+    required double baggageFee,
+    required double boundarySurcharge,
+    required double estimatedFare,
+  }) {
+    state = state.copyWith(
+      routePoints: routePoints,
+      distanceMeters: distanceMeters,
+      duration: duration,
+
+      baseFare: baseFare,
+      distanceFare: distanceFare,
+      additionalPassengerFee:
+          additionalPassengerFee,
+      baggageFee: baggageFee,
+      boundarySurcharge:
+          boundarySurcharge,
+      estimatedFare: estimatedFare,
+
+      hasRoute: true,
+    );
+  }
+
+  /// Reset the booking session.
   void reset() {
-    state = const BookingSession();
+    state = BookingSession.empty;
   }
 }
 

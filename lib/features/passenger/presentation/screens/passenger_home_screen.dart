@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../../core/services/fare_service.dart';
 import '../../../../core/services/places_service.dart';
 import '../../../../core/services/polyline_service.dart';
 import '../../../../core/services/routes_service.dart';
@@ -11,40 +11,34 @@ import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/booking_session_provider.dart';
-import '../../providers/passenger_location_provider.dart';
-import '../../../../core/services/fare_service.dart';
-import 'destination_search_screen.dart';
-import 'searching_driver_screen.dart';
 import '../widgets/home_bottom_sheet.dart';
 import '../widgets/map_view.dart';
+import 'destination_search_screen.dart';
+import 'searching_driver_screen.dart';
 
 /// ===========================================================================
 /// Passenger Home Screen
 ///
-/// Main booking screen.
+/// Booking Flow
 ///
-/// Flow:
-///
-/// Passenger Location
-///       ↓
-/// Destination Search
-///       ↓
+/// Pickup
+///      ↓
+/// Destination
+///      ↓
 /// Route Calculation
-///       ↓
-/// Fare Estimate
-///       ↓
-/// Booking
+///      ↓
+/// Fare Calculation
+///      ↓
+/// Book Ride
 /// ===========================================================================
-class PassengerHomeScreen
-    extends ConsumerStatefulWidget {
+class PassengerHomeScreen extends ConsumerStatefulWidget {
   const PassengerHomeScreen({
     super.key,
   });
 
   @override
-  ConsumerState<PassengerHomeScreen>
-      createState() =>
-          _PassengerHomeScreenState();
+  ConsumerState<PassengerHomeScreen> createState() =>
+      _PassengerHomeScreenState();
 }
 
 class _PassengerHomeScreenState
@@ -52,31 +46,27 @@ class _PassengerHomeScreenState
   //==========================================================================
   // Temporary Fare Configuration
   //
-  // Later loaded from Firestore.
+  // Later this will come from Firestore.
   //==========================================================================
 
   static const FareConfiguration
       _fareConfiguration =
-      FareConfiguration(
-    baseFare: 15,
-    includedMeters: 1000,
-    additionalPerMeter: 0.02,
-    additionalPassengerFee: 10,
-    baggageFee: 20,
-    outsideTodaSurcharge: 30,
-  );
+      devFareConfiguration;
 
   //==========================================================================
-  // Select Destination
+  // Select Pickup
   //==========================================================================
 
-  Future<void> _selectDestination() async {
+  Future<void> _selectPickup() async {
     final PlacePrediction? prediction =
         await Navigator.push<PlacePrediction>(
       context,
       MaterialPageRoute(
         builder: (_) =>
-            const DestinationSearchScreen(),
+            const DestinationSearchScreen(
+          title: 'Choose Pickup',
+          hintText: 'Search pickup location',
+        ),
       ),
     );
 
@@ -93,23 +83,78 @@ class _PassengerHomeScreenState
       return;
     }
 
-    final location =
-        ref.read(
-      passengerLocationProvider,
+    ref
+        .read(
+          bookingSessionProvider.notifier,
+        )
+        .updatePickup(
+          pickup: LatLng(
+            details['latitude'] as double,
+            details['longitude'] as double,
+          ),
+          pickupName:
+              details['name'] as String,
+        );
+  }
+
+  //==========================================================================
+  // Select Destination
+  //==========================================================================
+
+  Future<void> _selectDestination() async {
+    final PlacePrediction? prediction =
+        await Navigator.push<PlacePrediction>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            const DestinationSearchScreen(
+          title: 'Choose Destination',
+          hintText:
+              'Search destination',
+        ),
+      ),
     );
 
-    if (!location.hasValue) {
+    if (!mounted || prediction == null) {
       return;
     }
 
-    final Position passenger =
-        location.requireValue;
+    final details =
+        await PlacesService.getPlaceDetails(
+      prediction.placeId,
+    );
+
+    if (!mounted || details == null) {
+      return;
+    }
+
+    final booking =
+        ref.read(
+      bookingSessionProvider,
+    );
+
+    //----------------------------------------------------------------------
+    // Pickup must be selected first.
+    //----------------------------------------------------------------------
+
+    if (booking.pickup == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please select a pickup location first.',
+          ),
+        ),
+      );
+
+      return;
+    }
 
     await _calculateRoute(
-      passengerLocation: LatLng(
-        passenger.latitude,
-        passenger.longitude,
-      ),
+      pickup: booking.pickup!,
+      pickupName:
+          booking.pickupName ??
+              'Pickup',
       destination: LatLng(
         details['latitude'] as double,
         details['longitude'] as double,
@@ -119,12 +164,13 @@ class _PassengerHomeScreenState
     );
   }
 
-  //==========================================================================
+    //==========================================================================
   // Calculate Route
   //==========================================================================
 
   Future<void> _calculateRoute({
-    required LatLng passengerLocation,
+    required LatLng pickup,
+    required String pickupName,
     required LatLng destination,
     required String destinationName,
   }) async {
@@ -138,7 +184,7 @@ class _PassengerHomeScreenState
 
     final result =
         await RoutesService.computeRoute(
-      origin: passengerLocation,
+      origin: pickup,
       destination: destination,
     );
 
@@ -154,16 +200,24 @@ class _PassengerHomeScreenState
 
     final routePoints =
         PolylineService.decodePolyline(
-      result['encodedPolyline']
-          as String,
+      result.encodedPolyline,
+    );
+
+    final booking =
+        ref.read(
+      bookingSessionProvider,
     );
 
     final fare =
         FareService.calculateFare(
       config: _fareConfiguration,
-      distanceMeters:
-          result['distanceMeters']
-              as int,
+      distanceMeters: result.distanceMeters,
+      passengerCount:
+          booking.additionalPassengers + 1,
+      baggageCount:
+          booking.baggageCount,
+      isOutsideToda:
+          booking.isOutsideToda,
     );
 
     ref
@@ -171,23 +225,31 @@ class _PassengerHomeScreenState
           bookingSessionProvider.notifier,
         )
         .update(
-          BookingSession(
+          booking.copyWith(
+            pickup: pickup,
+            pickupName: pickupName,
             destination: destination,
             destinationName:
                 destinationName,
-            routePoints:
-                routePoints,
+            routePoints: routePoints,
             distanceMeters:
-                result['distanceMeters']
-                    as int,
+                result.distanceMeters,
             duration:
-                result['duration']
-                    as String,
+                '${result.durationMinutes} mins',
+
+            baseFare:
+                fare.baseFare,
+            distanceFare:
+                fare.distanceFare,
+            additionalPassengerFee:
+                fare.additionalPassengerFee,
+            baggageFee:
+                fare.baggageFee,
+            boundarySurcharge:
+                fare.boundarySurcharge,
             estimatedFare:
                 fare.totalFare,
-            additionalPassengers: 0,
-            baggageCount: 0,
-            isOutsideToda: false,
+
             hasRoute: true,
           ),
         );
@@ -199,7 +261,155 @@ class _PassengerHomeScreenState
         .reset();
   }
 
-    //==========================================================================
+  //==========================================================================
+  // Recalculate Fare
+  //==========================================================================
+
+  void _recalculateFare() {
+    final session =
+        ref.read(
+      bookingSessionProvider,
+    );
+
+    if (!session.hasRoute) {
+      return;
+    }
+
+    final fare =
+        FareService.calculateFare(
+      config: _fareConfiguration,
+      distanceMeters:
+          session.distanceMeters,
+      passengerCount:
+          session.additionalPassengers + 1,
+      baggageCount:
+          session.baggageCount,
+      isOutsideToda:
+          session.isOutsideToda,
+    );
+
+    ref
+        .read(
+          bookingSessionProvider.notifier,
+        )
+        .update(
+          session.copyWith(
+            baseFare:
+                fare.baseFare,
+            distanceFare:
+                fare.distanceFare,
+            additionalPassengerFee:
+                fare.additionalPassengerFee,
+            baggageFee:
+                fare.baggageFee,
+            boundarySurcharge:
+                fare.boundarySurcharge,
+            estimatedFare:
+                fare.totalFare,
+          ),
+        );
+  }
+
+  //==========================================================================
+  // Additional Passengers
+  //==========================================================================
+
+  void _increasePassengers() {
+    final session =
+        ref.read(
+      bookingSessionProvider,
+    );
+
+    ref
+        .read(
+          bookingSessionProvider.notifier,
+        )
+        .update(
+          session.copyWith(
+            additionalPassengers:
+                session.additionalPassengers +
+                    1,
+          ),
+        );
+
+    _recalculateFare();
+  }
+
+  void _decreasePassengers() {
+    final session =
+        ref.read(
+      bookingSessionProvider,
+    );
+
+    if (session.additionalPassengers ==
+        0) {
+      return;
+    }
+
+    ref
+        .read(
+          bookingSessionProvider.notifier,
+        )
+        .update(
+          session.copyWith(
+            additionalPassengers:
+                session.additionalPassengers -
+                    1,
+          ),
+        );
+
+    _recalculateFare();
+  }
+
+  //==========================================================================
+  // Baggage
+  //==========================================================================
+
+  void _increaseBaggage() {
+    final session =
+        ref.read(
+      bookingSessionProvider,
+    );
+
+    ref
+        .read(
+          bookingSessionProvider.notifier,
+        )
+        .update(
+          session.copyWith(
+            baggageCount:
+                session.baggageCount + 1,
+          ),
+        );
+
+    _recalculateFare();
+  }
+
+  void _decreaseBaggage() {
+    final session =
+        ref.read(
+      bookingSessionProvider,
+    );
+
+    if (session.baggageCount == 0) {
+      return;
+    }
+
+    ref
+        .read(
+          bookingSessionProvider.notifier,
+        )
+        .update(
+          session.copyWith(
+            baggageCount:
+                session.baggageCount - 1,
+          ),
+        );
+
+    _recalculateFare();
+  }
+
+   //==========================================================================
   // Build
   //==========================================================================
 
@@ -222,63 +432,99 @@ class _PassengerHomeScreenState
         children: [
           Positioned.fill(
             child: MapView(
-              destination:
-                  session.destination,
-              routePoints:
-                  session.routePoints,
+              pickup: session.pickup,
+              destination: session.destination,
+              routePoints: session.routePoints,
             ),
           ),
 
-          Align(
-            alignment:
-                Alignment.bottomCenter,
-            child: HomeBottomSheet(
-              onDestinationTap:
-                  bookingState ==
-                          PassengerBookingState
-                              .searchingDriver
-                      ? null
-                      : _selectDestination,
+          DraggableScrollableSheet(
+            initialChildSize: 0.42,
+            minChildSize: 0.18,
+            maxChildSize: 0.85,
+            builder: (
+              context,
+              scrollController,
+            ) {
+              return HomeBottomSheet(
+                scrollController:
+                    scrollController,
 
-              estimatedFare:
-                  '₱${session.estimatedFare.toStringAsFixed(2)}',
+                pickup:
+                    session.pickupName ??
+                        'Select pickup',
 
-              distance:
-                  session.distanceMeters == 0
-                      ? '--'
-                      : '${(session.distanceMeters / 1000).toStringAsFixed(2)} km',
+                destination:
+                    session.destinationName ??
+                        'Where are you going?',
 
-              eta:
-                  session.duration.isEmpty
-                      ? '--'
-                      : session.duration,
+                onPickupTap:
+                    bookingState ==
+                            PassengerBookingState
+                                .searchingDriver
+                        ? null
+                        : _selectPickup,
 
-              additionalPassengers:
-                  session.additionalPassengers,
+                onDestinationTap:
+                    bookingState ==
+                            PassengerBookingState
+                                .searchingDriver
+                        ? null
+                        : _selectDestination,
 
-              baggageFee:
-                  '₱${(_fareConfiguration.baggageFee * session.baggageCount).toStringAsFixed(2)}',
+                estimatedFare:
+                    '₱${session.estimatedFare.toStringAsFixed(2)}',
 
-              boundarySurcharge:
-                  session.isOutsideToda
-                      ? '₱${_fareConfiguration.outsideTodaSurcharge.toStringAsFixed(2)}'
-                      : '₱0.00',
+                distance:
+                    session.distanceMeters == 0
+                        ? '--'
+                        : '${(session.distanceMeters / 1000).toStringAsFixed(2)} km',
 
-              hasRoute:
-                  session.hasRoute,
+                eta:
+                    session.duration.isEmpty
+                        ? '--'
+                        : session.duration,
 
-              onBookRide:
-                  session.hasRoute
-                      ? _bookRide
-                      : null,
-            ),
+                additionalPassengers:
+                    session.additionalPassengers,
+
+                baggageCount:
+                    session.baggageCount,
+
+                baggageFee:
+                    '₱${session.baggageFee.toStringAsFixed(2)}',
+
+                boundarySurcharge:
+                    '₱${session.boundarySurcharge.toStringAsFixed(2)}',
+
+                hasRoute:
+                    session.hasRoute,
+
+                onIncreasePassengers:
+                    _increasePassengers,
+
+                onDecreasePassengers:
+                    _decreasePassengers,
+
+                onIncreaseBaggage:
+                    _increaseBaggage,
+
+                onDecreaseBaggage:
+                    _decreaseBaggage,
+
+                onBookRide:
+                    session.hasRoute
+                        ? _bookRide
+                        : null,
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-   //==========================================================================
+  //==========================================================================
   // Book Ride
   //==========================================================================
 
@@ -288,39 +534,31 @@ class _PassengerHomeScreenState
     );
 
     if (!session.hasRoute ||
+        session.pickup == null ||
         session.destination == null) {
       return;
     }
 
-    final location = ref.read(
-      passengerLocationProvider,
-    );
-
-    if (!location.hasValue) {
-      return;
-    }
-
-    final Position passenger =
-        location.requireValue;
-
     try {
       final bookingId =
-      await ref
-          .read(
-            bookingControllerProvider.notifier,
-          )
-          .createBooking(
-            session: session,
-            pickupLatitude:
-                passenger.latitude,
-            pickupLongitude:
-                passenger.longitude,
-            pickupAddress:
-                'Current Location',
-            destinationAddress:
-                session.destinationName ??
-                    'Destination',
-          );
+          await ref
+              .read(
+                bookingControllerProvider
+                    .notifier,
+              )
+              .createBooking(
+                session: session,
+                pickupLatitude:
+                    session.pickup!.latitude,
+                pickupLongitude:
+                    session.pickup!.longitude,
+                pickupAddress:
+                    session.pickupName ??
+                        'Pickup',
+                destinationAddress:
+                    session.destinationName ??
+                        'Destination',
+              );
 
       if (!mounted) {
         return;
@@ -331,7 +569,7 @@ class _PassengerHomeScreenState
             bookingProvider.notifier,
           )
           .update(
-           PassengerBookingState 
+            PassengerBookingState
                 .searchingDriver,
           );
 
@@ -339,9 +577,9 @@ class _PassengerHomeScreenState
         context,
         MaterialPageRoute(
           builder: (_) =>
-               SearchingDriverScreen(
+              SearchingDriverScreen(
             bookingId: bookingId,
-               ),
+          ),
         ),
       );
     } catch (e) {

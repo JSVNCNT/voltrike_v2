@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 /// ===========================================================================
 /// Place Tile
 ///
-/// Displays a destination returned by the Google Places API.
+/// Displays a location returned by Google Places.
 ///
 /// Used by:
-/// • DestinationSearchScreen
+/// • DestinationSearchScreen (Pickup)
+/// • DestinationSearchScreen (Destination)
+/// • Recent Places (future)
+/// • Favorite Places (future)
 /// ===========================================================================
 class PlaceTile extends StatelessWidget {
   const PlaceTile({
@@ -14,26 +17,46 @@ class PlaceTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onTap,
+    this.icon = Icons.location_on_outlined,
   });
 
+  /// Main place name.
   final String title;
 
+  /// Secondary address text.
   final String subtitle;
 
+  /// Called when the tile is tapped.
   final VoidCallback? onTap;
+
+  /// Leading icon.
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return ListTile(
-      leading: const CircleAvatar(
+      leading: CircleAvatar(
+        backgroundColor:
+            theme.colorScheme.primaryContainer,
         child: Icon(
-          Icons.location_on_outlined,
+          icon,
+          color: theme.colorScheme.primary,
         ),
       ),
-      title: Text(title),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       subtitle: subtitle.isEmpty
           ? null
-          : Text(subtitle),
+          : Text(
+              subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
       trailing: const Icon(
         Icons.chevron_right,
       ),

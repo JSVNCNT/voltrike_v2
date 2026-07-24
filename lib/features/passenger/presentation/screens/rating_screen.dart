@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../common/presentation/widgets/star_rating.dart';
 import '../../providers/driver_rating_provider.dart';
 
 /// ===========================================================================
@@ -12,9 +14,7 @@ import '../../providers/driver_rating_provider.dart';
 /// • Leave an optional comment
 /// • Submit feedback
 /// ===========================================================================
-
-class RatingScreen
-    extends ConsumerStatefulWidget {
+class RatingScreen extends ConsumerStatefulWidget {
   const RatingScreen({
     super.key,
     required this.bookingId,
@@ -22,11 +22,9 @@ class RatingScreen
 
   final String bookingId;
 
-
   @override
-  ConsumerState<RatingScreen>
-      createState() =>
-          _RatingScreenState();
+  ConsumerState<RatingScreen> createState() =>
+      _RatingScreenState();
 }
 
 class _RatingScreenState
@@ -35,51 +33,18 @@ class _RatingScreenState
   // Controllers
   //==========================================================================
 
-  final TextEditingController
-      _commentController =
-          TextEditingController();
+  final TextEditingController _commentController =
+      TextEditingController();
 
   //==========================================================================
   // State
   //==========================================================================
 
-  int _rating = 5;
+double _rating = 5.0;
+
+
 
   bool _submitting = false;
-
-  //==========================================================================
-  // Helpers
-  //==========================================================================
-
-  void _setRating(
-    int rating,
-  ) {
-    setState(() {
-      _rating = rating;
-    });
-  }
-
-  Widget _buildStar(
-    int index,
-  ) {
-    final filled =
-        index <= _rating;
-
-    return IconButton(
-      onPressed: () {
-        _setRating(
-          index,
-        );
-      },
-      icon: Icon(
-        filled
-            ? Icons.star
-            : Icons.star_border,
-        color: Colors.amber,
-        size: 40,
-      ),
-    );
-  }
 
   @override
   void dispose() {
@@ -90,33 +55,34 @@ class _RatingScreenState
   //==========================================================================
   // Submit
   //==========================================================================
-    Future<void> _submitRating() async {
-  if (_submitting) {
-    return;
-  }
 
-  setState(() {
-    _submitting = true;
-  });
-
-  try {
-    await ref
-        .read(
-          driverRatingControllerProvider.notifier,
-        )
-        .submitRating(
-          bookingId: widget.bookingId,
-          rating: _rating,
-          comment: _commentController.text,
-        );
-
-    if (!mounted) {
+  Future<void> _submitRating() async {
+    if (_submitting) {
       return;
     }
 
-    await showDialog<void>(
-      context: context,
-      builder: (_) {
+    setState(() {
+      _submitting = true;
+    });
+
+    try {
+      await ref
+          .read(
+            driverRatingControllerProvider.notifier,
+          )
+          .submitRating(
+            bookingId: widget.bookingId,
+            rating: _rating.round(),
+            comment: _commentController.text.trim(),
+          );
+
+      if (!mounted) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (_) {
           return AlertDialog(
             title: const Text(
               'Thank You!',
@@ -127,9 +93,7 @@ class _RatingScreenState
             actions: [
               FilledButton(
                 onPressed: () {
-                  Navigator.of(
-                    context,
-                  ).pop();
+                  Navigator.of(context).pop();
                 },
                 child: const Text(
                   'OK',
@@ -152,9 +116,7 @@ class _RatingScreenState
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             e.toString(),
@@ -173,7 +135,8 @@ class _RatingScreenState
   //==========================================================================
   // Build
   //==========================================================================
-    @override
+
+  @override
   Widget build(
     BuildContext context,
   ) {
@@ -208,12 +171,10 @@ class _RatingScreenState
 
               const Text(
                 'How was your trip?',
-                textAlign:
-                    TextAlign.center,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 26,
-                  fontWeight:
-                      FontWeight.bold,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
 
@@ -223,8 +184,7 @@ class _RatingScreenState
 
               const Text(
                 'Your feedback helps improve the experience for everyone.',
-                textAlign:
-                    TextAlign.center,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.grey,
                   fontSize: 16,
@@ -239,32 +199,28 @@ class _RatingScreenState
               // Star Rating
               //----------------------------------------------------------------
 
-              Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.center,
-                children: List.generate(
-                  5,
-                  (index) => _buildStar(
-                    index + 1,
-                  ),
-                ),
+              StarRating(
+                rating: _rating,
+                onRatingChanged: (rating) {
+                  setState(() {
+                    _rating = rating;
+                  });
+                },
               ),
 
               const SizedBox(
                 height: 40,
               ),
 
-              //----------------------------------------------------------------
+                            //----------------------------------------------------------------
               // Comment
               //----------------------------------------------------------------
 
               TextField(
-                controller:
-                    _commentController,
+                controller: _commentController,
                 maxLines: 5,
                 textCapitalization:
-                    TextCapitalization
-                        .sentences,
+                    TextCapitalization.sentences,
                 decoration:
                     const InputDecoration(
                   labelText:
@@ -273,8 +229,7 @@ class _RatingScreenState
                       'Tell us about your experience...',
                   border:
                       OutlineInputBorder(),
-                  alignLabelWithHint:
-                      true,
+                  alignLabelWithHint: true,
                 ),
               ),
 
@@ -283,7 +238,7 @@ class _RatingScreenState
               ),
 
               //----------------------------------------------------------------
-              // Booking Information
+              // Trip Summary
               //----------------------------------------------------------------
 
               Card(
@@ -300,10 +255,9 @@ class _RatingScreenState
                       const Text(
                         'Trip Summary',
                         style: TextStyle(
-                          fontWeight:
-                              FontWeight
-                                  .bold,
                           fontSize: 18,
+                          fontWeight:
+                              FontWeight.bold,
                         ),
                       ),
 
@@ -312,16 +266,16 @@ class _RatingScreenState
                       ),
 
                       Text(
-  'Booking ID: ${widget.bookingId}',
-),
+                        'Booking ID: ${widget.bookingId}',
+                      ),
 
-const SizedBox(
-  height: 8,
-),
+                      const SizedBox(
+                        height: 8,
+                      ),
 
-Text(
-  'Rating: $_rating ★',
-),
+                      Text(
+                        'Rating: ${_rating.toInt()} ★',
+                      ),
                     ],
                   ),
                 ),
@@ -336,10 +290,9 @@ Text(
               //----------------------------------------------------------------
 
               FilledButton.icon(
-                onPressed:
-                    _submitting
-                        ? null
-                        : _submitRating,
+                onPressed: _submitting
+                    ? null
+                    : _submitRating,
                 icon: _submitting
                     ? const SizedBox(
                         width: 20,

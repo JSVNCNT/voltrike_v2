@@ -23,8 +23,7 @@ import '../features/passenger/presentation/screens/passenger_dashboard_screen.da
 import '../features/passenger/presentation/screens/passenger_profile_screen.dart';
 import '../features/passenger/presentation/screens/passenger_trip_history_screen.dart';
 import '../features/passenger/presentation/screens/searching_driver_screen.dart';
-import '../features/passenger/presentation/screens/driver_tracking_screen.dart';
-import '../features/passenger/presentation/screens/passenger_trip_screen.dart';
+import '../features/passenger/presentation/screens/booking_tracking_screen.dart';
 import '../features/passenger/presentation/screens/rating_screen.dart';
 
 import '../features/driver/presentation/screens/driver_shell_screen.dart';
@@ -39,6 +38,7 @@ import '../features/driver/presentation/screens/privacy_policy_screen.dart' as p
 import '../features/driver/presentation/screens/terms_and_conditions_screen.dart';
 import '../features/passenger/presentation/screens/passenger_settings_screen.dart';
 import '../features/passenger/presentation/screens/edit_passenger_profile_screen.dart';
+import '../features/driver/presentation/screens/driver_booking_tracking_screen.dart';
 
 import 'routes.dart';
 
@@ -280,7 +280,7 @@ GoRoute(
         final bookingId =
             state.extra as String;
 
-        return DriverTrackingScreen(
+        return BookingTrackingScreen(
           bookingId: bookingId,
         );
       },
@@ -295,7 +295,7 @@ GoRoute(
         final bookingId =
             state.extra as String;
 
-        return PassengerTripScreen(
+        return BookingTrackingScreen(
           bookingId: bookingId,
         );
       },
@@ -412,13 +412,23 @@ GoRoute(
   },
 ),
 
-    GoRoute(
-      path: AppRoutes.currentBooking,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverHomeScreen(),
-    ),
-  ],
+GoRoute(
+  path: AppRoutes.driverBookingTracking,
+  builder: (
+    context,
+    state,
+  ) =>
+      const DriverBookingTrackingScreen(),
+),
+
+GoRoute(
+  path: AppRoutes.currentBooking,
+  builder: (
+    context,
+    state,
+  ) =>
+      const DriverHomeScreen(),
+),
+
+],
 );

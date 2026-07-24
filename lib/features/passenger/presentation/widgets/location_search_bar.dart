@@ -1,27 +1,28 @@
 import 'package:flutter/material.dart';
 
 /// ===========================================================================
-/// Destination Search Bar
+/// Location Search Bar
 ///
-/// Displays the destination search field.
-///
-/// Later this widget will integrate with:
-/// • Google Places API (New)
-/// • Recent destinations
-/// • Favorite places
-/// • Saved locations
+/// Reusable search bar for selecting:
+/// • Pickup location
+/// • Destination
 /// ===========================================================================
-class DestinationSearchBar
-    extends StatelessWidget {
-  const DestinationSearchBar({
+class LocationSearchBar extends StatelessWidget {
+  const LocationSearchBar({
     super.key,
-    this.hintText = 'Where are you going?',
+    required this.hintText,
     this.onTap,
+    this.icon = Icons.location_on_outlined,
   });
 
+  /// Selected location or placeholder.
   final String hintText;
 
+  /// Called when the search bar is tapped.
   final VoidCallback? onTap;
+
+  /// Leading icon.
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -29,27 +30,24 @@ class DestinationSearchBar
 
     return Material(
       elevation: 2,
-      borderRadius:
-          BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(16),
+      color: Colors.transparent,
       child: InkWell(
-        borderRadius:
-            BorderRadius.circular(16),
         onTap: onTap,
-        child: Container(
-          padding:
-              const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
-            borderRadius:
-                BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
           ),
           child: Row(
             children: [
               Icon(
-                Icons.search,
+                icon,
                 color: theme.colorScheme.primary,
               ),
 
@@ -58,13 +56,15 @@ class DestinationSearchBar
               Expanded(
                 child: Text(
                   hintText,
-                  style: theme
-                      .textTheme.bodyLarge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge,
                 ),
               ),
 
-              const Icon(
+              Icon(
                 Icons.chevron_right,
+                color: theme.colorScheme.outline,
               ),
             ],
           ),

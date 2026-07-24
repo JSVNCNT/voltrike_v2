@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:voltrike_v2/features/passenger/providers/booking_controller_provider.dart';
 
 import '../../../../data/models/booking.dart';
 
 import '../../controllers/passenger_booking_flow_controller.dart';
-
+import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_listener_provider.dart';
 
-import 'driver_tracking_screen.dart';
-
-import 'passenger_trip_screen.dart';
-
+import 'booking_tracking_screen.dart';
 import 'rating_screen.dart';
 
 /// ===========================================================================
@@ -19,13 +15,15 @@ import 'rating_screen.dart';
 ///
 /// Displays realtime booking updates while waiting for a driver.
 ///
-/// Automatically navigates when booking status changes.
+/// Once a driver is assigned, navigation moves to
+/// BookingTrackingScreen, which handles both:
 ///
-/// Firestore
-/// bookings/{bookingId}
+/// • Driver → Pickup
+/// • Driver → Destination
+///
+/// RatingScreen is shown after the booking is completed.
 /// ===========================================================================
-class SearchingDriverScreen
-    extends ConsumerStatefulWidget {
+class SearchingDriverScreen extends ConsumerStatefulWidget {
   const SearchingDriverScreen({
     super.key,
     required this.bookingId,
@@ -34,14 +32,64 @@ class SearchingDriverScreen
   final String bookingId;
 
   @override
-  ConsumerState<SearchingDriverScreen>
-      createState() =>
-          _SearchingDriverScreenState();
+  ConsumerState<SearchingDriverScreen> createState() =>
+      _SearchingDriverScreenState();
 }
 
 class _SearchingDriverScreenState
     extends ConsumerState<SearchingDriverScreen> {
   BookingStatus? _lastStatus;
+
+  ProviderSubscription<AsyncValue<Booking?>>?
+      _bookingSubscription;
+
+  //==========================================================================
+  // Lifecycle
+  //==========================================================================
+
+  @override
+  void initState() {
+    super.initState();
+
+    _bookingSubscription =
+        ref.listenManual<AsyncValue<Booking?>>(
+      bookingListenerProvider(
+        widget.bookingId,
+      ),
+      (previous, next) {
+        next.whenData((booking) {
+          if (booking == null) {
+            ref
+                .read(
+                  passengerBookingFlowProvider
+                      .notifier,
+                )
+                .clear();
+            return;
+          }
+
+          ref
+              .read(
+                passengerBookingFlowProvider
+                    .notifier,
+              )
+              .updateStatus(
+                booking.status,
+              );
+
+          _handleStatusChange(
+            booking,
+          );
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _bookingSubscription?.close();
+    super.dispose();
+  }
 
   //==========================================================================
   // Navigation
@@ -55,8 +103,7 @@ class _SearchingDriverScreenState
       return;
     }
 
-    _lastStatus =
-        booking.status;
+    _lastStatus = booking.status;
 
     WidgetsBinding.instance
         .addPostFrameCallback((_) {
@@ -73,51 +120,35 @@ class _SearchingDriverScreenState
           break;
 
         //--------------------------------------------------------------
-        // Driver Assigned
+        // Driver Assigned / Arriving
         //--------------------------------------------------------------
 
         case BookingStatus.driverAssigned:
 
         case BookingStatus.driverArriving:
-          Navigator.of(context)
-              .pushReplacement(
+
+        case BookingStatus.passengerOnBoard:
+          Navigator.of(context).pushReplacement(
             MaterialPageRoute(
-              builder: (_) =>
-                  DriverTrackingScreen(
-                bookingId:
-                    widget.bookingId,
+              builder: (_) => BookingTrackingScreen(
+                bookingId: widget.bookingId,
               ),
             ),
           );
           break;
 
         //--------------------------------------------------------------
-        // Trip Started
-        //--------------------------------------------------------------
-
-        case BookingStatus
-              .passengerOnBoard:
-          Navigator.of(context).pushReplacement(
-  MaterialPageRoute(
-    builder: (_) => PassengerTripScreen(
-      bookingId: widget.bookingId,
-    ),
-  ),
-);
-          break;
-
-        //--------------------------------------------------------------
-        // Trip Completed
+        // Completed
         //--------------------------------------------------------------
 
         case BookingStatus.completed:
           Navigator.of(context).pushReplacement(
-  MaterialPageRoute(
-    builder: (_) => RatingScreen(
-      bookingId: widget.bookingId,
-    ),
-  ),
-);
+            MaterialPageRoute(
+              builder: (_) => RatingScreen(
+                bookingId: widget.bookingId,
+              ),
+            ),
+          );
           break;
 
         //--------------------------------------------------------------
@@ -125,8 +156,7 @@ class _SearchingDriverScreenState
         //--------------------------------------------------------------
 
         case BookingStatus.cancelled:
-          Navigator.of(context)
-              .popUntil(
+          Navigator.of(context).popUntil(
             (route) => route.isFirst,
           );
           break;
@@ -137,7 +167,8 @@ class _SearchingDriverScreenState
   //==========================================================================
   // Build
   //==========================================================================
-    @override
+
+  @override
   Widget build(
     BuildContext context,
   ) {
@@ -155,10 +186,9 @@ class _SearchingDriverScreenState
         automaticallyImplyLeading: false,
       ),
       body: booking.when(
-        loading: () {
+         loading: () {
           return const Center(
-            child:
-                CircularProgressIndicator(),
+            child: CircularProgressIndicator(),
           );
         },
         error: (error, _) {
@@ -170,13 +200,6 @@ class _SearchingDriverScreenState
         },
         data: (Booking? bookingData) {
           if (bookingData == null) {
-            ref
-                .read(
-                  passengerBookingFlowProvider
-                      .notifier,
-                )
-                .clear();
-
             return const Center(
               child: Text(
                 'Booking not found.',
@@ -184,29 +207,7 @@ class _SearchingDriverScreenState
             );
           }
 
-          //==============================================================
-          // Synchronize booking flow
-          //==============================================================
-
-          ref
-              .read(
-                passengerBookingFlowProvider
-                    .notifier,
-              )
-              .update(
-                bookingData,
-              );
-
-          //==============================================================
-          // Automatic navigation
-          //==============================================================
-
-          _handleStatusChange(
-            bookingData,
-          );
-
-          final status =
-              bookingData.status;
+          final status = bookingData.status;
 
           late final String title;
           late final String message;
@@ -214,84 +215,89 @@ class _SearchingDriverScreenState
           late final Color color;
 
           switch (status) {
+            //--------------------------------------------------------------
+            // Pending
+            //--------------------------------------------------------------
+
             case BookingStatus.pending:
-              title =
-                  'Searching for nearby drivers';
+              title = 'Searching for nearby drivers';
               message =
                   'Please wait while we find an available driver.';
-              icon =
-                  Icons.search;
-              color =
-                  Colors.orange;
+              icon = Icons.search;
+              color = Colors.orange;
               break;
+
+            //--------------------------------------------------------------
+            // Driver Assigned
+            //--------------------------------------------------------------
 
             case BookingStatus.driverAssigned:
-              title =
-                  'Driver Assigned';
+              title = 'Driver Assigned';
               message =
                   'A driver has accepted your booking.';
-              icon =
-                  Icons.person_pin_circle;
-              color =
-                  Colors.blue;
+              icon = Icons.person_pin_circle;
+              color = Colors.blue;
               break;
+
+            //--------------------------------------------------------------
+            // Driver Arriving
+            //--------------------------------------------------------------
 
             case BookingStatus.driverArriving:
-              title =
-                  'Driver Arriving';
+              title = 'Driver Arriving';
               message =
                   'Your driver is on the way.';
-              icon =
-                  Icons.directions_car;
-              color =
-                  Colors.green;
+              icon = Icons.directions_car;
+              color = Colors.green;
               break;
+
+            //--------------------------------------------------------------
+            // Trip Started
+            //--------------------------------------------------------------
 
             case BookingStatus.passengerOnBoard:
-              title =
-                  'Trip In Progress';
+              title = 'Trip In Progress';
               message =
-                  'Enjoy your ride.';
-              icon =
-                  Icons.route;
-              color =
-                  Colors.blueAccent;
+                  'Opening trip tracker...';
+              icon = Icons.route;
+              color = Colors.blueAccent;
               break;
+
+            //--------------------------------------------------------------
+            // Completed
+            //--------------------------------------------------------------
 
             case BookingStatus.completed:
-              title =
-                  'Trip Completed';
+              title = 'Trip Completed';
               message =
-                  'Thank you for riding with Voltrike.';
-              icon =
-                  Icons.check_circle;
-              color =
-                  Colors.green;
+                  'Preparing your trip summary...';
+              icon = Icons.check_circle;
+              color = Colors.green;
               break;
 
+            //--------------------------------------------------------------
+            // Cancelled
+            //--------------------------------------------------------------
+
             case BookingStatus.cancelled:
-              title =
-                  'Booking Cancelled';
+              title = 'Booking Cancelled';
               message =
                   'This booking has been cancelled.';
-              icon =
-                  Icons.cancel;
-              color =
-                  Colors.red;
+              icon = Icons.cancel;
+              color = Colors.red;
               break;
           }
 
           return SafeArea(
             child: Padding(
-              padding:
-                  const EdgeInsets.all(
+              padding: const EdgeInsets.all(
                 24,
               ),
               child: Column(
                 mainAxisAlignment:
                     MainAxisAlignment.center,
                 children: [
-                                    if (status ==
+                  if (status ==
                       BookingStatus.pending)
                     const CircularProgressIndicator()
                   else
@@ -307,10 +313,8 @@ class _SearchingDriverScreenState
 
                   Text(
                     title,
-                    textAlign:
-                        TextAlign.center,
-                    style:
-                        const TextStyle(
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
                       fontSize: 22,
                       fontWeight:
                           FontWeight.bold,
@@ -323,10 +327,8 @@ class _SearchingDriverScreenState
 
                   Text(
                     message,
-                    textAlign:
-                        TextAlign.center,
-                    style:
-                        const TextStyle(
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
                       color: Colors.grey,
                       fontSize: 16,
                     ),
@@ -342,14 +344,11 @@ class _SearchingDriverScreenState
                       size: 18,
                       color: Colors.white,
                     ),
-                    backgroundColor:
-                        color,
+                    backgroundColor: color,
                     label: Text(
                       status.name,
-                      style:
-                          const TextStyle(
-                        color:
-                            Colors.white,
+                      style: const TextStyle(
+                        color: Colors.white,
                         fontWeight:
                             FontWeight.w600,
                       ),
@@ -361,50 +360,52 @@ class _SearchingDriverScreenState
                   if (status ==
                       BookingStatus.pending)
                     SizedBox(
-                      width:
-                          double.infinity,
+                      width: double.infinity,
                       child:
                           OutlinedButton.icon(
                         onPressed: () async {
-  final messenger = ScaffoldMessenger.of(context);
-  final navigator = Navigator.of(context);
+                          final messenger =
+                              ScaffoldMessenger.of(
+                            context,
+                          );
 
-  try {
-    await ref
-        .read(
-          bookingControllerProvider.notifier,
-        )
-        .cancelBooking(
-          widget.bookingId,
-        );
+                          final navigator =
+                              Navigator.of(
+                            context,
+                          );
 
-    ref
-        .read(
-          passengerBookingFlowProvider.notifier,
-        )
-        .clear();
+                          try {
+                            await ref
+                                .read(
+                                  bookingControllerProvider
+                                      .notifier,
+                                )
+                                .cancelBooking(
+                                  widget.bookingId,
+                                );
 
-    if (!mounted) {
-      return;
-    }
+                            if (!mounted) {
+                              return;
+                            }
 
-    navigator.popUntil(
-      (route) => route.isFirst,
-    );
-  } catch (e) {
-    if (!mounted) {
-      return;
-    }
+                            navigator.popUntil(
+                              (route) =>
+                                  route.isFirst,
+                            );
+                          } catch (e) {
+                            if (!mounted) {
+                              return;
+                            }
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Failed to cancel booking: $e',
-        ),
-      ),
-    );
-  }
-},
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Failed to cancel booking: $e',
+                                ),
+                              ),
+                            );
+                          }
+                        },
                         icon: const Icon(
                           Icons.close,
                         ),

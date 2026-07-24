@@ -39,8 +39,7 @@ class NavigationService {
   //==========================================================================
 
   Future<Position> currentLocation() async {
-    return await Geolocator
-        .getCurrentPosition();
+    return await Geolocator.getCurrentPosition();
   }
 
   //==========================================================================
@@ -48,8 +47,7 @@ class NavigationService {
   //==========================================================================
 
   Stream<Position> get locationStream {
-    return LocationService.instance
-        .locationStream;
+    return LocationService.instance.locationStream;
   }
 
   //==========================================================================
@@ -58,9 +56,7 @@ class NavigationService {
 
   Future<void> startNavigation() async {
     await ensurePermission();
-
-    await LocationService.instance
-        .startTracking();
+    await LocationService.instance.startTracking();
   }
 
   //==========================================================================
@@ -68,8 +64,7 @@ class NavigationService {
   //==========================================================================
 
   Future<void> stopNavigation() {
-    return LocationService.instance
-        .stopTracking();
+    return LocationService.instance.stopTracking();
   }
 
   //==========================================================================
@@ -79,24 +74,34 @@ class NavigationService {
   Future<Map<String, dynamic>?> computeRoute({
     required LatLng origin,
     required LatLng destination,
-  }) {
-    return RoutesService.computeRoute(
+  }) async {
+    final route = await RoutesService.computeRoute(
       origin: origin,
       destination: destination,
     );
+
+    if (route == null) {
+      return null;
+    }
+
+    return {
+      'distanceMeters': route.distanceMeters,
+      'distanceKm': route.distanceKm,
+      'duration': '${route.durationMinutes} mins',
+      'durationMinutes': route.durationMinutes,
+      'encodedPolyline': route.encodedPolyline,
+    };
   }
 
   //==========================================================================
   // Traffic Route
   //==========================================================================
 
-  Future<Map<String, dynamic>?>
-      computeTrafficRoute({
+  Future<Map<String, dynamic>?> computeTrafficRoute({
     required LatLng origin,
     required LatLng destination,
   }) {
-    return TrafficService
-        .getTrafficRoute(
+    return TrafficService.getTrafficRoute(
       origin: origin,
       destination: destination,
     );
@@ -109,8 +114,7 @@ class NavigationService {
   List<LatLng> decodePolyline(
     String encodedPolyline,
   ) {
-    return PolylineService
-        .decodePolyline(
+    return PolylineService.decodePolyline(
       encodedPolyline,
     );
   }
@@ -122,17 +126,14 @@ class NavigationService {
   Future<LatLng?> snapToRoad(
     LatLng position,
   ) {
-    return RoadsService.snapToRoad(
-      position,
-    );
+    return RoadsService.snapToRoad(position);
   }
 
   //==========================================================================
   // Recalculate Route
   //==========================================================================
 
-  Future<Map<String, dynamic>?>
-      recalculateRoute({
+  Future<Map<String, dynamic>?> recalculateRoute({
     required LatLng origin,
     required LatLng destination,
   }) {
@@ -149,25 +150,33 @@ class NavigationService {
   int distanceMeters(
     Map<String, dynamic> route,
   ) {
-    return (route['distanceMeters']
-            as int?) ??
-        0;
+    return route['distanceMeters'] as int? ?? 0;
+  }
+
+  double distanceKm(
+    Map<String, dynamic> route,
+  ) {
+    return (route['distanceKm'] as num?)?.toDouble() ??
+        (distanceMeters(route) / 1000.0);
+  }
+
+  int durationMinutes(
+    Map<String, dynamic> route,
+  ) {
+    return route['durationMinutes'] as int? ?? 0;
   }
 
   String duration(
     Map<String, dynamic> route,
   ) {
-    return (route['duration']
-            as String?) ??
-        '';
+    return route['duration'] as String? ??
+        '${durationMinutes(route)} mins';
   }
 
   String encodedPolyline(
     Map<String, dynamic> route,
   ) {
-    return (route['encodedPolyline']
-            as String?) ??
-        '';
+    return route['encodedPolyline'] as String? ?? '';
   }
 
   //==========================================================================

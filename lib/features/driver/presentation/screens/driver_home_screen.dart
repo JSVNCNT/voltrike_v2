@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/app/routes.dart';
 
 import '../../../../core/services/navigation_service.dart';
 
@@ -154,95 +156,89 @@ void dispose() {
   super.dispose();
 }
 
-  //==========================================================================
-  // Driver Actions
-  //==========================================================================
-  Future<void> _acceptBooking() async {
-    final booking = ref.read(
-      driverCurrentBookingProvider,
-    );
+ //==========================================================================
+// Driver Actions
+//==========================================================================
 
-    if (booking == null) {
-      return;
-    }
+Future<void> _acceptBooking() async {
+  final booking = ref.read(
+    driverCurrentBookingProvider,
+  );
 
-    await ref
-        .read(
-          driverBookingControllerProvider
-              .notifier,
-        )
-        .acceptBooking(
-          booking,
-        );
-
-    ref
-        .read(
-          driverTripProvider.notifier,
-        )
-        .bookingAccepted();
-
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Booking accepted.',
-        ),
-      ),
-    );
+  if (booking == null) {
+    return;
   }
 
-  Future<void> _declineBooking() async {
-    final booking = ref.read(
-      driverCurrentBookingProvider,
-    );
+  await ref
+      .read(
+        driverBookingControllerProvider.notifier,
+      )
+      .acceptBooking(
+        booking,
+      );
 
-    if (booking == null) {
-      return;
-    }
+  ref
+      .read(
+        driverTripProvider.notifier,
+      )
+      .bookingAccepted();
 
-    await ref
-        .read(
-          driverBookingControllerProvider
-              .notifier,
-        )
-        .declineBooking(
-          booking,
-        );
-
-    ref
-        .read(
-          driverCurrentBookingProvider
-              .notifier,
-        )
-        .clearBooking();
-
-    ref
-        .read(
-          driverTripProvider.notifier,
-        )
-        .waitingBooking();
-
-    if (mounted) {
-      setState(() {
-        _routePoints.clear();
-      });
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Booking declined.',
-        ),
-      ),
-    );
+  if (!mounted) {
+    return;
   }
+
+  context.go(
+    AppRoutes.driverBookingTracking,
+  );
+}
+
+Future<void> _declineBooking() async {
+  final booking = ref.read(
+    driverCurrentBookingProvider,
+  );
+
+  if (booking == null) {
+    return;
+  }
+
+  await ref
+      .read(
+        driverBookingControllerProvider.notifier,
+      )
+      .declineBooking(
+        booking,
+      );
+
+  ref
+      .read(
+        driverCurrentBookingProvider.notifier,
+      )
+      .clearBooking();
+
+  ref
+      .read(
+        driverTripProvider.notifier,
+      )
+      .waitingBooking();
+
+  if (mounted) {
+    setState(() {
+      _routePoints.clear();
+    });
+  }
+
+  if (!mounted) {
+    return;
+  }
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text(
+        'Booking declined.',
+      ),
+    ),
+  );
+}
 
   //==========================================================================
   // Navigation
@@ -437,6 +433,14 @@ void dispose() {
         .completeTrip(
           booking,
         );
+
+        if (!mounted) {
+  return;
+}
+
+context.go(
+  AppRoutes.driverHome,
+);
 
     ref
         .read(

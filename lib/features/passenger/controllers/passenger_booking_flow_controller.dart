@@ -5,24 +5,26 @@ import '../../../data/models/booking.dart';
 /// ===========================================================================
 /// Passenger Booking Flow Controller
 ///
-/// Determines the current passenger booking flow based on the
-/// Firestore booking status.
+/// Stores the current booking status for the passenger.
 ///
-/// Used by:
-/// • SearchingDriverScreen
-/// • Passenger Home
-/// • Future Driver Tracking
+/// This provider should only be updated from listeners, controllers,
+/// or user actions—not during a widget's build method.
 /// ===========================================================================
 class PassengerBookingFlowController
     extends StateNotifier<BookingStatus?> {
-  PassengerBookingFlowController()
-      : super(null);
+  PassengerBookingFlowController() : super(null);
 
-  void update(Booking? booking) {
-    state = booking?.status;
+  /// Updates the current booking status.
+  void updateStatus(BookingStatus? status) {
+    if (state == status) return;
+
+    state = status;
   }
 
+  /// Clears the current booking status.
   void clear() {
+    if (state == null) return;
+
     state = null;
   }
 }
@@ -31,6 +33,5 @@ final passengerBookingFlowProvider =
     StateNotifierProvider<
         PassengerBookingFlowController,
         BookingStatus?>(
-  (ref) =>
-      PassengerBookingFlowController(),
+  (ref) => PassengerBookingFlowController(),
 );

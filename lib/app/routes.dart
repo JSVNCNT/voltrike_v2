@@ -102,6 +102,9 @@ class AppRoutes {
 static const String driverHome =
     '/driver';
 
+static const driverBookingTracking =
+'/driver/booking-tracking';
+
 static const String driverDashboard =
     '/driver/dashboard';
 

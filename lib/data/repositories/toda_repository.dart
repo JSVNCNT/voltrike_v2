@@ -83,6 +83,28 @@ class TodaRepository {
   }
 
   //==========================================================================
+  // Get TODA
+  //==========================================================================
+
+  Future<Toda?> getToda(
+    String id,
+  ) async {
+    final snapshot = await _collection
+        .doc(id)
+        .get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return Toda.fromMap({
+      'id': snapshot.id,
+      ...snapshot.data()!,
+    });
+  }
+
+  
+  //==========================================================================
   // Create TODA
   //==========================================================================
 

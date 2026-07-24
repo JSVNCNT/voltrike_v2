@@ -4,43 +4,35 @@ import '../../../data/models/booking.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/booking_repository.dart';
 import '../../../data/repositories/driver_repository.dart';
+import '../../../data/repositories/toda_repository.dart';
+import '../../../data/repositories/user_repository.dart';
+import '../../../data/repositories/vehicle_repository.dart';
 
 /// ===========================================================================
 /// Driver Booking Controller
-///
-/// Handles the driver's booking lifecycle.
-///
-/// Flow:
-///
-/// Offline
-///     ↓
-/// Online
-///     ↓
-/// Listen for Bookings
-///     ↓
-/// Accept / Decline
-///     ↓
-/// Arrived
-///     ↓
-/// Start Trip
-///     ↓
-/// Complete Trip
-///     ↓
-/// Back Online
 /// ===========================================================================
 class DriverBookingController
     extends StateNotifier<AsyncValue<void>> {
   DriverBookingController({
     required BookingRepository bookingRepository,
     required DriverRepository driverRepository,
+    required UserRepository userRepository,
+    required VehicleRepository vehicleRepository,
+    required TodaRepository todaRepository,
     required AuthRepository authRepository,
   })  : _bookingRepository = bookingRepository,
         _driverRepository = driverRepository,
+        _userRepository = userRepository,
+        _vehicleRepository = vehicleRepository,
+        _todaRepository = todaRepository,
         _authRepository = authRepository,
         super(const AsyncData(null));
 
   final BookingRepository _bookingRepository;
   final DriverRepository _driverRepository;
+  final UserRepository _userRepository;
+  final VehicleRepository _vehicleRepository;
+  final TodaRepository _todaRepository;
   final AuthRepository _authRepository;
 
   //==========================================================================
@@ -51,21 +43,18 @@ class DriverBookingController
     state = const AsyncLoading();
 
     try {
-      final driver =
-          _authRepository.currentUser;
+      final firebaseUser = _authRepository.currentUser;
 
-      if (driver == null) {
-        throw Exception(
-          'No authenticated driver.',
-        );
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
       }
 
       await _driverRepository.goOnline(
-        driver.uid,
+        firebaseUser.uid,
       );
 
       await _driverRepository.setAvailable(
-        uid: driver.uid,
+        uid: firebaseUser.uid,
         available: true,
       );
 
@@ -84,17 +73,14 @@ class DriverBookingController
     state = const AsyncLoading();
 
     try {
-      final driver =
-          _authRepository.currentUser;
+      final firebaseUser = _authRepository.currentUser;
 
-      if (driver == null) {
-        throw Exception(
-          'No authenticated driver.',
-        );
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
       }
 
       await _driverRepository.goOffline(
-        driver.uid,
+        firebaseUser.uid,
       );
 
       state = const AsyncData(null);
@@ -118,22 +104,58 @@ class DriverBookingController
     state = const AsyncLoading();
 
     try {
-      final driver =
-          _authRepository.currentUser;
+      final firebaseUser = _authRepository.currentUser;
+
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
+      }
+
+      final driver = await _driverRepository.getDriver(
+        firebaseUser.uid,
+      );
 
       if (driver == null) {
-        throw Exception(
-          'No authenticated driver.',
-        );
+        throw Exception('Driver record not found.');
+      }
+
+      final appUser = await _userRepository.getUser(
+        firebaseUser.uid,
+      );
+
+      if (appUser == null) {
+        throw Exception('User record not found.');
+      }
+
+      final vehicle =
+          await _vehicleRepository.getVehicle(
+        driver.vehicleId,
+      );
+
+      if (vehicle == null) {
+        throw Exception('Vehicle not found.');
+      }
+
+      final toda = await _todaRepository.getToda(
+        driver.todaId,
+      );
+
+      if (toda == null) {
+        throw Exception('TODA not found.');
       }
 
       await _bookingRepository.assignDriver(
         bookingId: booking.bookingId,
-        driverId: driver.uid,
+        driverId: firebaseUser.uid,
+        driverName: appUser.fullName,
+        driverPhotoUrl: appUser.profileImage,
+        driverRating: driver.rating,
+        vehicleNumber: vehicle.vehicleNumber,
+        plateNumber: vehicle.plateNumber,
+        todaName: toda.name,
       );
 
       await _driverRepository.assignBooking(
-        uid: driver.uid,
+        uid: firebaseUser.uid,
         bookingId: booking.bookingId,
       );
 
@@ -170,7 +192,7 @@ class DriverBookingController
     }
   }
 
-  //==========================================================================
+   //==========================================================================
   // Trip Lifecycle
   //==========================================================================
 
@@ -224,10 +246,10 @@ class DriverBookingController
     state = const AsyncLoading();
 
     try {
-      final driver =
+      final firebaseUser =
           _authRepository.currentUser;
 
-      if (driver == null) {
+      if (firebaseUser == null) {
         throw Exception(
           'No authenticated driver.',
         );
@@ -238,7 +260,7 @@ class DriverBookingController
       );
 
       await _driverRepository.clearBooking(
-        driver.uid,
+        firebaseUser.uid,
       );
 
       state = const AsyncData(null);
@@ -262,10 +284,10 @@ class DriverBookingController
     state = const AsyncLoading();
 
     try {
-      final driver =
+      final firebaseUser =
           _authRepository.currentUser;
 
-      if (driver == null) {
+      if (firebaseUser == null) {
         throw Exception(
           'No authenticated driver.',
         );
@@ -276,7 +298,7 @@ class DriverBookingController
       );
 
       await _driverRepository.clearBooking(
-        driver.uid,
+        firebaseUser.uid,
       );
 
       state = const AsyncData(null);

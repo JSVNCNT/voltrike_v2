@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
+import '../../data/models/route_info.dart';
 import '../config/api_keys.dart';
 
 class RoutesService {
@@ -13,22 +14,17 @@ class RoutesService {
 
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        'X-Goog-Api-Key':
-            ApiKeys.googleMapsApiKey,
+        'X-Goog-Api-Key': ApiKeys.googleMapsApiKey,
         'X-Goog-FieldMask':
             'routes.distanceMeters,'
             'routes.duration,'
-            'routes.polyline.encodedPolyline,'
-            'routes.legs,'
-            'routes.travelAdvisory',
+            'routes.polyline.encodedPolyline',
       };
 
   /// ==========================================================================
   /// Compute Route
   /// ==========================================================================
-
-  static Future<Map<String, dynamic>?>
-      computeRoute({
+  static Future<RouteInfo?> computeRoute({
     required LatLng origin,
     required LatLng destination,
   }) async {
@@ -53,9 +49,8 @@ class RoutesService {
           },
         },
         'travelMode': 'DRIVE',
-        'routingPreference':
-            'TRAFFIC_AWARE',
-        'computeAlternativeRoutes': true,
+        'routingPreference': 'TRAFFIC_AWARE',
+        'computeAlternativeRoutes': false,
       }),
     );
 
@@ -63,28 +58,41 @@ class RoutesService {
       return null;
     }
 
-    final data =
-        jsonDecode(response.body);
+    final json =
+        jsonDecode(response.body) as Map<String, dynamic>;
 
-    if (data['routes'] == null ||
-        data['routes'].isEmpty) {
+    final routes = json['routes'] as List?;
+
+    if (routes == null || routes.isEmpty) {
       return null;
     }
 
-    final route = data['routes'][0];
+    final route =
+        routes.first as Map<String, dynamic>;
 
-    return {
-      'distanceMeters':
-          route['distanceMeters'] ?? 0,
+    final distanceMeters =
+        route['distanceMeters'] as int? ?? 0;
 
-      'duration':
-          route['duration'] ?? '',
+    final durationString =
+        route['duration'] as String? ?? '0s';
 
-      'encodedPolyline':
-          route['polyline']
-              ['encodedPolyline'],
+    final durationSeconds = int.tryParse(
+          durationString.replaceAll('s', ''),
+        ) ??
+        0;
 
-      'raw': route,
-    };
+    final encodedPolyline =
+        (route['polyline']
+                as Map<String, dynamic>)['encodedPolyline']
+            as String? ??
+        '';
+
+    return RouteInfo(
+      distanceMeters: distanceMeters,
+      distanceKm: distanceMeters / 1000,
+      durationMinutes:
+          (durationSeconds / 60).ceil(),
+      encodedPolyline: encodedPolyline,
+    );
   }
 }
