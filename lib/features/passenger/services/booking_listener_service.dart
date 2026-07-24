@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../data/models/booking.dart';
@@ -26,13 +28,27 @@ class BookingListenerService {
         .snapshots()
         .map(
       (snapshot) {
+        developer.log(
+          'Snapshot received for booking: $bookingId',
+          name: 'BookingListenerService',
+        );
+
         if (!snapshot.exists) {
+          developer.log(
+            'Booking not found.',
+            name: 'BookingListenerService',
+          );
           return null;
         }
 
-        return Booking.fromFirestore(
-          snapshot,
+        final booking = Booking.fromFirestore(snapshot);
+
+        developer.log(
+          'Booking status: ${booking.status}',
+          name: 'BookingListenerService',
         );
+
+        return booking;
       },
     );
   }

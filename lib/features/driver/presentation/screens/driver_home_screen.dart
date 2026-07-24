@@ -13,10 +13,12 @@ import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../providers/driver_booking_provider.dart';
 import '../../providers/driver_booking_listener_provider.dart';
 import '../../providers/driver_current_booking_provider.dart';
+import '../../providers/driver_incoming_booking_provider.dart';
 import '../../providers/driver_location_controller_provider.dart';
 import '../../providers/driver_location_provider.dart';
 import '../../providers/driver_status_provider.dart';
 import '../../providers/driver_trip_provider.dart';
+import '../../providers/driver_current_booking_listener_provider.dart';
 
 import '../widgets/booking_request_card.dart';
 import '../widgets/driver_bottom_sheet.dart';
@@ -162,7 +164,7 @@ void dispose() {
 
 Future<void> _acceptBooking() async {
   final booking = ref.read(
-    driverCurrentBookingProvider,
+    driverIncomingBookingProvider,
   );
 
   if (booking == null) {
@@ -176,6 +178,22 @@ Future<void> _acceptBooking() async {
       .acceptBooking(
         booking,
       );
+
+  // Start listening to the accepted booking.
+  ref
+      .read(
+        driverCurrentBookingListenerProvider,
+      )
+      .startListening(
+        booking.bookingId,
+      );
+
+  // Remove the pending booking.
+  ref
+      .read(
+        driverIncomingBookingProvider.notifier,
+      )
+      .clearBooking();
 
   ref
       .read(
@@ -194,7 +212,7 @@ Future<void> _acceptBooking() async {
 
 Future<void> _declineBooking() async {
   final booking = ref.read(
-    driverCurrentBookingProvider,
+    driverIncomingBookingProvider,
   );
 
   if (booking == null) {
@@ -211,7 +229,7 @@ Future<void> _declineBooking() async {
 
   ref
       .read(
-        driverCurrentBookingProvider.notifier,
+        driverIncomingBookingProvider.notifier,
       )
       .clearBooking();
 
@@ -475,89 +493,95 @@ context.go(
   }
 
   //==========================================================================
-  // UI
-  //==========================================================================
+// UI
+//==========================================================================
 
-  @override
-  Widget build(
-    BuildContext context,
-  ) {
-    final booking = ref.watch(
-      driverCurrentBookingProvider,
-    );
+@override
+Widget build(
+  BuildContext context,
+) {
+  final incomingBooking = ref.watch(
+    driverIncomingBookingProvider,
+  );
 
-    final driverLocation = ref.watch(
-      driverLocationProvider,
-    );
+  final currentBooking = ref.watch(
+    driverCurrentBookingProvider,
+  );
 
-    final driverStatus = ref.watch(
-      driverStatusProvider,
-    );
+  final driverLocation = ref.watch(
+    driverLocationProvider,
+  );
 
-    final tripStatus = ref.watch(
-      driverTripProvider,
-    );
+  final driverStatus = ref.watch(
+    driverStatusProvider,
+  );
 
-    final hasBooking =
-        booking != null;
+  final tripStatus = ref.watch(
+    driverTripProvider,
+  );
 
-    return Scaffold(
-      appBar: const AppAppBar(
-        title: 'Driver',
-        showNotifications: true,
-      ),
-      body: Stack(
-        children: [
-          //------------------------------------------------------------------
-          // Map
-          //------------------------------------------------------------------
+  final hasIncomingBooking =
+      incomingBooking != null;
 
-          Positioned.fill(
-            child: DriverMapView(
-              driverLocation:
-                  driverLocation,
-              pickupLocation:
-                  booking?.pickup,
-              destinationLocation:
-                  booking?.destination,
-              routePoints:
-                  _routePoints,
-            ),
+  final hasCurrentBooking =
+      currentBooking != null;
+
+  // Booking shown in the bottom sheet.
+  // Before acceptance -> incoming booking.
+  // After acceptance -> active booking.
+  final displayBooking =
+      currentBooking ?? incomingBooking;
+
+  return Scaffold(
+    appBar: const AppAppBar(
+      title: 'Driver',
+      showNotifications: true,
+    ),
+    body: Stack(
+      children: [
+        //------------------------------------------------------------------
+        // Map
+        //------------------------------------------------------------------
+
+        Positioned.fill(
+          child: DriverMapView(
+            driverLocation:
+                driverLocation,
+            pickupLocation:
+                currentBooking?.pickup,
+            destinationLocation:
+                currentBooking?.destination,
+            routePoints:
+                _routePoints,
           ),
+        ),
 
           //------------------------------------------------------------------
           // Incoming Booking Card
           //------------------------------------------------------------------
 
-          if (hasBooking &&
+                    if (hasIncomingBooking &&
               tripStatus ==
-                  DriverTripStatus
-                      .bookingReceived)
+                  DriverTripStatus.bookingReceived)
             Positioned(
               top: 16,
               left: 16,
               right: 16,
-              child:
-                  BookingRequestCard(
+              child: BookingRequestCard(
                 passengerName:
-                    booking.passengerId,
+                    incomingBooking.passengerId,
                 pickupAddress:
-                    booking
-                        .pickupAddress,
+                    incomingBooking.pickupAddress,
                 destinationAddress:
-                    booking
-                        .destinationAddress,
+                    incomingBooking.destinationAddress,
                 estimatedFare:
-                    '₱${booking.estimatedFare.toStringAsFixed(2)}',
+                    '₱${incomingBooking.estimatedFare.toStringAsFixed(2)}',
                 distance:
-                    '${booking.distanceMeters} m',
-                onAccept:
-                    _acceptBooking,
-                onDecline:
-                    _declineBooking,
+                    '${incomingBooking.distanceMeters} m',
+                onAccept: _acceptBooking,
+                onDecline: _declineBooking,
               ),
             ),
-
           //------------------------------------------------------------------
           // Bottom Sheet
           //------------------------------------------------------------------
@@ -565,65 +589,60 @@ context.go(
           Align(
             alignment:
                 Alignment.bottomCenter,
-            child:
-                DriverBottomSheet(
+            child: DriverBottomSheet(
               isOnline:
                   driverStatus !=
-                      DriverStatus
-                          .offline,
+                      DriverStatus.offline,
 
               passengerName:
-                  booking
-                      ?.passengerId,
+                  displayBooking?.passengerId,
 
               pickupAddress:
-                  booking
-                      ?.pickupAddress,
+                  displayBooking?.pickupAddress,
 
               destinationAddress:
-                  booking
-                      ?.destinationAddress,
+                  displayBooking?.destinationAddress,
 
               estimatedFare:
-                  booking == null
+                  displayBooking == null
                       ? null
-                      : '₱${booking.estimatedFare.toStringAsFixed(2)}',
+                      : '₱${displayBooking.estimatedFare.toStringAsFixed(2)}',
 
               distance:
-                  booking == null
+                  displayBooking == null
                       ? null
-                      : '${booking.distanceMeters} m',
+                      : '${displayBooking.distanceMeters} m',
 
               onOnlineChanged:
                   _toggleOnline,
 
               onAcceptBooking:
-                  hasBooking
+                  hasIncomingBooking
                       ? _acceptBooking
                       : null,
 
               onDeclineBooking:
-                  hasBooking
+                  hasIncomingBooking
                       ? _declineBooking
                       : null,
 
               onNavigate:
-                  hasBooking
+                  hasCurrentBooking
                       ? _navigateToPickup
                       : null,
 
               onArrived:
-                  hasBooking
+                  hasCurrentBooking
                       ? _arrived
                       : null,
 
               onStartTrip:
-                  hasBooking
+                  hasCurrentBooking
                       ? _startTrip
                       : null,
 
               onCompleteTrip:
-                  hasBooking
+                  hasCurrentBooking
                       ? _completeTrip
                       : null,
             ),

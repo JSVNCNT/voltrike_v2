@@ -1,22 +1,23 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/booking.dart';
 import '../../../data/repositories/booking_repository.dart';
-import '../providers/driver_current_booking_provider.dart';
+import '../providers/driver_incoming_booking_provider.dart';
 import '../providers/driver_trip_provider.dart';
 
 /// ===========================================================================
 /// Driver Booking Listener
 ///
-/// Listens for nearby pending bookings and updates the driver state.
+/// Responsibility:
+/// • Listen for nearby pending bookings.
+/// • Store the incoming booking.
+/// • Notify the UI that a booking request exists.
 ///
-/// Future:
-/// • Filter by TODA
-/// • Filter by geofence
-/// • Filter by driver availability
-/// • Filter by booking distance
+/// This listener DOES NOT manage active bookings.
+/// Active bookings are handled by DriverCurrentBookingListener.
 /// ===========================================================================
 class DriverBookingListener {
   DriverBookingListener({
@@ -35,17 +36,40 @@ class DriverBookingListener {
   //==========================================================================
 
   void startListening() {
+    developer.log(
+      'Starting pending booking listener...',
+      name: 'DriverBookingListener',
+    );
+
     _subscription?.cancel();
 
-    _subscription =
-        _bookingRepository
-            .watchPendingBookings()
-            .listen(
+    _subscription = _bookingRepository
+        .watchPendingBookings()
+        .listen(
       (bookings) {
+        developer.log(
+          '========================',
+          name: 'DriverBookingListener',
+        );
+
+        developer.log(
+          'Pending bookings: ${bookings.length}',
+          name: 'DriverBookingListener',
+        );
+
+        //----------------------------------------------------------------------
+        // No pending bookings
+        //----------------------------------------------------------------------
+
         if (bookings.isEmpty) {
+          developer.log(
+            'No pending bookings.',
+            name: 'DriverBookingListener',
+          );
+
           _ref
               .read(
-                driverCurrentBookingProvider.notifier,
+                driverIncomingBookingProvider.notifier,
               )
               .clearBooking();
 
@@ -55,18 +79,55 @@ class DriverBookingListener {
               )
               .waitingBooking();
 
+          developer.log(
+            'Trip state -> waitingBooking',
+            name: 'DriverBookingListener',
+          );
+
           return;
         }
 
+        //----------------------------------------------------------------------
+        // Incoming booking
+        //----------------------------------------------------------------------
+
         final booking = bookings.first;
+
+        developer.log(
+          'Incoming booking received.',
+          name: 'DriverBookingListener',
+        );
+
+        developer.log(
+          'Booking ID : ${booking.bookingId}',
+          name: 'DriverBookingListener',
+        );
+
+        developer.log(
+          'Status     : ${booking.status}',
+          name: 'DriverBookingListener',
+        );
+
+        developer.log(
+          'Passenger  : ${booking.passengerId}',
+          name: 'DriverBookingListener',
+        );
+
+        developer.log(
+          'Saving booking to IncomingBookingProvider...',
+          name: 'DriverBookingListener',
+        );
 
         _ref
             .read(
-              driverCurrentBookingProvider.notifier,
+              driverIncomingBookingProvider.notifier,
             )
-            .setBooking(
-              booking,
-            );
+            .setBooking(booking);
+
+        developer.log(
+          'Updating trip state -> bookingReceived',
+          name: 'DriverBookingListener',
+        );
 
         _ref
             .read(
@@ -82,8 +143,19 @@ class DriverBookingListener {
   //==========================================================================
 
   Future<void> stopListening() async {
+    developer.log(
+      'Stopping pending booking listener...',
+      name: 'DriverBookingListener',
+    );
+
     await _subscription?.cancel();
     _subscription = null;
+
+    _ref
+        .read(
+          driverIncomingBookingProvider.notifier,
+        )
+        .clearBooking();
   }
 
   //==========================================================================

@@ -8,6 +8,7 @@ import '../../../data/repositories/user_repository.dart';
 import '../../../data/repositories/vehicle_repository.dart';
 
 import '../controllers/driver_booking_controller.dart';
+import 'driver_current_booking_listener_provider.dart';
 
 /// ===========================================================================
 /// Booking Repository Provider
@@ -91,6 +92,14 @@ final driverBookingControllerProvider =
       authRepository: ref.read(
         driverAuthRepositoryProvider,
       ),
+
+      // NEW
+      currentBookingListener: ref.read(
+        driverCurrentBookingListenerProvider,
+      ),
+
+      // NEW
+      ref: ref,
     );
   },
 );
