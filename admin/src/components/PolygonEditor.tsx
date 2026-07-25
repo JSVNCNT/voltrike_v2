@@ -10,6 +10,7 @@ interface Props {
   onFinish?: () => void;
   disabled?: boolean;
   maxPoints?: number;
+  geometryMode?: 'polygon' | 'polyline';
 }
 
 const bacolod: Point = [122.9511, 10.6765];
@@ -21,20 +22,23 @@ interface SearchResult {
   coordinates: Point;
 }
 
-function zoneData(points: Point[]): GeoJSON.FeatureCollection {
+function zoneData(points: Point[], geometryMode: 'polygon' | 'polyline'): GeoJSON.FeatureCollection {
   const polygon = [...points, points[0]];
   return {
     type: 'FeatureCollection',
     features: [
-      ...(points.length >= 3
+      ...(geometryMode === 'polygon' && points.length >= 3
           ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [polygon] } }]
+          : []),
+      ...(geometryMode === 'polyline' && points.length >= 2
+          ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: points } }]
           : []),
       ...points.map((point) => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: point } })),
     ],
   } as GeoJSON.FeatureCollection;
 }
 
-export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints = 4 }: Props) {
+export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints = 200, geometryMode = 'polygon' }: Props) {
   const element = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const latest = useRef(points);
@@ -60,9 +64,9 @@ export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
     map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
     map.on('load', () => {
-      map.addSource('zone', { type: 'geojson', data: zoneData(latest.current) });
+      map.addSource('zone', { type: 'geojson', data: zoneData(latest.current, geometryMode) });
       map.addLayer({ id: 'zone-fill', type: 'fill', source: 'zone', paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.25 } });
-      map.addLayer({ id: 'zone-line', type: 'line', source: 'zone', paint: { 'line-color': '#ef4444', 'line-width': 3 } });
+      map.addLayer({ id: 'zone-line', type: 'line', source: 'zone', paint: { 'line-color': '#ef4444', 'line-width': geometryMode === 'polyline' ? 6 : 3, 'line-opacity': 0.95 } });
       map.addLayer({ id: 'zone-points', type: 'circle', source: 'zone', paint: { 'circle-color': '#ffffff', 'circle-stroke-color': '#ef4444', 'circle-stroke-width': 3, 'circle-radius': 6 } });
     });
     map.on('click', (event) => {
@@ -71,26 +75,27 @@ export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints 
       }
     });
     return () => { searchMarker.current?.remove(); map.remove(); };
-  }, [disabled, maxPoints, onChange]);
+  }, [disabled, geometryMode, maxPoints, onChange]);
 
   useEffect(() => {
     const map = mapRef.current;
     const source = map?.getSource('zone') as mapboxgl.GeoJSONSource | undefined;
     if (!source) return;
-    source.setData(zoneData(points));
-  }, [points]);
+    source.setData(zoneData(points, geometryMode));
+  }, [geometryMode, points]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const tag = (event.target as HTMLElement | null)?.tagName;
-      if (event.key === 'Enter' && points.length >= 3 && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag || '')) {
+      const minimumPoints = geometryMode === 'polyline' ? 2 : 3;
+      if (event.key === 'Enter' && points.length >= minimumPoints && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag || '')) {
         event.preventDefault();
         onFinish?.();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onFinish, points.length]);
+  }, [geometryMode, onFinish, points.length]);
 
   async function search(event: FormEvent) {
     event.preventDefault();

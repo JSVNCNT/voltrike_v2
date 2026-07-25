@@ -37,7 +37,7 @@ export const adminApi = {
   submitZone: (todaId: string, polygon: [number, number][], notes: string) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes }),
   reviewZone: (zoneRequestId: string, status: string) => call<{ updated: boolean }>('adminReviewZoneRequest', { zoneRequestId, status }),
   updateZone: (zoneRequestId: string, polygon: [number, number][], notes: string) => call<{ updated: boolean }>('adminUpdateZoneRequest', { zoneRequestId, polygon, notes }),
-  createRouteRestriction: (name: string, type: RouteRestriction['type'], polygon: [number, number][], notes: string) => call<{ restrictionId: string }>('adminCreateRouteRestriction', { name, type, polygon, notes }),
+  createRouteRestriction: (name: string, type: RouteRestriction['type'], geometryType: 'polygon' | 'corridor', polygon: [number, number][], bufferMeters: number, notes: string) => call<{ restrictionId: string }>('adminCreateRouteRestriction', { name, type, geometryType, polygon, bufferMeters, notes }),
   setRouteRestrictionStatus: (restrictionId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetRouteRestrictionStatus', { restrictionId, isActive }),
   async todas(): Promise<Toda[]> {
     const snapshot = await getDocs(query(collection(db, 'todas'), orderBy('name')));

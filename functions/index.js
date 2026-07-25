@@ -423,13 +423,18 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
   if (!['prohibited_highway', 'no_service_area', 'restricted_crossing'].includes(type)) {
     throw new HttpsError('invalid-argument', 'Unsupported restriction type.');
   }
-  const polygon = request.data?.polygon;
-  if (!Array.isArray(polygon) || polygon.length < 3 || polygon.length > 4 ||
-      !polygon.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
-    throw new HttpsError('invalid-argument', 'A three- or four-point polygon is required.');
+  const geometryType = request.data?.geometryType === 'corridor' ? 'corridor' : 'polygon';
+  const coordinates = request.data?.polygon;
+  const minimumPoints = geometryType === 'corridor' ? 2 : 3;
+  if (!Array.isArray(coordinates) || coordinates.length < minimumPoints || coordinates.length > 200 ||
+      !coordinates.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
+    throw new HttpsError('invalid-argument', geometryType === 'corridor' ? 'A corridor needs 2 to 200 centreline points.' : 'A polygon needs 3 to 200 points.');
   }
+  const bufferMeters = geometryType === 'corridor'
+    ? validPositiveInteger(request.data?.bufferMeters, 'Corridor buffer', 5, 200)
+    : 0;
   const ref = await db.collection('routeRestrictions').add({
-    name, type, polygon, isActive: true,
+    name, type, geometryType, polygon: coordinates, coordinates, bufferMeters, isActive: true,
     notes: String(request.data?.notes || '').slice(0, 1000),
     createdBy: developer.uid, createdAt: timestamp(), updatedAt: timestamp(),
   });

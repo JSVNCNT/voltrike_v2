@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -40,8 +42,16 @@ class RouteRestrictionService {
   Future<RouteRestriction?> routeConflict(List<LatLng> route) async {
     final restrictions = await activeRestrictions();
     for (final restriction in restrictions) {
-      if (restriction.polygon.length >= 3 &&
-          _routeIntersects(route, restriction.polygon)) {
+      final conflicts = restriction.geometryType == 'corridor'
+          ? restriction.polygon.length >= 2 &&
+              route.any((point) => _nearCorridor(
+                    point,
+                    restriction.polygon,
+                    restriction.bufferMeters,
+                  ))
+          : restriction.polygon.length >= 3 &&
+              _routeIntersects(route, restriction.polygon);
+      if (conflicts) {
         _lastConflict = restriction;
         return restriction;
       }
@@ -52,7 +62,15 @@ class RouteRestrictionService {
   Future<RouteRestriction?> pointConflict(LatLng point) async {
     final restrictions = await activeRestrictions();
     for (final restriction in restrictions) {
-      if (restriction.polygon.length >= 3 && _contains(point, restriction.polygon)) {
+      final conflicts = restriction.geometryType == 'corridor'
+          ? restriction.polygon.length >= 2 &&
+              _nearCorridor(
+                point,
+                restriction.polygon,
+                restriction.bufferMeters,
+              )
+          : restriction.polygon.length >= 3 && _contains(point, restriction.polygon);
+      if (conflicts) {
         _lastConflict = restriction;
         return restriction;
       }
@@ -87,6 +105,45 @@ class RouteRestrictionService {
       }
     }
     return false;
+  }
+
+  /// Checks a buffered road centreline in metres. This avoids pretending a
+  /// highway is an area while still catching GPS samples near curved roads.
+  bool _nearCorridor(
+    LatLng point,
+    List<LatLng> centreline,
+    int bufferMeters,
+  ) {
+    for (var index = 1; index < centreline.length; index++) {
+      if (_pointToSegmentMeters(
+            point,
+            centreline[index - 1],
+            centreline[index],
+          ) <=
+          bufferMeters) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  double _pointToSegmentMeters(LatLng point, LatLng start, LatLng end) {
+    const metresPerDegree = 111320.0;
+    final referenceLatitude =
+        (point.latitude + start.latitude + end.latitude) / 3 * 3.141592653589793 / 180;
+    final scaleLongitude = metresPerDegree *
+        // Equirectangular projection is accurate enough for short road spans.
+        math.cos(referenceLatitude);
+    final px = (point.longitude - start.longitude) * scaleLongitude;
+    final py = (point.latitude - start.latitude) * metresPerDegree;
+    final sx = (end.longitude - start.longitude) * scaleLongitude;
+    final sy = (end.latitude - start.latitude) * metresPerDegree;
+    final lengthSquared = sx * sx + sy * sy;
+    if (lengthSquared == 0) return math.sqrt(px * px + py * py);
+    final projection = ((px * sx + py * sy) / lengthSquared).clamp(0.0, 1.0);
+    final dx = px - sx * projection;
+    final dy = py - sy * projection;
+    return math.sqrt(dx * dx + dy * dy);
   }
 
   bool _segmentsIntersect(LatLng a, LatLng b, LatLng c, LatLng d) {

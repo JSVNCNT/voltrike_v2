@@ -110,7 +110,9 @@ export interface RouteRestriction {
   id: string;
   name: string;
   type: 'prohibited_highway' | 'no_service_area' | 'restricted_crossing';
+  geometryType?: 'polygon' | 'corridor';
   polygon: Point[];
+  bufferMeters?: number;
   notes?: string;
   isActive: boolean;
 }
