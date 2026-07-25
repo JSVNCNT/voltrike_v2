@@ -1,8 +1,10 @@
 import 'package:equatable/equatable.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Fare extends Equatable {
   const Fare({
     required this.baseFare,
+    required this.includedMeters,
     required this.distanceStepMeters,
     required this.distanceStepPrice,
     required this.additionalPassengerFee,
@@ -12,6 +14,7 @@ class Fare extends Equatable {
   });
 
   final double baseFare;
+  final int includedMeters;
 
   final int distanceStepMeters;
   final double distanceStepPrice;
@@ -24,6 +27,7 @@ class Fare extends Equatable {
 
   Fare copyWith({
     double? baseFare,
+    int? includedMeters,
     int? distanceStepMeters,
     double? distanceStepPrice,
     double? additionalPassengerFee,
@@ -33,6 +37,7 @@ class Fare extends Equatable {
   }) {
     return Fare(
       baseFare: baseFare ?? this.baseFare,
+      includedMeters: includedMeters ?? this.includedMeters,
       distanceStepMeters:
           distanceStepMeters ?? this.distanceStepMeters,
       distanceStepPrice:
@@ -49,6 +54,7 @@ class Fare extends Equatable {
   factory Fare.fromMap(Map<String, dynamic> map) {
     return Fare(
       baseFare: (map['baseFare'] ?? 0).toDouble(),
+      includedMeters: map['includedMeters'] ?? 1000,
       distanceStepMeters: map['distanceStepMeters'] ?? 500,
       distanceStepPrice:
           (map['distanceStepPrice'] ?? 0).toDouble(),
@@ -57,13 +63,14 @@ class Fare extends Equatable {
       baggageFee: (map['baggageFee'] ?? 0).toDouble(),
       outOfBarangayFee:
           (map['outOfBarangayFee'] ?? 0).toDouble(),
-      updatedAt: DateTime.parse(map['updatedAt']),
+      updatedAt: _date(map['updatedAt']),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
       'baseFare': baseFare,
+      'includedMeters': includedMeters,
       'distanceStepMeters': distanceStepMeters,
       'distanceStepPrice': distanceStepPrice,
       'additionalPassengerFee': additionalPassengerFee,
@@ -76,6 +83,7 @@ class Fare extends Equatable {
   @override
   List<Object?> get props => [
         baseFare,
+        includedMeters,
         distanceStepMeters,
         distanceStepPrice,
         additionalPassengerFee,
@@ -83,4 +91,10 @@ class Fare extends Equatable {
         outOfBarangayFee,
         updatedAt,
       ];
+
+  static DateTime _date(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
+  }
 }

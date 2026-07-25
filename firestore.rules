@@ -2,6 +2,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function developerAdmin() {
+      return signedIn() && request.auth.token.adminRole == 'developer_admin';
+    }
+    function todaAdmin() {
+      return signedIn() && request.auth.token.adminRole == 'toda_admin';
+    }
+    function adminTodaId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.todaId;
+    }
+    function todaAdminFor(todaId) {
+      return todaAdmin() && adminTodaId() == todaId;
+    }
     function bookingMember(bookingId) {
       return signedIn() && request.auth.uid in [
         get(/databases/$(database)/documents/bookings/$(bookingId)).data.passengerId,
@@ -12,11 +24,23 @@ service cloud.firestore {
       return signedIn() && exists(/databases/$(database)/documents/drivers/$(request.auth.uid)/bookingOffers/$(bookingId));
     }
     match /users/{uid} {
-      allow read, write: if signedIn() && request.auth.uid == uid;
+      allow read: if signedIn() && (request.auth.uid == uid || developerAdmin() ||
+        (todaAdmin() && resource.data.todaId == adminTodaId()));
+      // Roles, TODA assignment, and account activity are privileged state and
+      // cannot be changed by the account holder.
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.role in ['passenger', 'driver'] &&
+        request.resource.data.isActive == true;
+      allow update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.todaId == resource.data.todaId &&
+        request.resource.data.isActive == resource.data.isActive;
+      allow delete: if false;
       match /devices/{token} { allow read, write: if signedIn() && request.auth.uid == uid; }
     }
     match /drivers/{driverId}/bookingOffers/{offerId} {
-      allow read: if signedIn() && request.auth.uid == driverId;
+      allow read: if signedIn() && (request.auth.uid == driverId || developerAdmin() ||
+        todaAdminFor(resource.data.todaId));
       allow write: if false;
     }
     match /drivers/{driverId} {
@@ -43,7 +67,8 @@ service cloud.firestore {
         request.resource.data.driverId == request.auth.uid &&
         request.resource.data.id == vehicleId &&
         request.resource.data.isVerified == false;
-      allow read: if signedIn() && resource.data.driverId == request.auth.uid;
+      allow read: if signedIn() && (resource.data.driverId == request.auth.uid || developerAdmin() ||
+        todaAdminFor(get(/databases/$(database)/documents/drivers/$(resource.data.driverId)).data.todaId));
       allow update: if signedIn() && resource.data.driverId == request.auth.uid &&
         request.resource.data.driverId == resource.data.driverId &&
         request.resource.data.id == resource.data.id &&
@@ -54,6 +79,18 @@ service cloud.firestore {
     // during driver registration and booking display.
     match /todas/{todaId} {
       allow read: if signedIn();
+      allow write: if false;
+    }
+    match /settings/{settingId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /geofences/{todaId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /zoneRequests/{requestId} {
+      allow read: if developerAdmin() || todaAdminFor(resource.data.todaId);
       allow write: if false;
     }
     match /chat/{bookingId} {
@@ -84,7 +121,8 @@ service cloud.firestore {
           get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.passengerId,
           get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.driverId
         ] && request.resource.data.reportedUserId != request.auth.uid;
-      allow read: if signedIn() && resource.data.reporterId == request.auth.uid;
+      allow read: if signedIn() && (resource.data.reporterId == request.auth.uid || developerAdmin() ||
+        todaAdminFor(resource.data.todaId));
       allow update, delete: if false;
     }
     match /ratings/{ratingId} {

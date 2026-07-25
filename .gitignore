@@ -45,3 +45,8 @@ app.*.map.json
 /android/app/release
 /android/local.properties
 /functions/.env
+/functions/.env.*
+/admin/.env
+/admin/.env.*
+!/admin/.env.example
+**/node_modules/

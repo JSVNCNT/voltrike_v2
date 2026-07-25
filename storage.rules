@@ -6,6 +6,14 @@ service firebase.storage {
       return request.resource.contentType.matches('image/.*') &&
         request.resource.size < 10 * 1024 * 1024;
     }
+    function developerAdmin() {
+      return signedIn() && request.auth.token.adminRole == 'developer_admin';
+    }
+    function isTodaDocument() {
+      return request.resource.size < 10 * 1024 * 1024 &&
+        (request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'application/pdf');
+    }
 
     match /drivers/{uid}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid || fileName == 'profile.jpg');
@@ -17,6 +25,14 @@ service firebase.storage {
       allow read: if signedIn() && (request.auth.uid == uid || fileName == 'profile.jpg');
       allow create, update: if signedIn() && request.auth.uid == uid && isImage();
       allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Legal TODA evidence contains sensitive registration data. It is managed
+    // by developer administrators only, not exposed to mobile users.
+    match /toda_documents/{todaId}/{fileName} {
+      allow read: if developerAdmin();
+      allow create, update: if developerAdmin() && isTodaDocument();
+      allow delete: if developerAdmin();
     }
 
     // Existing profile URLs created before path standardization remain usable.

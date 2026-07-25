@@ -13,6 +13,7 @@ import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/booking_session_provider.dart';
 import '../../providers/active_booking_provider.dart';
+import '../../providers/fare_configuration_provider.dart';
 import '../widgets/home_bottom_sheet.dart';
 import '../widgets/map_view.dart';
 import 'destination_search_screen.dart';
@@ -48,15 +49,8 @@ class _PassengerHomeScreenState
     extends ConsumerState<PassengerHomeScreen> {
   ProviderSubscription<AsyncValue<Booking?>>? _activeBookingSubscription;
   String? _restoredBookingId;
-  //==========================================================================
-  // Temporary Fare Configuration
-  //
-  // Later this will come from Firestore.
-  //==========================================================================
-
-  static const FareConfiguration
-      _fareConfiguration =
-      devFareConfiguration;
+  FareConfiguration get _fareConfiguration =>
+      ref.read(fareConfigurationProvider).valueOrNull ?? devFareConfiguration;
 
   @override
   void initState() {

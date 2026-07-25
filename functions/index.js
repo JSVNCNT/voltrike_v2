@@ -10,6 +10,68 @@ const db = admin.firestore();
 const liveKitApiKey = defineSecret('LIVEKIT_API_KEY');
 const liveKitApiSecret = defineSecret('LIVEKIT_API_SECRET');
 const liveKitUrl = defineString('LIVEKIT_URL');
+const adminBootstrapCode = defineSecret('ADMIN_BOOTSTRAP_CODE');
+
+function timestamp() {
+  return admin.firestore.FieldValue.serverTimestamp();
+}
+
+async function getAdminProfile(uid) {
+  const snapshot = await db.collection('users').doc(uid).get();
+  return snapshot.exists ? snapshot.data() : null;
+}
+
+async function requireAdmin(request) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in before using the admin panel.');
+  }
+  const profile = await getAdminProfile(request.auth.uid);
+  if (!profile || profile.isActive === false ||
+      !['developer_admin', 'toda_admin'].includes(profile.role)) {
+    throw new HttpsError('permission-denied', 'An active administrator account is required.');
+  }
+  return { uid: request.auth.uid, ...profile };
+}
+
+async function requireDeveloperAdmin(request) {
+  const profile = await requireAdmin(request);
+  if (profile.role !== 'developer_admin') {
+    throw new HttpsError('permission-denied', 'Developer administrator access is required.');
+  }
+  return profile;
+}
+
+function requiredString(value, name) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new HttpsError('invalid-argument', `${name} is required.`);
+  }
+  return value.trim();
+}
+
+function validCurrency(value, name, min = 0, max = 9999) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw new HttpsError('invalid-argument', `${name} must be between ${min} and ${max}.`);
+  }
+  return Math.round(value * 100) / 100;
+}
+
+function validPositiveInteger(value, name, min = 1, max = 9999) {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new HttpsError('invalid-argument', `${name} must be a whole number between ${min} and ${max}.`);
+  }
+  return value;
+}
+
+function slugify(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
+async function assertTodaScope(profile, todaId) {
+  if (profile.role === 'developer_admin') return;
+  if (profile.todaId !== todaId) {
+    throw new HttpsError('permission-denied', 'This record is outside of your TODA.');
+  }
+}
 
 async function sendToUser(userId, title, body, data) {
   const devices = await db.collection('users').doc(userId).collection('devices').get();
@@ -31,6 +93,248 @@ async function sendToUser(userId, title, body, data) {
     return null;
   }));
 }
+
+// One-time setup for the first developer administrator. The bootstrap code is
+// a Secret Manager value, never exposed to the browser bundle. Once a
+// developer admin exists, this callable permanently rejects further use.
+exports.bootstrapDeveloperAdmin = onCall(
+  { region: 'asia-southeast1', secrets: [adminBootstrapCode] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before setup.');
+    }
+    if (request.data?.code !== adminBootstrapCode.value()) {
+      throw new HttpsError('permission-denied', 'The bootstrap code is invalid.');
+    }
+    const existing = await db.collection('users').where('role', '==', 'developer_admin').limit(1).get();
+    if (!existing.empty) {
+      throw new HttpsError('failed-precondition', 'A developer administrator already exists.');
+    }
+    const user = await admin.auth().getUser(request.auth.uid);
+    await admin.auth().setCustomUserClaims(request.auth.uid, { adminRole: 'developer_admin' });
+    await db.collection('users').doc(request.auth.uid).set({
+      uid: request.auth.uid,
+      email: user.email || '',
+      firstName: user.displayName || 'Developer',
+      middleName: '',
+      lastName: 'Admin',
+      phoneNumber: user.phoneNumber || '',
+      role: 'developer_admin',
+      todaId: null,
+      profileImage: user.photoURL || '',
+      emailVerified: user.emailVerified,
+      isActive: true,
+      createdAt: timestamp(),
+      updatedAt: timestamp(),
+    }, { merge: true });
+    return { role: 'developer_admin' };
+  },
+);
+
+exports.adminCreateToda = onCall({ region: 'asia-southeast1' }, async (request) => {
+  await requireDeveloperAdmin(request);
+  const data = request.data || {};
+  const name = requiredString(data.name, 'TODA name');
+  const barangayCode = requiredString(data.barangayCode, 'Barangay');
+  const registration = data.registration || {};
+  const normalizedRegistration = {
+    secCertificateNumber: requiredString(registration.secCertificateNumber, 'SEC certificate number'),
+    spResolutionNumber: requiredString(registration.spResolutionNumber, 'SP resolution number'),
+    mayorsPermitNumber: requiredString(registration.mayorsPermitNumber, "Mayor's permit number"),
+    barangayClearanceNumber: requiredString(registration.barangayClearanceNumber, 'Barangay clearance number'),
+    presidentName: requiredString(registration.presidentName, "President's name"),
+    presidentLicenseNumber: requiredString(registration.presidentLicenseNumber, "President's driver license"),
+    presidentTin: requiredString(registration.presidentTin, "President's TIN"),
+  };
+  const id = `${slugify(name)}-${Date.now().toString(36)}`;
+  await db.collection('todas').doc(id).set({
+    id, name, barangayCode, regionCode: '06', provinceCode: 'NEG', cityCode: 'BACOLOD',
+    isActive: true, adminUid: null, registration: normalizedRegistration,
+    createdAt: timestamp(), updatedAt: timestamp(),
+  });
+  return { todaId: id };
+});
+
+// Promotion intentionally suspends the former driver's operating profile.
+// The account becomes a TODA-admin identity and cannot take rides until a
+// developer deliberately restores it as a driver.
+exports.adminAssignTodaAdmin = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const developer = await requireDeveloperAdmin(request);
+  const uid = requiredString(request.data?.uid, 'User ID');
+  const todaId = requiredString(request.data?.todaId, 'TODA ID');
+  const [user, toda] = await Promise.all([
+    admin.auth().getUser(uid), db.collection('todas').doc(todaId).get(),
+  ]);
+  if (!toda.exists || toda.data().isActive === false) {
+    throw new HttpsError('not-found', 'An active TODA is required.');
+  }
+  await admin.auth().setCustomUserClaims(uid, { adminRole: 'toda_admin', todaId });
+  const batch = db.batch();
+  batch.set(db.collection('users').doc(uid), {
+    uid, email: user.email || '', role: 'toda_admin', todaId, isActive: true,
+    updatedAt: timestamp(),
+  }, { merge: true });
+  batch.update(toda.ref, { adminUid: uid, updatedAt: timestamp() });
+  const driver = db.collection('drivers').doc(uid);
+  if ((await driver.get()).exists) {
+    batch.update(driver, { driverStatus: 'suspended', isOnline: false, isAvailable: false, updatedAt: timestamp() });
+  }
+  await batch.commit();
+  logger.info('TODA administrator assigned', { uid, todaId, by: developer.uid });
+  return { assigned: true };
+});
+
+exports.adminSetTodaStatus = onCall({ region: 'asia-southeast1' }, async (request) => {
+  await requireDeveloperAdmin(request);
+  const todaId = requiredString(request.data?.todaId, 'TODA ID');
+  if (typeof request.data?.isActive !== 'boolean') {
+    throw new HttpsError('invalid-argument', 'TODA status is required.');
+  }
+  const ref = db.collection('todas').doc(todaId);
+  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'TODA not found.');
+  await ref.update({ isActive: request.data.isActive, updatedAt: timestamp() });
+  if (!request.data.isActive) {
+    const drivers = await db.collection('drivers').where('todaId', '==', todaId).get();
+    const writer = db.bulkWriter();
+    drivers.docs.forEach((driver) => writer.update(driver.ref, { driverStatus: 'suspended', isOnline: false, isAvailable: false, updatedAt: timestamp() }));
+    await writer.close();
+  }
+  return { updated: true };
+});
+
+exports.adminAttachTodaDocuments = onCall({ region: 'asia-southeast1' }, async (request) => {
+  await requireDeveloperAdmin(request);
+  const todaId = requiredString(request.data?.todaId, 'TODA ID');
+  const documents = request.data?.documents;
+  if (!documents || typeof documents !== 'object' || Array.isArray(documents)) {
+    throw new HttpsError('invalid-argument', 'TODA documents are required.');
+  }
+  const expectedPrefix = `toda_documents/${todaId}/`;
+  for (const value of Object.values(documents)) {
+    if (typeof value !== 'string' || !value.includes(encodeURIComponent(expectedPrefix))) {
+      throw new HttpsError('invalid-argument', 'Invalid TODA document location.');
+    }
+  }
+  await db.collection('todas').doc(todaId).update({ documents, updatedAt: timestamp() });
+  return { updated: true };
+});
+
+exports.adminUpdateFare = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const developer = await requireDeveloperAdmin(request);
+  const fare = request.data?.fare || {};
+  const normalized = {
+    baseFare: validCurrency(fare.baseFare, 'Base fare', 0, 9999),
+    includedMeters: validPositiveInteger(fare.includedMeters, 'Included meters', 1, 9999),
+    distanceStepMeters: validPositiveInteger(fare.distanceStepMeters, 'Distance step meters', 1, 9999),
+    distanceStepPrice: validCurrency(fare.distanceStepPrice, 'Distance step price', 0, 999),
+    additionalPassengerFee: validCurrency(fare.additionalPassengerFee, 'Additional passenger fee', 0, 9999),
+    baggageFee: validCurrency(fare.baggageFee, 'Large baggage fee', 0, 9999),
+    outsideTodaSurcharge: validCurrency(fare.outsideTodaSurcharge, 'Outside TODA surcharge', 0, 9999),
+    currency: 'PHP', updatedAt: timestamp(), updatedBy: developer.uid,
+  };
+  await db.collection('settings').doc('fare_config').set(normalized, { merge: true });
+  return { updated: true };
+});
+
+exports.adminSetDriverStatus = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const profile = await requireAdmin(request);
+  const uid = requiredString(request.data?.uid, 'Driver ID');
+  const status = request.data?.status;
+  if (!['approved', 'rejected', 'suspended'].includes(status)) {
+    throw new HttpsError('invalid-argument', 'Unsupported driver status.');
+  }
+  const driverRef = db.collection('drivers').doc(uid);
+  const driver = await driverRef.get();
+  if (!driver.exists) throw new HttpsError('not-found', 'Driver not found.');
+  await assertTodaScope(profile, driver.data().todaId);
+  const update = { driverStatus: status, updatedAt: timestamp() };
+  if (status === 'approved') Object.assign(update, { approvedAt: timestamp(), approvedBy: profile.uid });
+  if (status !== 'approved') Object.assign(update, { isOnline: false, isAvailable: false });
+  await driverRef.update(update);
+  return { updated: true };
+});
+
+exports.adminSetUserStatus = onCall({ region: 'asia-southeast1' }, async (request) => {
+  await requireDeveloperAdmin(request);
+  const uid = requiredString(request.data?.uid, 'User ID');
+  if (uid === request.auth.uid) throw new HttpsError('failed-precondition', 'You cannot suspend your own account.');
+  if (typeof request.data?.isActive !== 'boolean') throw new HttpsError('invalid-argument', 'Account status is required.');
+  await db.collection('users').doc(uid).set({ isActive: request.data.isActive, updatedAt: timestamp() }, { merge: true });
+  if (!request.data.isActive) {
+    const driverRef = db.collection('drivers').doc(uid);
+    if ((await driverRef.get()).exists) {
+      await driverRef.update({ driverStatus: 'suspended', isOnline: false, isAvailable: false, updatedAt: timestamp() });
+    }
+  }
+  return { updated: true };
+});
+
+exports.adminResolveReport = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const profile = await requireAdmin(request);
+  const reportId = requiredString(request.data?.reportId, 'Report ID');
+  const status = request.data?.status;
+  if (!['resolved', 'dismissed'].includes(status)) throw new HttpsError('invalid-argument', 'Unsupported report status.');
+  const reportRef = db.collection('reports').doc(reportId);
+  const report = await reportRef.get();
+  if (!report.exists) throw new HttpsError('not-found', 'Report not found.');
+  await assertTodaScope(profile, report.data().todaId);
+  await reportRef.update({ status, action: String(request.data?.action || '').slice(0, 1000), resolvedBy: profile.uid, resolvedAt: timestamp() });
+  return { updated: true };
+});
+
+exports.adminSubmitZoneRequest = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const profile = await requireAdmin(request);
+  const todaId = requiredString(request.data?.todaId, 'TODA ID');
+  await assertTodaScope(profile, todaId);
+  const polygon = request.data?.polygon;
+  if (!Array.isArray(polygon) || polygon.length < 3 || polygon.length > 200 || !polygon.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
+    throw new HttpsError('invalid-argument', 'A polygon with 3 to 200 valid points is required.');
+  }
+  const zone = await db.collection('zoneRequests').add({ todaId, polygon, status: 'pending', notes: String(request.data?.notes || '').slice(0, 1000), requestedBy: profile.uid, createdAt: timestamp(), updatedAt: timestamp() });
+  return { zoneRequestId: zone.id };
+});
+
+exports.adminReviewZoneRequest = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const developer = await requireDeveloperAdmin(request);
+  const id = requiredString(request.data?.zoneRequestId, 'Zone request ID');
+  const status = request.data?.status;
+  if (!['approved', 'declined'].includes(status)) throw new HttpsError('invalid-argument', 'Unsupported zone decision.');
+  const ref = db.collection('zoneRequests').doc(id);
+  const requestSnapshot = await ref.get();
+  if (!requestSnapshot.exists) throw new HttpsError('not-found', 'Zone request not found.');
+  const zone = requestSnapshot.data();
+  const batch = db.batch();
+  batch.update(ref, { status, reviewedBy: developer.uid, reviewedAt: timestamp(), updatedAt: timestamp() });
+  if (status === 'approved') {
+    batch.set(db.collection('geofences').doc(zone.todaId), { todaId: zone.todaId, polygon: zone.polygon, sourceRequestId: id, updatedBy: developer.uid, updatedAt: timestamp() }, { merge: true });
+  }
+  await batch.commit();
+  return { updated: true };
+});
+
+exports.adminUpdateZoneRequest = onCall({ region: 'asia-southeast1' }, async (request) => {
+  await requireDeveloperAdmin(request);
+  const id = requiredString(request.data?.zoneRequestId, 'Zone request ID');
+  const polygon = request.data?.polygon;
+  if (!Array.isArray(polygon) || polygon.length < 3 || polygon.length > 200 || !polygon.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
+    throw new HttpsError('invalid-argument', 'A polygon with 3 to 200 valid points is required.');
+  }
+  const ref = db.collection('zoneRequests').doc(id);
+  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Zone request not found.');
+  await ref.update({ polygon, notes: String(request.data?.notes || '').slice(0, 1000), updatedAt: timestamp() });
+  return { updated: true };
+});
+
+// Adds TODA scope to reports after creation. This supports efficient, scoped
+// TODA-admin report lists without exposing unrelated passenger reports.
+exports.enrichReportToda = onDocumentCreated('reports/{reportId}', async (event) => {
+  const report = event.data.data();
+  const booking = await db.collection('bookings').doc(report.bookingId).get();
+  const driverId = booking.exists ? booking.data().driverId : null;
+  if (!driverId) return;
+  const driver = await db.collection('drivers').doc(driverId).get();
+  if (driver.exists) await event.data.ref.set({ todaId: driver.data().todaId }, { merge: true });
+});
 
 // The Firebase-authenticated caller receives a short-lived LiveKit token only
 // when they are the passenger or assigned driver for an active booking.
