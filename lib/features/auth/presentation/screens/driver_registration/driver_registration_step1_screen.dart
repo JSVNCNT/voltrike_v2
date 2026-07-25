@@ -43,6 +43,9 @@ class _DriverRegistrationStep1ScreenState
   final _lastNameController =
       TextEditingController();
 
+  final _birthDateController =
+      TextEditingController();
+
   final _phoneController =
       TextEditingController();
 
@@ -56,6 +59,8 @@ class _DriverRegistrationStep1ScreenState
       TextEditingController();
 
   bool _acceptedTerms = false;
+
+  DateTime? _dateOfBirth;
 
   String? _error;
 
@@ -75,6 +80,11 @@ class _DriverRegistrationStep1ScreenState
     _lastNameController.text =
         registration.lastName;
 
+    _dateOfBirth = registration.dateOfBirth;
+    _birthDateController.text = _formatDate(
+      registration.dateOfBirth,
+    );
+
     _phoneController.text =
         registration.phoneNumber;
 
@@ -93,6 +103,7 @@ class _DriverRegistrationStep1ScreenState
     _firstNameController.dispose();
     _middleNameController.dispose();
     _lastNameController.dispose();
+    _birthDateController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -115,6 +126,13 @@ class _DriverRegistrationStep1ScreenState
       return;
     }
 
+    if (_dateOfBirth == null) {
+      setState(() {
+        _error = 'Please select your date of birth.';
+      });
+      return;
+    }
+
     setState(() {
       _error = null;
     });
@@ -131,6 +149,7 @@ class _DriverRegistrationStep1ScreenState
               _middleNameController.text.trim(),
           lastName:
               _lastNameController.text.trim(),
+          dateOfBirth: _dateOfBirth,
           phoneNumber:
               _phoneController.text.trim(),
           email:
@@ -142,6 +161,39 @@ class _DriverRegistrationStep1ScreenState
     context.go(
       AppRoutes.driverRegisterStep2,
     );
+  }
+
+  String _formatDate(
+    DateTime? value,
+  ) {
+    if (value == null) return '';
+    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _selectBirthDate() async {
+    final today = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateOfBirth ??
+          DateTime(
+            today.year - 25,
+            today.month,
+            today.day,
+          ),
+      firstDate: DateTime(1900),
+      lastDate: DateTime(
+        today.year - 18,
+        today.month,
+        today.day,
+      ),
+      helpText: 'Select date of birth',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _dateOfBirth = picked;
+      _birthDateController.text = _formatDate(picked);
+      _error = null;
+    });
   }
 
   @override
@@ -201,6 +253,27 @@ class _DriverRegistrationStep1ScreenState
                   value,
                   fieldName:
                       'First Name',
+                ),
+              ),
+
+              const SizedBox(
+                height: AppSpacing.md,
+              ),
+
+              GestureDetector(
+                onTap: _selectBirthDate,
+                child: AbsorbPointer(
+                  child: AppTextField(
+                    controller: _birthDateController,
+                    label: 'Date of Birth',
+                    hint: 'YYYY-MM-DD',
+                    prefixIcon: Icons.cake_outlined,
+                    readOnly: true,
+                    validator: (value) =>
+                        value == null || value.isEmpty
+                            ? 'Date of birth is required.'
+                            : null,
+                  ),
                 ),
               ),
 

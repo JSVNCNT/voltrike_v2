@@ -20,3 +20,10 @@
   font-size: 12px;
   font-weight: 700;
 }
+
+.technical-id {
+  margin-top: 8px;
+  color: #8ca0a0 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px !important;
+}

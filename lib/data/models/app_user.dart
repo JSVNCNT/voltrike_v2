@@ -15,6 +15,7 @@ class AppUser extends Equatable {
     required this.createdAt,
     required this.updatedAt,
     this.todaId,
+    this.dateOfBirth,
   });
 
   final String uid;
@@ -36,6 +37,9 @@ class AppUser extends Equatable {
   /// - TODA Admin: assigned during creation
   /// - Developer Admin: null
   final String? todaId;
+
+  /// Collected for driver registration review; absent for legacy profiles.
+  final DateTime? dateOfBirth;
 
   final String profileImage;
 
@@ -71,6 +75,7 @@ class AppUser extends Equatable {
     String? phoneNumber,
     String? role,
     String? todaId,
+    DateTime? dateOfBirth,
     String? profileImage,
     bool? emailVerified,
     bool? isActive,
@@ -86,6 +91,7 @@ class AppUser extends Equatable {
       phoneNumber: phoneNumber ?? this.phoneNumber,
       role: role ?? this.role,
       todaId: todaId ?? this.todaId,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       profileImage: profileImage ?? this.profileImage,
       emailVerified: emailVerified ?? this.emailVerified,
       isActive: isActive ?? this.isActive,
@@ -104,6 +110,9 @@ class AppUser extends Equatable {
       phoneNumber: map['phoneNumber'] ?? '',
       role: map['role'] ?? 'passenger',
       todaId: map['todaId'],
+      dateOfBirth: map['dateOfBirth'] != null
+          ? DateTime.tryParse(map['dateOfBirth'] as String)
+          : null,
       profileImage: map['profileImage'] ?? '',
       emailVerified: map['emailVerified'] ?? false,
       isActive: map['isActive'] ?? true,
@@ -128,6 +137,7 @@ class AppUser extends Equatable {
       'phoneNumber': phoneNumber,
       'role': role,
       'todaId': todaId,
+      'dateOfBirth': dateOfBirth?.toIso8601String(),
       'profileImage': profileImage,
       'emailVerified': emailVerified,
       'isActive': isActive,
@@ -146,6 +156,7 @@ class AppUser extends Equatable {
         phoneNumber,
         role,
         todaId,
+        dateOfBirth,
         profileImage,
         emailVerified,
         isActive,

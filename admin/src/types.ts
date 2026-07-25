@@ -52,6 +52,17 @@ export interface Driver {
   orDocumentUrl?: string;
   crDocumentUrl?: string;
   vehiclePhotoUrl?: string;
+  applicant?: DriverApplicant;
+}
+
+export interface DriverApplicant {
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  email?: string;
+  phoneNumber?: string;
+  dateOfBirth?: string;
+  profileImage?: string;
 }
 
 export interface Report {

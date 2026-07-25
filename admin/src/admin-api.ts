@@ -33,7 +33,16 @@ export const adminApi = {
   async drivers(todaId?: string): Promise<Driver[]> {
     const source = collection(db, 'drivers');
     const snapshot = await getDocs(todaId ? query(source, where('todaId', '==', todaId), limit(200)) : query(source, limit(200)));
-    return snapshot.docs.map((entry) => mapDocument<Driver>(entry.id, entry.data()));
+    const drivers = snapshot.docs.map((entry) => mapDocument<Driver>(entry.id, entry.data()));
+    // Driver operational data and account identity are intentionally stored in
+    // separate documents. Join them only for authorized admin review.
+    return Promise.all(drivers.map(async (driver) => {
+      const profile = await getDoc(doc(db, 'users', driver.uid));
+      return {
+        ...driver,
+        applicant: profile.exists() ? profile.data() : undefined,
+      };
+    }));
   },
   async reports(todaId?: string): Promise<Report[]> {
     const source = collection(db, 'reports');

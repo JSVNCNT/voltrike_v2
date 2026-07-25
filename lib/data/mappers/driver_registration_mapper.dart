@@ -23,6 +23,7 @@ class DriverRegistrationMapper {
       firstName: registration.firstName,
       middleName: registration.middleName,
       lastName: registration.lastName,
+      dateOfBirth: registration.dateOfBirth,
       phoneNumber: registration.phoneNumber,
       role: 'driver',
       todaId: registration.todaId,

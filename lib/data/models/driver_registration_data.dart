@@ -11,6 +11,7 @@ class DriverRegistrationData extends Equatable {
     this.firstName = '',
     this.middleName = '',
     this.lastName = '',
+    this.dateOfBirth,
     this.phoneNumber = '',
     this.email = '',
     this.password = '',
@@ -47,6 +48,8 @@ class DriverRegistrationData extends Equatable {
   final String firstName;
   final String middleName;
   final String lastName;
+
+  final DateTime? dateOfBirth;
 
   final String phoneNumber;
 
@@ -121,6 +124,7 @@ class DriverRegistrationData extends Equatable {
     String? firstName,
     String? middleName,
     String? lastName,
+    DateTime? dateOfBirth,
     String? phoneNumber,
     String? email,
     String? password,
@@ -153,6 +157,7 @@ class DriverRegistrationData extends Equatable {
       firstName: firstName ?? this.firstName,
       middleName: middleName ?? this.middleName,
       lastName: lastName ?? this.lastName,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       email: email ?? this.email,
       password: password ?? this.password,
@@ -217,6 +222,7 @@ class DriverRegistrationData extends Equatable {
         firstName,
         middleName,
         lastName,
+        dateOfBirth,
         phoneNumber,
         email,
         password,
