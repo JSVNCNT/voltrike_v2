@@ -102,7 +102,9 @@ class RouteRestrictionService {
           route[i],
           polygon[j],
           polygon[(j + 1) % polygon.length],
-        )) return true;
+        )) {
+          return true;
+        }
       }
     }
     return false;
