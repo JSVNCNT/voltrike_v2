@@ -27,3 +27,12 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px !important;
 }
+
+.report-parties {
+  display: grid;
+  gap: 3px;
+}
+
+.report-parties b:not(:first-child) {
+  margin-top: 7px;
+}

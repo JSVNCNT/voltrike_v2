@@ -11,6 +11,17 @@ async function call<T>(name: string, data: Record<string, unknown>): Promise<T> 
 
 const mapDocument = <T>(id: string, value: unknown) => ({ id, ...(value as object) }) as T;
 
+async function profileForAdminReview(uid: string) {
+  try {
+    const profile = await getDoc(doc(db, 'users', uid));
+    return profile.exists() ? profile.data() : undefined;
+  } catch {
+    // TODA admins are deliberately not allowed to read unrelated passenger
+    // profiles. The report remains usable without exposing that identity.
+    return undefined;
+  }
+}
+
 export const adminApi = {
   bootstrap: (code: string) => call<{ role: string }>('bootstrapDeveloperAdmin', { code }),
   registerToda: (data: Record<string, unknown>) => call<{ todaId: string }>('registerToda', data),
@@ -37,17 +48,24 @@ export const adminApi = {
     // Driver operational data and account identity are intentionally stored in
     // separate documents. Join them only for authorized admin review.
     return Promise.all(drivers.map(async (driver) => {
-      const profile = await getDoc(doc(db, 'users', driver.uid));
+      const profile = await profileForAdminReview(driver.uid);
       return {
         ...driver,
-        applicant: profile.exists() ? profile.data() : undefined,
+        applicant: profile,
       };
     }));
   },
   async reports(todaId?: string): Promise<Report[]> {
     const source = collection(db, 'reports');
     const snapshot = await getDocs(todaId ? query(source, where('todaId', '==', todaId), limit(200)) : query(source, limit(200)));
-    return snapshot.docs.map((entry) => mapDocument<Report>(entry.id, entry.data()));
+    const reports = snapshot.docs.map((entry) => mapDocument<Report>(entry.id, entry.data()));
+    return Promise.all(reports.map(async (report) => {
+      const [reporter, reportedUser] = await Promise.all([
+        profileForAdminReview(report.reporterId),
+        profileForAdminReview(report.reportedUserId),
+      ]);
+      return { ...report, reporter, reportedUser };
+    }));
   },
   async zones(todaId?: string): Promise<ZoneRequest[]> {
     const source = collection(db, 'zoneRequests');

@@ -65,6 +65,15 @@ export interface DriverApplicant {
   profileImage?: string;
 }
 
+export interface AdminPerson {
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  email?: string;
+  phoneNumber?: string;
+  role?: string;
+}
+
 export interface Report {
   id: string;
   bookingId: string;
@@ -75,6 +84,8 @@ export interface Report {
   details: string;
   status: 'open' | 'resolved' | 'dismissed';
   action?: string;
+  reporter?: AdminPerson;
+  reportedUser?: AdminPerson;
 }
 
 export interface FareConfig {
