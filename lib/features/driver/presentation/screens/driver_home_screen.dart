@@ -22,6 +22,7 @@ import '../../providers/driver_trip_provider.dart';
 import '../widgets/booking_request_card.dart';
 import '../widgets/driver_bottom_sheet.dart';
 import '../widgets/driver_map_view.dart';
+import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 
 
 /// ===========================================================================
@@ -48,6 +49,32 @@ class DriverHomeScreen
 
 class _DriverHomeScreenState
     extends ConsumerState<DriverHomeScreen> {
+  Future<void> _cancelTrip() async {
+    final booking = ref.read(driverCurrentBookingProvider);
+    if (booking == null) return;
+
+    final result = await showDialog<RideCancellationResult>(
+      context: context,
+      builder: (_) => const RideCancelDialog(isDriver: true),
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      await ref.read(driverBookingControllerProvider.notifier).cancelTrip(booking);
+      if (!mounted) return;
+      ref.read(driverTripProvider.notifier).waitingBooking();
+      setState(() => _routePoints.clear());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Trip cancelled.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not cancel trip: $error')),
+      );
+    }
+  }
+
   //==========================================================================
   // Navigation
   //==========================================================================
@@ -602,6 +629,8 @@ Widget build(
                       ? null
                       : '${displayBooking.distanceMeters} m',
 
+              bookingStatus: currentBooking?.status,
+
               onOnlineChanged:
                   _toggleOnline,
 
@@ -633,6 +662,11 @@ Widget build(
               onCompleteTrip:
                   hasCurrentBooking
                       ? _completeTrip
+                      : null,
+
+              onCancelTrip:
+                  hasCurrentBooking
+                      ? _cancelTrip
                       : null,
             ),
           ),

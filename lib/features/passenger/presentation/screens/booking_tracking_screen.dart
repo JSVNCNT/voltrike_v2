@@ -6,13 +6,16 @@ import '../../../../core/services/navigation_service.dart';
 import '../../../../data/models/booking.dart';
 
 import '../../providers/booking_listener_provider.dart';
+import '../../providers/booking_controller_provider.dart';
 import '../../providers/driver_location_listener_provider.dart';
 
 import '../widgets/driver_information_card.dart';
 
 import '../../../ride/tracking/widgets/ride_actions_card.dart';
+import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
+import '../../../ride/tracking/models/ride_participant_role.dart';
 import 'trip_receipt_screen.dart';
 
 class BookingTrackingScreen extends ConsumerStatefulWidget {
@@ -48,6 +51,8 @@ class _BookingTrackingScreenState
   //==========================================================================
 
   List<LatLng> _routePoints = [];
+  String? _loadedRouteKey;
+  String? _loadingRouteKey;
 
   //==========================================================================
   // Navigation
@@ -127,13 +132,24 @@ class _BookingTrackingScreenState
     required Booking booking,
     required LatLng driverLocation,
   }) async {
-    final route =
-        await _navigation.computeTrafficRoute(
-      origin: driverLocation,
-      destination: _routeDestination(
-        booking,
-      ),
-    );
+    final destination = _routeDestination(booking);
+    final routeKey = '${booking.status.name}:${destination.latitude}:${destination.longitude}';
+    if ((_loadedRouteKey == routeKey && _routePoints.isNotEmpty) ||
+        _loadingRouteKey == routeKey) {
+      return;
+    }
+
+    _loadingRouteKey = routeKey;
+
+    Map<String, dynamic>? route;
+    try {
+      route = await _navigation.computeTrafficRoute(
+        origin: driverLocation,
+        destination: destination,
+      );
+    } finally {
+      _loadingRouteKey = null;
+    }
 
     if (!mounted || route == null) {
       return;
@@ -151,7 +167,27 @@ class _BookingTrackingScreenState
 
     setState(() {
       _routePoints = points;
+      _loadedRouteKey = routeKey;
     });
+  }
+
+  Future<void> _cancelBooking(Booking booking) async {
+    final result = await showDialog<RideCancellationResult>(
+      context: context,
+      builder: (_) => const RideCancelDialog(isDriver: false),
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      await ref
+          .read(bookingControllerProvider.notifier)
+          .cancelBooking(booking.bookingId);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not cancel booking: $error')),
+      );
+    }
   }
 
   //==========================================================================
@@ -422,9 +458,10 @@ final driverLocationAsync = ref.watch(
                     ),
                     child:
                         TripStatusCard(
-                      status:
-                          booking.status,
-                      eta: null,
+                          status:
+                              booking.status,
+                          role: RideParticipantRole.passenger,
+                          eta: null,
                       distance: null,
                     ),
                   ),
@@ -452,20 +489,11 @@ final driverLocationAsync = ref.watch(
                             height: 16,
                           ),
 
-                          RideActionsCard(
-                            onCall: () {
-                              // TODO:
-                              // Call driver
-                            },
-                            onMessage: () {
-                              // TODO:
-                              // Message driver
-                            },
-                            onReport: () {
-                              // TODO:
-                              // Report driver
-                            },
-                          ),
+                          if (booking.status == BookingStatus.driverAssigned ||
+                              booking.status == BookingStatus.driverArriving)
+                            RideActionsCard(
+                              onCancel: () => _cancelBooking(booking),
+                            ),
 
                           const SizedBox(
                             height: 16,

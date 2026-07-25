@@ -1,213 +1,87 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/booking.dart';
+import '../models/ride_participant_role.dart';
+import '../services/ride_status_service.dart';
 
-/// ===========================================================================
-/// Trip Status Card
-///
-/// Reusable booking status widget.
-///
-/// Used by:
-/// • SearchingDriverScreen
-/// • DriverTrackingScreen
-/// • PassengerTripScreen
-/// ===========================================================================
+/// Role-aware status summary for an active booking.
 class TripStatusCard extends StatelessWidget {
   const TripStatusCard({
     super.key,
     required this.status,
+    required this.role,
     this.eta,
     this.distance,
   });
 
   final BookingStatus status;
+  final RideParticipantRole role;
   final String? eta;
   final String? distance;
 
   @override
   Widget build(BuildContext context) {
-    final color = _color(status);
-    final icon = _icon(status);
+    final rideStatus = role == RideParticipantRole.driver
+        ? RideStatusService.driverStatus(status)
+        : RideStatusService.passengerStatus(status);
+    final color = Theme.of(context).colorScheme.primary;
 
     return Card(
-      elevation: 4,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(
-                  icon,
-                  color: color,
-                ),
+                Icon(rideStatus.icon, color: color),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    _title(status),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
+                    rideStatus.title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                 ),
               ],
             ),
-
             const SizedBox(height: 8),
-
-            Text(
-              _message(status),
-              style: const TextStyle(
-                color: Colors.grey,
-              ),
-            ),
-
-            if (eta != null) ...[
+            Text(rideStatus.description),
+            if (eta != null || distance != null) ...[
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 16,
+                runSpacing: 8,
                 children: [
-                  const Icon(
-                    Icons.schedule,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'ETA: $eta',
-                  ),
+                  if (eta != null) _Metric(icon: Icons.schedule, text: 'ETA: $eta'),
+                  if (distance != null)
+                    _Metric(icon: Icons.route, text: distance!),
                 ],
               ),
             ],
-
-            if (distance != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.route,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    distance!,
-                  ),
-                ],
-              ),
-            ],
-
-            const SizedBox(height: 16),
-
-            Chip(
-              backgroundColor: color,
-              label: Text(
-                status.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                ),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
+}
 
-  IconData _icon(
-    BookingStatus status,
-  ) {
-    switch (status) {
-      case BookingStatus.pending:
-        return Icons.search;
+class _Metric extends StatelessWidget {
+  const _Metric({required this.icon, required this.text});
 
-      case BookingStatus.driverAssigned:
-        return Icons.person_pin_circle;
+  final IconData icon;
+  final String text;
 
-      case BookingStatus.driverArriving:
-        return Icons.directions_car;
-
-      case BookingStatus.passengerOnBoard:
-        return Icons.route;
-
-      case BookingStatus.completed:
-        return Icons.check_circle;
-
-      case BookingStatus.cancelled:
-        return Icons.cancel;
-    }
-  }
-
-  Color _color(
-    BookingStatus status,
-  ) {
-    switch (status) {
-      case BookingStatus.pending:
-        return Colors.orange;
-
-      case BookingStatus.driverAssigned:
-        return Colors.blue;
-
-      case BookingStatus.driverArriving:
-        return Colors.green;
-
-      case BookingStatus.passengerOnBoard:
-        return Colors.indigo;
-
-      case BookingStatus.completed:
-        return Colors.teal;
-
-      case BookingStatus.cancelled:
-        return Colors.red;
-    }
-  }
-
-  String _title(
-    BookingStatus status,
-  ) {
-    switch (status) {
-      case BookingStatus.pending:
-        return 'Searching for Driver';
-
-      case BookingStatus.driverAssigned:
-        return 'Driver Assigned';
-
-      case BookingStatus.driverArriving:
-        return 'Driver Arriving';
-
-      case BookingStatus.passengerOnBoard:
-        return 'Trip in Progress';
-
-      case BookingStatus.completed:
-        return 'Trip Completed';
-
-      case BookingStatus.cancelled:
-        return 'Booking Cancelled';
-    }
-  }
-
-  String _message(
-    BookingStatus status,
-  ) {
-    switch (status) {
-      case BookingStatus.pending:
-        return 'Please wait while we find a nearby driver.';
-
-      case BookingStatus.driverAssigned:
-        return 'A driver has accepted your booking.';
-
-      case BookingStatus.driverArriving:
-        return 'Your driver is heading to the pickup location.';
-
-      case BookingStatus.passengerOnBoard:
-        return 'Enjoy your ride.';
-
-      case BookingStatus.completed:
-        return 'Thank you for riding with VolTrike.';
-
-      case BookingStatus.cancelled:
-        return 'This booking has been cancelled.';
-    }
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 6),
+        Text(text),
+      ],
+    );
   }
 }
