@@ -78,10 +78,12 @@ service cloud.firestore {
         request.resource.data.isVerified == resource.data.isVerified;
       allow delete: if signedIn() && resource.data.driverId == request.auth.uid;
     }
-    // TODAs are centrally maintained; the mobile apps only need read access
-    // during driver registration and booking display.
+    // Driver registration happens before Firebase Authentication creates the
+    // new driver account, so the public TODA directory must be readable while
+    // anonymous. Legal details and document URLs live separately in the
+    // developer-only todaApplications collection below.
     match /todas/{todaId} {
-      allow read: if signedIn();
+      allow read: if true;
       allow write: if false;
     }
     // Legal TODA registration fields and evidence URLs are never placed on
