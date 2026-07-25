@@ -34,10 +34,10 @@ export const adminApi = {
   setDriverStatus: (uid: string, status: string) => call<{ updated: boolean }>('adminSetDriverStatus', { uid, status }),
   setUserStatus: (uid: string, isActive: boolean) => call<{ updated: boolean }>('adminSetUserStatus', { uid, isActive }),
   resolveReport: (reportId: string, status: string, action: string) => call<{ updated: boolean }>('adminResolveReport', { reportId, status, action }),
-  submitZone: (todaId: string, polygon: [number, number][], notes: string) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes }),
+  submitZone: (todaId: string, polygon: [number, number][], notes: string, areas?: [number, number][][]) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes, areas }),
   reviewZone: (zoneRequestId: string, status: string) => call<{ updated: boolean }>('adminReviewZoneRequest', { zoneRequestId, status }),
-  updateZone: (zoneRequestId: string, polygon: [number, number][], notes: string) => call<{ updated: boolean }>('adminUpdateZoneRequest', { zoneRequestId, polygon, notes }),
-  createRouteRestriction: (name: string, type: RouteRestriction['type'], geometryType: 'polygon' | 'corridor', polygon: [number, number][], bufferMeters: number, notes: string) => call<{ restrictionId: string }>('adminCreateRouteRestriction', { name, type, geometryType, polygon, bufferMeters, notes }),
+  updateZone: (zoneRequestId: string, polygon: [number, number][], notes: string, areas?: [number, number][][]) => call<{ updated: boolean }>('adminUpdateZoneRequest', { zoneRequestId, polygon, notes, areas }),
+  createRouteRestriction: (name: string, type: RouteRestriction['type'], geometryType: 'polygon' | 'corridor', polygon: [number, number][], bufferMeters: number, notes: string, areas?: [number, number][][]) => call<{ restrictionId: string }>('adminCreateRouteRestriction', { name, type, geometryType, polygon, bufferMeters, notes, areas }),
   setRouteRestrictionStatus: (restrictionId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetRouteRestrictionStatus', { restrictionId, isActive }),
   async todas(): Promise<Toda[]> {
     const snapshot = await getDocs(query(collection(db, 'todas'), orderBy('name')));

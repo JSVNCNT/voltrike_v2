@@ -375,11 +375,13 @@ exports.adminSubmitZoneRequest = onCall({ region: 'asia-southeast1' }, async (re
   const profile = await requireAdmin(request);
   const todaId = requiredString(request.data?.todaId, 'TODA ID');
   await assertTodaScope(profile, todaId);
-  const polygon = request.data?.polygon;
-  if (!Array.isArray(polygon) || polygon.length < 3 || polygon.length > 200 || !polygon.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
-    throw new HttpsError('invalid-argument', 'A polygon with 3 to 200 valid points is required.');
+  const areas = Array.isArray(request.data?.areas) ? request.data.areas : [request.data?.polygon];
+  const validArea = (area) => Array.isArray(area) && area.length >= 3 && area.length <= 200 &&
+      area.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite));
+  if (areas.length === 0 || areas.length > 20 || !areas.every(validArea)) {
+    throw new HttpsError('invalid-argument', 'One to 20 polygons with 3 to 200 valid points each are required.');
   }
-  const zone = await db.collection('zoneRequests').add({ todaId, polygon, status: 'pending', notes: String(request.data?.notes || '').slice(0, 1000), requestedBy: profile.uid, createdAt: timestamp(), updatedAt: timestamp() });
+  const zone = await db.collection('zoneRequests').add({ todaId, polygon: areas[0], areas, status: 'pending', notes: String(request.data?.notes || '').slice(0, 1000), requestedBy: profile.uid, createdAt: timestamp(), updatedAt: timestamp() });
   return { zoneRequestId: zone.id };
 });
 
@@ -395,7 +397,8 @@ exports.adminReviewZoneRequest = onCall({ region: 'asia-southeast1' }, async (re
   const batch = db.batch();
   batch.update(ref, { status, reviewedBy: developer.uid, reviewedAt: timestamp(), updatedAt: timestamp() });
   if (status === 'approved') {
-    batch.set(db.collection('geofences').doc(zone.todaId), { todaId: zone.todaId, polygon: zone.polygon, sourceRequestId: id, updatedBy: developer.uid, updatedAt: timestamp() }, { merge: true });
+    const areas = Array.isArray(zone.areas) ? zone.areas : [zone.polygon];
+    batch.set(db.collection('geofences').doc(zone.todaId), { todaId: zone.todaId, polygon: areas[0], areas, sourceRequestId: id, updatedBy: developer.uid, updatedAt: timestamp() }, { merge: true });
   }
   await batch.commit();
   return { updated: true };
@@ -404,13 +407,15 @@ exports.adminReviewZoneRequest = onCall({ region: 'asia-southeast1' }, async (re
 exports.adminUpdateZoneRequest = onCall({ region: 'asia-southeast1' }, async (request) => {
   await requireDeveloperAdmin(request);
   const id = requiredString(request.data?.zoneRequestId, 'Zone request ID');
-  const polygon = request.data?.polygon;
-  if (!Array.isArray(polygon) || polygon.length < 3 || polygon.length > 200 || !polygon.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
-    throw new HttpsError('invalid-argument', 'A polygon with 3 to 200 valid points is required.');
+  const areas = Array.isArray(request.data?.areas) ? request.data.areas : [request.data?.polygon];
+  const validArea = (area) => Array.isArray(area) && area.length >= 3 && area.length <= 200 &&
+      area.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite));
+  if (areas.length === 0 || areas.length > 20 || !areas.every(validArea)) {
+    throw new HttpsError('invalid-argument', 'One to 20 polygons with 3 to 200 valid points each are required.');
   }
   const ref = db.collection('zoneRequests').doc(id);
   if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Zone request not found.');
-  await ref.update({ polygon, notes: String(request.data?.notes || '').slice(0, 1000), updatedAt: timestamp() });
+  await ref.update({ polygon: areas[0], areas, notes: String(request.data?.notes || '').slice(0, 1000), updatedAt: timestamp() });
   return { updated: true };
 });
 
@@ -425,16 +430,21 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
   }
   const geometryType = request.data?.geometryType === 'corridor' ? 'corridor' : 'polygon';
   const coordinates = request.data?.polygon;
+  const areas = geometryType === 'polygon' && Array.isArray(request.data?.areas)
+    ? request.data.areas
+    : [coordinates];
   const minimumPoints = geometryType === 'corridor' ? 2 : 3;
-  if (!Array.isArray(coordinates) || coordinates.length < minimumPoints || coordinates.length > 200 ||
-      !coordinates.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
+  const validArea = (area) => Array.isArray(area) && area.length >= minimumPoints &&
+      area.length <= 200 && area.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite));
+  if (!Array.isArray(areas) || areas.length === 0 || areas.length > 20 ||
+      (geometryType === 'corridor' && areas.length !== 1) || !areas.every(validArea)) {
     throw new HttpsError('invalid-argument', geometryType === 'corridor' ? 'A corridor needs 2 to 200 centreline points.' : 'A polygon needs 3 to 200 points.');
   }
   const bufferMeters = geometryType === 'corridor'
     ? validPositiveInteger(request.data?.bufferMeters, 'Corridor buffer', 5, 200)
     : 0;
   const ref = await db.collection('routeRestrictions').add({
-    name, type, geometryType, polygon: coordinates, coordinates, bufferMeters, isActive: true,
+    name, type, geometryType, polygon: areas[0], coordinates: areas[0], areas, bufferMeters, isActive: true,
     notes: String(request.data?.notes || '').slice(0, 1000),
     createdBy: developer.uid, createdAt: timestamp(), updatedAt: timestamp(),
   });

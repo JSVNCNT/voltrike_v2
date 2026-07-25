@@ -102,6 +102,7 @@ export interface ZoneRequest {
   id: string;
   todaId: string;
   polygon: Point[];
+  areas?: Point[][];
   status: 'pending' | 'approved' | 'declined';
   notes?: string;
 }
@@ -112,6 +113,7 @@ export interface RouteRestriction {
   type: 'prohibited_highway' | 'no_service_area' | 'restricted_crossing';
   geometryType?: 'polygon' | 'corridor';
   polygon: Point[];
+  areas?: Point[][];
   bufferMeters?: number;
   notes?: string;
   isActive: boolean;

@@ -49,8 +49,8 @@ class RouteRestrictionService {
                     restriction.polygon,
                     restriction.bufferMeters,
                   ))
-          : restriction.polygon.length >= 3 &&
-              _routeIntersects(route, restriction.polygon);
+          : restriction.areas.any((area) =>
+              area.length >= 3 && _routeIntersects(route, area));
       if (conflicts) {
         _lastConflict = restriction;
         return restriction;
@@ -69,7 +69,8 @@ class RouteRestrictionService {
                 restriction.polygon,
                 restriction.bufferMeters,
               )
-          : restriction.polygon.length >= 3 && _contains(point, restriction.polygon);
+          : restriction.areas.any((area) =>
+              area.length >= 3 && _contains(point, area));
       if (conflicts) {
         _lastConflict = restriction;
         return restriction;
