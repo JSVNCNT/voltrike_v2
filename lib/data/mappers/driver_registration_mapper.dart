@@ -84,7 +84,9 @@ class DriverRegistrationMapper {
 
       driverStatus: 'pending',
       isOnline: false,
-      isAvailable: true,
+      // Pending drivers cannot receive offers until their selected TODA has
+      // reviewed and approved the submitted registration.
+      isAvailable: false,
 
       currentBookingId: null,
       currentLatitude: null,

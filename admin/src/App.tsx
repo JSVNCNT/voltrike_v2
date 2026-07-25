@@ -7,6 +7,7 @@ import { loadPhilippineLocations, type Barangay, type City, type Region } from '
 import { bacolodBarangays } from './data/bacolodBarangays';
 import type { AdminSession, Driver, FareConfig, Point, Report, Toda, TodaRegistration, ZoneRequest } from './types';
 import './registration.css';
+import './driver-review.css';
 
 // Mapbox is substantial; only load it when an administrator opens Coverage.
 const PolygonEditor = lazy(() => import('./components/PolygonEditor').then((module) => ({ default: module.PolygonEditor })));
@@ -159,10 +160,27 @@ function Fares({ onMessage }: { onMessage: (value: string) => void }) {
   return <section className="panel wide"><h2>City-controlled passenger fares</h2><p className="muted">TODA administrators can view the city fares but cannot change them. All amounts are PHP.</p><form className="form-grid fare-grid" onSubmit={submit}>{(Object.keys(fare) as Array<keyof FareConfig>).map((key) => <label key={key}>{label(key)}<input type="number" min={key === 'baseFare' || key.includes('Meters') ? 1 : 0} max="9999" value={fare[key]} onChange={(e) => setFare({ ...fare, [key]: Number(e.target.value) })} required /></label>)}<button className="primary">Save city fare</button></form><div className="fare-summary">Example: base {peso(fare.baseFare)} includes {fare.includedMeters} m; then {peso(fare.distanceStepPrice)} every {fare.distanceStepMeters} m. Additional passenger, large baggage, and out-of-TODA fees are applied exactly once.</div></section>;
 }
 
-function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
+function LegacyDriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
   const [drivers, setDrivers] = useState<Driver[]>([]); const reload = useCallback(() => adminApi.drivers(todaId).then(setDrivers), [todaId]); useEffect(() => { reload(); }, [reload]);
   async function update(uid: string, status: string) { try { await adminApi.setDriverStatus(uid, status); onMessage(`Driver ${status}.`); reload(); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update driver.'); } }
   return <section className="panel wide"><h2>{todaId ? 'Drivers registered in this TODA' : 'All registered drivers'}</h2><div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}><span><b>{driver.uid}</b><small>TODA: {driver.todaId}</small></span><span>{driver.driverStatus}</span><span>★ {driver.rating || 0} · {driver.completedTrips || 0} trips<br /><small>{peso(driver.totalEarnings || 0)} earnings</small></span><span className="actions"><button onClick={() => update(driver.uid, 'approved')}>Approve</button><button onClick={() => update(driver.uid, 'suspended')}>Suspend</button><button onClick={() => update(driver.uid, 'rejected')}>Reject</button></span></div>)}{drivers.length === 0 && <p className="muted">No drivers are available in this scope.</p>}</div></section>;
+}
+
+function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const reload = useCallback(() => adminApi.drivers(todaId).then(setDrivers), [todaId]);
+  useEffect(() => { reload(); }, [reload]);
+  async function update(uid: string, status: 'approved' | 'suspended' | 'rejected') {
+    try { await adminApi.setDriverStatus(uid, status); onMessage(`Driver ${status}.`); reload(); }
+    catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update driver.'); }
+  }
+  const documentLinks = (driver: Driver) => [
+    ['Profile photo', driver.profilePhotoUrl], ['License front', driver.driverLicenseFrontUrl],
+    ['License back', driver.driverLicenseBackUrl], ['Government ID', driver.governmentIdUrl],
+    ['OR document', driver.orDocumentUrl], ['CR document', driver.crDocumentUrl],
+    ['Vehicle photo', driver.vehiclePhotoUrl],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return <section className="panel wide"><h2>{todaId ? 'Driver applications assigned to this TODA' : 'All driver registrations'}</h2><p className="muted">Pending drivers selected their TODA during Flutter registration. Review the profile and uploaded documents before approval.</p><div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}><span><b>{driver.uid}</b><small>TODA: {driver.todaId}</small><small>License: {driver.licenseNumber || 'Not provided'}{driver.licenseExpiry ? ` · expires ${driver.licenseExpiry}` : ''}</small><details><summary>Registration documents ({documentLinks(driver).length})</summary><div className="document-links">{documentLinks(driver).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details></span><span className={driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}>{driver.driverStatus}</span><span>★ {driver.rating || 0} · {driver.completedTrips || 0} trips<br /><small>{peso(driver.totalEarnings || 0)} earnings</small></span><span className="actions">{driver.driverStatus === 'pending' && <><button className="primary" onClick={() => update(driver.uid, 'approved')}>Approve</button><button onClick={() => update(driver.uid, 'rejected')}>Reject</button></>}{driver.driverStatus === 'approved' && <button onClick={() => update(driver.uid, 'suspended')}>Suspend</button>}{driver.driverStatus === 'suspended' && <button className="primary" onClick={() => update(driver.uid, 'approved')}>Restore</button>}</span></div>)}{drivers.length === 0 && <p className="muted">No driver applications are available in this scope.</p>}</div></section>;
 }
 
 function ReportsPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {

@@ -1,0 +1,22 @@
+.driver details {
+  margin-top: 9px;
+}
+
+.driver summary {
+  cursor: pointer;
+  color: #087676;
+  font-size: 12px;
+}
+
+.document-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.document-links a {
+  color: #075f60;
+  font-size: 12px;
+  font-weight: 700;
+}

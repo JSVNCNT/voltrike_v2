@@ -51,7 +51,10 @@ service cloud.firestore {
         request.resource.data.driverStatus == 'pending' &&
         request.resource.data.isOnline == false &&
         request.resource.data.isAvailable == false;
-      allow read: if signedIn() && request.auth.uid == driverId;
+      // Developers can audit every registration. A TODA administrator can
+      // inspect and decide only applications assigned to their TODA.
+      allow read: if signedIn() && (request.auth.uid == driverId ||
+        developerAdmin() || todaAdminFor(resource.data.todaId));
       allow update: if signedIn() && request.auth.uid == driverId &&
         request.resource.data.uid == resource.data.uid &&
         request.resource.data.driverStatus == resource.data.driverStatus &&

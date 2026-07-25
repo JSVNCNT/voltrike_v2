@@ -44,6 +44,14 @@ export interface Driver {
   completedTrips: number;
   totalEarnings: number;
   licenseNumber?: string;
+  licenseExpiry?: string;
+  profilePhotoUrl?: string;
+  driverLicenseFrontUrl?: string;
+  driverLicenseBackUrl?: string;
+  governmentIdUrl?: string;
+  orDocumentUrl?: string;
+  crDocumentUrl?: string;
+  vehiclePhotoUrl?: string;
 }
 
 export interface Report {
