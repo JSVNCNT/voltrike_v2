@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../../data/repositories/booking_repository.dart';
 import '../../../../data/repositories/driver_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
 
@@ -10,40 +12,48 @@ enum SplashDestination {
   passengerHome,
   driverHome,
   driverUnderReview,
+  passengerActiveBooking,
+  driverActiveBooking,
+}
+
+class SplashRecovery {
+  const SplashRecovery({required this.destination, this.bookingId});
+
+  final SplashDestination destination;
+  final String? bookingId;
 }
 
 class SplashController
-    extends StateNotifier<AsyncValue<SplashDestination>> {
+    extends StateNotifier<AsyncValue<SplashRecovery>> {
   SplashController({
     required AuthRepository authRepository,
     required UserRepository userRepository,
     required DriverRepository driverRepository,
+    required BookingRepository bookingRepository,
   })  : _authRepository = authRepository,
         _userRepository = userRepository,
         _driverRepository = driverRepository,
+        _bookingRepository = bookingRepository,
         super(const AsyncLoading());
 
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
   final DriverRepository _driverRepository;
+  final BookingRepository _bookingRepository;
 
   Future<void> checkSession() async {
     try {
       final firebaseUser = _authRepository.currentUser;
 
       if (firebaseUser == null) {
-        state = const AsyncData(
-          SplashDestination.intro,
-        );
+        _setDestination(SplashDestination.intro);
         return;
       }
 
       await _authRepository.reloadUser();
 
       if (!_authRepository.isEmailVerified) {
-        state = const AsyncData(
-          SplashDestination.verifyEmail,
-        );
+        _setDestination(SplashDestination.verifyEmail);
         return;
       }
 
@@ -52,9 +62,7 @@ class SplashController
       );
 
       if (user == null || !user.isActive) {
-        state = const AsyncData(
-          SplashDestination.intro,
-        );
+        _setDestination(SplashDestination.intro);
         return;
       }
 
@@ -69,20 +77,30 @@ class SplashController
         );
 
         if (driver == null) {
-          state = const AsyncData(
-            SplashDestination.intro,
-          );
+          _setDestination(SplashDestination.intro);
           return;
         }
 
         if (driver.isApproved) {
-          state = const AsyncData(
-            SplashDestination.driverHome,
-          );
+          final bookingId = driver.currentBookingId;
+          if (bookingId != null && bookingId.isNotEmpty) {
+            final booking = await _bookingRepository.getBooking(bookingId);
+            final isActive = booking != null &&
+                booking.driverId == firebaseUser.uid &&
+                booking.status != BookingStatus.completed &&
+                booking.status != BookingStatus.cancelled;
+            if (isActive) {
+              _setDestination(
+                SplashDestination.driverActiveBooking,
+                bookingId: bookingId,
+              );
+              return;
+            }
+          }
+
+          _setDestination(SplashDestination.driverHome);
         } else {
-          state = const AsyncData(
-            SplashDestination.driverUnderReview,
-          );
+          _setDestination(SplashDestination.driverUnderReview);
         }
 
         return;
@@ -92,14 +110,32 @@ class SplashController
       // Passenger
       // ==========================================================
 
-      state = const AsyncData(
-        SplashDestination.passengerHome,
+      final booking = await _bookingRepository.getActiveBookingForPassenger(
+        firebaseUser.uid,
       );
+      if (booking != null) {
+        _setDestination(
+          SplashDestination.passengerActiveBooking,
+          bookingId: booking.bookingId,
+        );
+        return;
+      }
+
+      _setDestination(SplashDestination.passengerHome);
     } catch (e, stackTrace) {
       state = AsyncError(
         e,
         stackTrace,
       );
     }
+  }
+
+  void _setDestination(
+    SplashDestination destination, {
+    String? bookingId,
+  }) {
+    state = AsyncData(
+      SplashRecovery(destination: destination, bookingId: bookingId),
+    );
   }
 }

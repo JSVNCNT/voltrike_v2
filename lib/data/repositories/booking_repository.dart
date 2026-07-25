@@ -219,6 +219,14 @@ class BookingRepository {
     });
   }
 
+  /// Loads the passenger's active booking once during application startup.
+  ///
+  /// This deliberately reuses the same selection rule as the live listener so
+  /// a cold start and a running session cannot restore different rides.
+  Future<Booking?> getActiveBookingForPassenger(String passengerId) {
+    return activeBookingForPassenger(passengerId).first;
+  }
+
   //==========================================================================
   // Driver Trip History
   //==========================================================================

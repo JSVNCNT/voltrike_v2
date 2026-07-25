@@ -34,11 +34,11 @@ class _SplashScreenState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<SplashDestination>>(
+    ref.listen<AsyncValue<SplashRecovery>>(
       splashControllerProvider,
       (previous, next) {
-        next.whenData((destination) {
-          switch (destination) {
+        next.whenData((recovery) {
+          switch (recovery.destination) {
             case SplashDestination.intro:
               context.go(
                 AppRoutes.intro,
@@ -66,6 +66,20 @@ class _SplashScreenState
             case SplashDestination.driverUnderReview:
               context.go(
                 AppRoutes.driverUnderReview,
+              );
+              break;
+
+            case SplashDestination.passengerActiveBooking:
+              context.go(
+                AppRoutes.driverTracking,
+                extra: recovery.bookingId,
+              );
+              break;
+
+            case SplashDestination.driverActiveBooking:
+              context.go(
+                AppRoutes.driverBookingTracking,
+                extra: recovery.bookingId,
               );
               break;
           }

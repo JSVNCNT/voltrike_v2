@@ -6,6 +6,7 @@ import 'package:voltrike_v2/features/driver/providers/driver_location_provider.d
 import '../../../../data/models/booking.dart';
 
 import '../../providers/driver_current_booking_provider.dart';
+import '../../providers/driver_booking_provider.dart';
 import '../../providers/driver_navigation_provider.dart';
 
 import '../widgets/passenger_information_card.dart';
@@ -18,7 +19,10 @@ import '../../providers/passenger_listener_provider.dart';
 class DriverBookingTrackingScreen extends ConsumerStatefulWidget {
   const DriverBookingTrackingScreen({
     super.key,
+    this.bookingId,
   });
+
+  final String? bookingId;
 
   @override
   ConsumerState<DriverBookingTrackingScreen> createState() =>
@@ -32,6 +36,16 @@ class _DriverBookingTrackingScreenState
   //==========================================================================
 
   GoogleMapController? _mapController;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(driverBookingControllerProvider.notifier)
+          .restoreCurrentBooking();
+    });
+  }
 
   //==========================================================================
   // Lifecycle

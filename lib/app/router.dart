@@ -262,8 +262,10 @@ GoRoute(
         context,
         state,
       ) {
-        final bookingId =
-            state.extra as String;
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const PassengerShellScreen();
+        }
 
         return SearchingDriverScreen(
           bookingId: bookingId,
@@ -277,8 +279,10 @@ GoRoute(
         context,
         state,
       ) {
-        final bookingId =
-            state.extra as String;
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const PassengerShellScreen();
+        }
 
         return BookingTrackingScreen(
           bookingId: bookingId,
@@ -292,8 +296,10 @@ GoRoute(
         context,
         state,
       ) {
-        final bookingId =
-            state.extra as String;
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const PassengerShellScreen();
+        }
 
         return BookingTrackingScreen(
           bookingId: bookingId,
@@ -418,7 +424,9 @@ GoRoute(
     context,
     state,
   ) =>
-      const DriverBookingTrackingScreen(),
+      DriverBookingTrackingScreen(
+        bookingId: state.extra as String?,
+      ),
 ),
 
 GoRoute(
