@@ -1,67 +1,35 @@
-import 'dart:async';
-
+import 'package:firebase_database/firebase_database.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../../data/models/driver.dart';
-import '../../../data/repositories/driver_repository.dart';
-
-/// ===========================================================================
-/// Driver Location Listener Service
+/// Listens to an assigned driver's current RTDB location.
 ///
-/// Listens to the assigned driver's live location.
-///
-/// Used by:
-/// • DriverTrackingScreen
-/// • PassengerTripScreen
-///
-/// Flow:
-///
-/// Driver GPS
-///        ↓
-/// DriverRepository
-///        ↓
-/// Firestore
-///        ↓
-/// Stream??Driver??
-///        ↓
-/// LatLng
-/// ===========================================================================
+/// Firestore owns durable booking state. RTDB owns high-frequency coordinates
+/// at `driver_locations/{driverId}`.
 class DriverLocationListenerService {
   DriverLocationListenerService._();
 
-  static final DriverLocationListenerService
-      instance =
+  static final DriverLocationListenerService instance =
       DriverLocationListenerService._();
 
-  final DriverRepository
-      _driverRepository =
-      DriverRepository();
+  final FirebaseDatabase _database = FirebaseDatabase.instance;
 
-  Stream<LatLng?> listen(
-    String driverId,
-  ) {
-    return _driverRepository
-        .driverStream(
-          driverId,
-        )
-        .map(
-      (Driver? driver) {
-        if (driver == null) {
-          return null;
-        }
+  Stream<LatLng?> listen(String driverId) {
+    return _database.ref('driver_locations/$driverId').onValue.map((event) {
+      final value = event.snapshot.value;
 
-        if (driver.currentLatitude ==
-                null ||
-            driver.currentLongitude ==
-                null) {
-          return null;
-        }
+      if (value is! Map) {
+        return null;
+      }
 
-        return LatLng(
-          driver.currentLatitude!,
-          driver.currentLongitude!,
-        );
-      },
-    );
+      final data = Map<Object?, Object?>.from(value);
+      final latitude = (data['latitude'] as num?)?.toDouble();
+      final longitude = (data['longitude'] as num?)?.toDouble();
+
+      if (latitude == null || longitude == null || data['online'] == false) {
+        return null;
+      }
+
+      return LatLng(latitude, longitude);
+    });
   }
 }

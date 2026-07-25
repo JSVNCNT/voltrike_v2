@@ -68,6 +68,16 @@ class DriverRatingRepository {
     );
   }
 
+  Future<bool> hasRatingForBooking(String bookingId) async {
+    final snapshot = await _firestoreService.firestore
+        .collection(_collection)
+        .where('bookingId', isEqualTo: bookingId)
+        .limit(1)
+        .get();
+
+    return snapshot.docs.isNotEmpty;
+  }
+
   //==========================================================================
   // Driver Ratings Stream
   //==========================================================================

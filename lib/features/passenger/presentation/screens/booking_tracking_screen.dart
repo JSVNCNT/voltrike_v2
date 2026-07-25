@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../../../app/routes.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../data/models/booking.dart';
 
@@ -15,6 +13,7 @@ import '../widgets/driver_information_card.dart';
 import '../../../ride/tracking/widgets/ride_actions_card.dart';
 import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
+import 'trip_receipt_screen.dart';
 
 class BookingTrackingScreen extends ConsumerStatefulWidget {
   const BookingTrackingScreen({
@@ -54,7 +53,7 @@ class _BookingTrackingScreenState
   // Navigation
   //==========================================================================
 
-  bool _hasNavigatedToRating = false;
+  bool _hasNavigatedToReceipt = false;
 
   //==========================================================================
   // Helpers
@@ -77,10 +76,10 @@ class _BookingTrackingScreenState
         : booking.pickup;
   }
 
-  void _navigateToRating(
+  void _navigateToReceipt(
     Booking booking,
   ) {
-    if (_hasNavigatedToRating) {
+    if (_hasNavigatedToReceipt) {
       return;
     }
 
@@ -89,7 +88,7 @@ class _BookingTrackingScreenState
       return;
     }
 
-    _hasNavigatedToRating = true;
+    _hasNavigatedToReceipt = true;
 
     WidgetsBinding.instance
         .addPostFrameCallback((_) {
@@ -97,9 +96,10 @@ class _BookingTrackingScreenState
         return;
       }
 
-      context.go(
-        AppRoutes.rateDriver,
-        extra: booking.bookingId,
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => TripReceiptScreen(bookingId: booking.bookingId),
+        ),
       );
     });
   }
@@ -322,7 +322,7 @@ class _BookingTrackingScreenState
           );
         }
 
-        _navigateToRating(
+        _navigateToReceipt(
           booking,
         );
 
@@ -495,6 +495,4 @@ final driverLocationAsync = ref.watch(
       },
     );
   }
-
-    }
-    
+}

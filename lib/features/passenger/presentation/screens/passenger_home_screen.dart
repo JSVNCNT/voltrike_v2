@@ -6,15 +6,18 @@ import '../../../../core/services/fare_service.dart';
 import '../../../../core/services/places_service.dart';
 import '../../../../core/services/polyline_service.dart';
 import '../../../../core/services/routes_service.dart';
+import '../../../../data/models/booking.dart';
 import '../../../../data/models/place_prediction.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/booking_session_provider.dart';
+import '../../providers/active_booking_provider.dart';
 import '../widgets/home_bottom_sheet.dart';
 import '../widgets/map_view.dart';
 import 'destination_search_screen.dart';
 import 'searching_driver_screen.dart';
+import 'booking_tracking_screen.dart';
 
 /// ===========================================================================
 /// Passenger Home Screen
@@ -43,6 +46,8 @@ class PassengerHomeScreen extends ConsumerStatefulWidget {
 
 class _PassengerHomeScreenState
     extends ConsumerState<PassengerHomeScreen> {
+  ProviderSubscription<AsyncValue<Booking?>>? _activeBookingSubscription;
+  String? _restoredBookingId;
   //==========================================================================
   // Temporary Fare Configuration
   //
@@ -52,6 +57,45 @@ class _PassengerHomeScreenState
   static const FareConfiguration
       _fareConfiguration =
       devFareConfiguration;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _activeBookingSubscription = ref.listenManual<AsyncValue<Booking?>>(
+      activePassengerBookingProvider,
+      (_, next) => next.whenData(_restoreActiveBooking),
+    );
+  }
+
+  void _restoreActiveBooking(Booking? booking) {
+    if (booking == null || _restoredBookingId == booking.bookingId) {
+      return;
+    }
+
+    _restoredBookingId = booking.bookingId;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      final Widget screen;
+      switch (booking.status) {
+        case BookingStatus.pending:
+          screen = SearchingDriverScreen(bookingId: booking.bookingId);
+          break;
+        case BookingStatus.cancelled:
+          return;
+        default:
+          screen = BookingTrackingScreen(bookingId: booking.bookingId);
+      }
+
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => screen),
+      );
+    });
+  }
 
   //==========================================================================
   // Select Pickup
@@ -604,6 +648,7 @@ class _PassengerHomeScreenState
 
   @override
   void dispose() {
+    _activeBookingSubscription?.close();
     super.dispose();
   }
 }

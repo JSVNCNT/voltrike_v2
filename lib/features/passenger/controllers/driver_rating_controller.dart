@@ -87,6 +87,18 @@ class DriverRatingController
         );
       }
 
+      if (booking.passengerId != passenger.uid) {
+        throw Exception('You cannot rate this booking.');
+      }
+
+      if (booking.status != BookingStatus.completed) {
+        throw Exception('Only completed trips can be rated.');
+      }
+
+      if (await _driverRatingRepository.hasRatingForBooking(bookingId)) {
+        throw Exception('This trip has already been rated.');
+      }
+
       final driverRating =
           DriverRating(
         ratingId:

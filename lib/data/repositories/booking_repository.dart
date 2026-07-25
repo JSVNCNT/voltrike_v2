@@ -202,6 +202,23 @@ class BookingRepository {
     );
   }
 
+  /// Watches the passenger's single active booking, if one exists.
+  ///
+  /// Status filtering is performed in memory to avoid requiring a compound
+  /// Firestore index during the current migration. The result is deterministic
+  /// when legacy data contains more than one active record.
+  Stream<Booking?> activeBookingForPassenger(String passengerId) {
+    return watchPassengerBookings(passengerId).map((bookings) {
+      final active = bookings.where((booking) {
+        return booking.status != BookingStatus.completed &&
+            booking.status != BookingStatus.cancelled;
+      }).toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+      return active.isEmpty ? null : active.first;
+    });
+  }
+
   //==========================================================================
   // Driver Trip History
   //==========================================================================
@@ -347,11 +364,11 @@ class BookingRepository {
   Future<void> completeBooking(
     String bookingId,
   ) async {
-    await updateStatus(
-      bookingId: bookingId,
-      status:
-          BookingStatus.completed,
-    );
+    await _collection.doc(bookingId).update({
+      'status': BookingStatus.completed.name,
+      'completedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   //==========================================================================
