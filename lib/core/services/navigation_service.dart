@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -23,6 +25,20 @@ class NavigationService {
 
   static final NavigationService instance =
       NavigationService._();
+
+  StreamSubscription<Position>? _liveLocationSubscription;
+  Position? _liveLocation;
+
+  Position? get liveLocation => _liveLocation;
+
+  /// Accepts the active driver's live GPS source without coupling navigation
+  /// to a particular transport (local GPS, RTDB relay, or simulator).
+  void bindLiveLocation(Stream<Position> locations) {
+    _liveLocationSubscription?.cancel();
+    _liveLocationSubscription = locations.listen((position) {
+      _liveLocation = position;
+    });
+  }
 
   //==========================================================================
   // Permissions
@@ -202,6 +218,9 @@ class NavigationService {
   //==========================================================================
 
   Future<void> dispose() async {
+    await _liveLocationSubscription?.cancel();
+    _liveLocationSubscription = null;
+    _liveLocation = null;
     await stopNavigation();
   }
 }

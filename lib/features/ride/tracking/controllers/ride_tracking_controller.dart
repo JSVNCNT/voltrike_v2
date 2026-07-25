@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../../core/services/navigation_service.dart';
@@ -13,6 +14,7 @@ class RideTrackingController extends StateNotifier<RideTrackingState> {
 
   final NavigationService _navigation;
   Booking? _booking;
+  StreamSubscription<LatLng?>? _locationSubscription;
 
   void setBooking(Booking booking) {
     _booking = booking;
@@ -29,6 +31,14 @@ class RideTrackingController extends StateNotifier<RideTrackingState> {
     state = state.copyWith(
       markers: _markers(booking, location),
     );
+  }
+
+  /// Binds the shared ride map to a live passenger/driver location stream.
+  /// The source may be RTDB-backed or a local GPS stream; the ride engine does
+  /// not couple itself to either transport.
+  void bindDriverLocation(Stream<LatLng?> locations) {
+    _locationSubscription?.cancel();
+    _locationSubscription = locations.listen(setDriverLocation);
   }
 
   Future<void> loadRoute({
@@ -62,8 +72,16 @@ class RideTrackingController extends StateNotifier<RideTrackingState> {
   }
 
   void clear() {
+    _locationSubscription?.cancel();
+    _locationSubscription = null;
     _booking = null;
     state = const RideTrackingState();
+  }
+
+  @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    super.dispose();
   }
 
   Set<Marker> _markers(Booking booking, LatLng? driverLocation) {
