@@ -11,6 +11,19 @@ const liveKitApiKey = defineSecret('LIVEKIT_API_KEY');
 const liveKitApiSecret = defineSecret('LIVEKIT_API_SECRET');
 const liveKitUrl = defineString('LIVEKIT_URL');
 const adminBootstrapCode = defineSecret('ADMIN_BOOTSTRAP_CODE');
+const bacolodBarangayCodes = new Set([
+  '064501001', '064501002', '064501003', '064501004', '064501005', '064501006',
+  '064501007', '064501008', '064501009', '064501010', '064501011', '064501012',
+  '064501013', '064501014', '064501015', '064501016', '064501017', '064501018',
+  '064501019', '064501020', '064501021', '064501022', '064501023', '064501024',
+  '064501025', '064501026', '064501027', '064501028', '064501029', '064501030',
+  '064501031', '064501032', '064501033', '064501034', '064501035', '064501036',
+  '064501037', '064501038', '064501039', '064501040', '064501041', '064501042',
+  '064501043', '064501044', '064501045', '064501046', '064501047', '064501048',
+  '064501049', '064501050', '064501051', '064501052', '064501053', '064501054',
+  '064501055', '064501056', '064501057', '064501058', '064501059', '064501060',
+  '064501061',
+]);
 
 function timestamp() {
   return admin.firestore.FieldValue.serverTimestamp();
@@ -136,6 +149,9 @@ exports.adminCreateToda = onCall({ region: 'asia-southeast1' }, async (request) 
   const data = request.data || {};
   const name = requiredString(data.name, 'TODA name');
   const barangayCode = requiredString(data.barangayCode, 'Barangay');
+  if (!bacolodBarangayCodes.has(barangayCode)) {
+    throw new HttpsError('invalid-argument', 'Select an official Bacolod barangay.');
+  }
   const registration = data.registration || {};
   const normalizedRegistration = {
     secCertificateNumber: requiredString(registration.secCertificateNumber, 'SEC certificate number'),
