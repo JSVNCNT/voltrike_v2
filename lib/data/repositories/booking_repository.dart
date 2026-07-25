@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/booking.dart';
+import '../models/driver_booking_offer.dart';
 
 /// ===========================================================================
 /// Booking Repository
@@ -200,6 +201,29 @@ class BookingRepository {
             .toList();
       },
     );
+  }
+
+  /// Watches only offers explicitly dispatched to one driver.
+  Stream<List<Booking>> watchDriverOffers(String driverId) {
+    return _firestore
+        .collection('drivers')
+        .doc(driverId)
+        .collection('bookingOffers')
+        .where('status', isEqualTo: 'offered')
+        .snapshots()
+        .asyncMap((snapshot) async {
+      final offers = snapshot.docs
+          .map(DriverBookingOffer.fromFirestore)
+          .where((offer) => !offer.isExpired)
+          .toList();
+      final bookings = await Future.wait(
+        offers.map((offer) => getBooking(offer.bookingId)),
+      );
+      return bookings
+          .whereType<Booking>()
+          .where((booking) => booking.status == BookingStatus.pending)
+          .toList();
+    });
   }
 
   /// Watches the passenger's single active booking, if one exists.

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/booking.dart';
 import '../../../data/repositories/booking_repository.dart';
+import '../../../data/repositories/auth_repository.dart';
 import '../providers/driver_incoming_booking_provider.dart';
 import '../providers/driver_trip_provider.dart';
 
@@ -22,11 +23,14 @@ import '../providers/driver_trip_provider.dart';
 class DriverBookingListener {
   DriverBookingListener({
     required BookingRepository bookingRepository,
+    required AuthRepository authRepository,
     required Ref ref,
   })  : _bookingRepository = bookingRepository,
+        _authRepository = authRepository,
         _ref = ref;
 
   final BookingRepository _bookingRepository;
+  final AuthRepository _authRepository;
   final Ref _ref;
 
   StreamSubscription<List<Booking>>? _subscription;
@@ -36,6 +40,8 @@ class DriverBookingListener {
   //==========================================================================
 
   void startListening() {
+    final driverId = _authRepository.currentUser?.uid;
+    if (driverId == null) return;
     developer.log(
       'Starting pending booking listener...',
       name: 'DriverBookingListener',
@@ -44,7 +50,7 @@ class DriverBookingListener {
     _subscription?.cancel();
 
     _subscription = _bookingRepository
-        .watchPendingBookings()
+        .watchDriverOffers(driverId)
         .listen(
       (bookings) {
         developer.log(

@@ -16,6 +16,7 @@ import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
 import '../../../ride/tracking/models/ride_participant_role.dart';
+import '../../../ride/tracking/services/ride_marker_factory.dart';
 import 'trip_receipt_screen.dart';
 
 class BookingTrackingScreen extends ConsumerStatefulWidget {
@@ -45,6 +46,7 @@ class _BookingTrackingScreenState
   //==========================================================================
 
   GoogleMapController? _mapController;
+  BitmapDescriptor? _driverMarkerIcon;
 
   //==========================================================================
   // Route
@@ -53,6 +55,8 @@ class _BookingTrackingScreenState
   List<LatLng> _routePoints = [];
   String? _loadedRouteKey;
   String? _loadingRouteKey;
+  String? _eta;
+  String? _remainingDistance;
 
   //==========================================================================
   // Navigation
@@ -116,6 +120,16 @@ class _BookingTrackingScreenState
   @override
   void initState() {
     super.initState();
+    _loadDriverMarker();
+  }
+
+  Future<void> _loadDriverMarker() async {
+    try {
+      final icon = await RideMarkerFactory.driverMarker();
+      if (mounted) setState(() => _driverMarkerIcon = icon);
+    } catch (_) {
+      // The default teal marker remains available if an app asset is missing.
+    }
   }
 
   @override
@@ -154,10 +168,11 @@ class _BookingTrackingScreenState
     if (!mounted || route == null) {
       return;
     }
+    final resolvedRoute = route;
 
     final encodedPolyline =
         _navigation.encodedPolyline(
-      route,
+      resolvedRoute,
     );
 
     final points =
@@ -168,6 +183,9 @@ class _BookingTrackingScreenState
     setState(() {
       _routePoints = points;
       _loadedRouteKey = routeKey;
+      _eta = _navigation.duration(resolvedRoute);
+      _remainingDistance =
+          '${_navigation.distanceKm(resolvedRoute).toStringAsFixed(1)} km away';
     });
   }
 
@@ -251,6 +269,9 @@ class _BookingTrackingScreenState
             'driver',
           ),
           position: driverLocation,
+          anchor: const Offset(0.5, 0.5),
+          icon: _driverMarkerIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
           infoWindow:
               const InfoWindow(
             title: 'Driver',
@@ -461,8 +482,8 @@ final driverLocationAsync = ref.watch(
                           status:
                               booking.status,
                           role: RideParticipantRole.passenger,
-                          eta: null,
-                      distance: null,
+                          eta: _eta,
+                          distance: _remainingDistance,
                     ),
                   ),
 
@@ -506,8 +527,7 @@ final driverLocationAsync = ref.watch(
                                 .destinationAddress,
                             distance:
                                 '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-                            duration:
-                                '--',
+                            duration: _eta ?? '--',
                             fare:
                                 '₱${booking.estimatedFare.toStringAsFixed(2)}',
                           ),
