@@ -19,8 +19,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
 
-        // Required by google_navigation_flutter
-        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -30,8 +28,7 @@ android {
     defaultConfig {
         applicationId = "com.example.voltrike_v2"
 
-        // Required by Navigation SDK
-        minSdk = 24
+        minSdk = flutter.minSdkVersion
 
         targetSdk = flutter.targetSdkVersion
 
@@ -45,11 +42,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-}
-
-dependencies {
-    // Required by google_navigation_flutter
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
 
 flutter {
