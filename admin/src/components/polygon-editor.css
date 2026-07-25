@@ -1,0 +1,71 @@
+.polygon-editor {
+  position: relative;
+  background: #101114;
+}
+
+.polygon-editor .map-search {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  left: 12px;
+  width: min(390px, calc(100% - 74px));
+}
+
+.polygon-editor .map-search form {
+  display: flex;
+  gap: 7px;
+  padding: 7px;
+  border-radius: 10px;
+  background: #17191fcc;
+  box-shadow: 0 3px 12px #0008;
+}
+
+.polygon-editor .map-search input {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #3b404a;
+  background: #252933;
+  color: #fff;
+}
+
+.polygon-editor .map-search button {
+  padding: 9px 12px;
+  background: #ef4444;
+  color: #fff;
+}
+
+.map-search-results {
+  overflow: hidden;
+  margin-top: 6px;
+  border-radius: 10px;
+  background: #17191ff2;
+  box-shadow: 0 3px 12px #0008;
+}
+
+.map-search-results p { margin: 0; padding: 10px; color: #ffd1d1; font-size: 12px; }
+.map-search-results button { display: grid; width: 100%; gap: 3px; border-radius: 0; padding: 10px; background: transparent; color: #fff; text-align: left; }
+.map-search-results button:hover { background: #2c313c; }
+.map-search-results span { color: #c1c8d2; font-size: 12px; font-weight: 400; }
+
+.polygon-editor .map-guide {
+  position: absolute;
+  z-index: 1;
+  right: 12px;
+  bottom: 26px;
+  display: grid;
+  gap: 4px;
+  max-width: 260px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #17191fe8;
+  color: #e8edf3;
+  box-shadow: 0 3px 12px #0008;
+  font-size: 12px;
+}
+
+.polygon-editor .map-guide b { color: #fff; }
+
+@media (max-width: 680px) {
+  .polygon-editor .map-search { width: calc(100% - 24px); }
+  .polygon-editor .map-guide { right: 12px; bottom: 26px; left: 12px; max-width: none; }
+}
