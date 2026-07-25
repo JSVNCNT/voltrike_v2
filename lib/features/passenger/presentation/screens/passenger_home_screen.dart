@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../../core/services/fare_service.dart';
 import '../../../../core/services/places_service.dart';
 import '../../../../core/services/polyline_service.dart';
+import '../../../../core/services/route_restriction_service.dart';
 import '../../../../core/services/routes_service.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/place_prediction.dart';
@@ -232,6 +233,20 @@ class _PassengerHomeScreenState
             bookingProvider.notifier,
           )
           .reset();
+
+      if (mounted) {
+        final restriction =
+            RouteRestrictionService.instance.lastConflict;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              restriction == null
+                  ? 'Unable to calculate a route right now.'
+                  : 'No safe route is available because of ${restriction.name}.',
+            ),
+          ),
+        );
+      }
 
       return;
     }

@@ -92,6 +92,12 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if false;
     }
+    match /routeRestrictions/{restrictionId} {
+      // Mobile route selection needs the active restrictions. Only the
+      // developer-admin callable functions may create or change them.
+      allow read: if signedIn();
+      allow write: if false;
+    }
     match /zoneRequests/{requestId} {
       allow read: if developerAdmin() || todaAdminFor(resource.data.todaId);
       allow write: if false;

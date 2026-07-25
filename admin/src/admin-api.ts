@@ -3,7 +3,7 @@ import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from '
 import { db, functions } from './firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
-import type { Driver, FareConfig, Report, Toda, ZoneRequest } from './types';
+import type { Driver, FareConfig, Report, RouteRestriction, Toda, ZoneRequest } from './types';
 
 async function call<T>(name: string, data: Record<string, unknown>): Promise<T> {
   return (await httpsCallable<Record<string, unknown>, T>(functions, name)(data)).data;
@@ -37,6 +37,8 @@ export const adminApi = {
   submitZone: (todaId: string, polygon: [number, number][], notes: string) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes }),
   reviewZone: (zoneRequestId: string, status: string) => call<{ updated: boolean }>('adminReviewZoneRequest', { zoneRequestId, status }),
   updateZone: (zoneRequestId: string, polygon: [number, number][], notes: string) => call<{ updated: boolean }>('adminUpdateZoneRequest', { zoneRequestId, polygon, notes }),
+  createRouteRestriction: (name: string, type: RouteRestriction['type'], polygon: [number, number][], notes: string) => call<{ restrictionId: string }>('adminCreateRouteRestriction', { name, type, polygon, notes }),
+  setRouteRestrictionStatus: (restrictionId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetRouteRestrictionStatus', { restrictionId, isActive }),
   async todas(): Promise<Toda[]> {
     const snapshot = await getDocs(query(collection(db, 'todas'), orderBy('name')));
     return snapshot.docs.map((entry) => mapDocument<Toda>(entry.id, entry.data()));
@@ -71,6 +73,10 @@ export const adminApi = {
     const source = collection(db, 'zoneRequests');
     const snapshot = await getDocs(todaId ? query(source, where('todaId', '==', todaId), limit(100)) : query(source, limit(100)));
     return snapshot.docs.map((entry) => mapDocument<ZoneRequest>(entry.id, entry.data()));
+  },
+  async routeRestrictions(): Promise<RouteRestriction[]> {
+    const snapshot = await getDocs(query(collection(db, 'routeRestrictions'), limit(200)));
+    return snapshot.docs.map((entry) => mapDocument<RouteRestriction>(entry.id, entry.data()));
   },
   async fare(): Promise<FareConfig> {
     const snapshot = await getDoc(doc(db, 'settings', 'fare_config'));

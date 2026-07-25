@@ -105,3 +105,12 @@ export interface ZoneRequest {
   status: 'pending' | 'approved' | 'declined';
   notes?: string;
 }
+
+export interface RouteRestriction {
+  id: string;
+  name: string;
+  type: 'prohibited_highway' | 'no_service_area' | 'restricted_crossing';
+  polygon: Point[];
+  notes?: string;
+  isActive: boolean;
+}

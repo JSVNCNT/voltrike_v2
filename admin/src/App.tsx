@@ -5,14 +5,14 @@ import { auth, db } from './firebase';
 import { adminApi } from './admin-api';
 import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
 import { bacolodBarangays } from './data/bacolodBarangays';
-import type { AdminSession, Driver, FareConfig, Point, Report, Toda, TodaRegistration, ZoneRequest } from './types';
+import type { AdminSession, Driver, FareConfig, Point, Report, RouteRestriction, Toda, TodaRegistration, ZoneRequest } from './types';
 import './registration.css';
 import './driver-review.css';
 
 // Mapbox is substantial; only load it when an administrator opens Coverage.
 const PolygonEditor = lazy(() => import('./components/PolygonEditor').then((module) => ({ default: module.PolygonEditor })));
 
-type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'reports' | 'coverage';
+type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'reports' | 'coverage' | 'route_rules';
 const initialFare: FareConfig = { baseFare: 20, includedMeters: 1000, distanceStepMeters: 500, distanceStepPrice: 5, additionalPassengerFee: 40, baggageFee: 20, outsideTodaSurcharge: 20 };
 const registrationFields: Array<[keyof TodaRegistration, string]> = [
   ['secCertificateNumber', 'SEC registration certificate number'], ['spResolutionNumber', 'SP resolution number'], ['mayorsPermitNumber', "Bacolod Mayor's permit / BPLO license number"], ['barangayClearanceNumber', 'Barangay clearance and endorsement number'], ['presidentName', "TODA President's full name"], ['presidentLicenseNumber', "President's professional driver license number"], ['presidentTin', "President's TIN"],
@@ -46,7 +46,7 @@ export default function App() {
 
   const isDeveloper = session.role === 'developer_admin';
   const visiblePages: Array<[Page, string]> = isDeveloper
-    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['reports', 'Reports'], ['coverage', 'Coverage areas']]
+    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
     : [['overview', 'Overview'], ['drivers', 'My drivers'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
   return <div className="shell">
     <aside className="sidebar"><div className="brand"><img src="/images/logo.png" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
@@ -61,6 +61,7 @@ export default function App() {
       {page === 'drivers' && <DriversPage todaId={isDeveloper ? undefined : session.todaId!} onMessage={setMessage} />}
       {page === 'reports' && <ReportsPage todaId={isDeveloper ? undefined : session.todaId!} onMessage={setMessage} />}
       {page === 'coverage' && <CoveragePage session={session} onMessage={setMessage} />}
+      {page === 'route_rules' && isDeveloper && <RouteRestrictionsPage onMessage={setMessage} />}
     </main>
   </div>;
 }
@@ -220,6 +221,22 @@ function ReportsPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
   const name = (person: Report['reporter'] | undefined, fallback: string) => [person?.firstName, person?.middleName, person?.lastName].filter(Boolean).join(' ') || fallback;
   const contact = (person: Report['reporter'] | undefined) => [person?.email, person?.phoneNumber].filter(Boolean).join(' · ');
   return <section className="panel wide"><h2>{todaId ? 'Reports involving this TODA' : 'All passenger and driver reports'}</h2><p className="muted">Developer Admin can identify both parties. TODA Admin sees only the identities within its authorized driver scope.</p><div className="table">{reports.map((report) => <div className="row report report-card" key={report.id}><span><b>{report.category}</b><small>Booking {report.bookingId}</small><small className={report.status === 'open' ? 'warning' : 'ok'}>{report.status}</small></span><span className="report-parties"><b>Reported by: {name(report.reporter, 'Passenger identity restricted')}</b><small>{contact(report.reporter) || (report.reporter ? 'No contact details' : 'Restricted outside TODA scope')}</small><b>Reported account: {name(report.reportedUser, 'Driver or passenger identity restricted')}</b><small>{contact(report.reportedUser) || (report.reportedUser ? 'No contact details' : 'Restricted outside TODA scope')}</small></span><span>{report.details || 'No details provided.'}{report.action && <small>Action: {report.action}</small>}</span>{report.status === 'open' && <span className="actions"><button onClick={() => action(report.id, 'resolved')}>Resolve</button><button onClick={() => action(report.id, 'dismissed')}>Dismiss</button>{!todaId && <button onClick={() => suspendReportedUser(report.reportedUserId)}>Suspend reported account</button>}</span>}</div>)}{reports.length === 0 && <p className="muted">No reports are available in this scope.</p>}</div></section>;
+}
+
+function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => void }) {
+  const [restrictions, setRestrictions] = useState<RouteRestriction[]>([]);
+  const [name, setName] = useState(''); const [type, setType] = useState<RouteRestriction['type']>('prohibited_highway'); const [notes, setNotes] = useState(''); const [points, setPoints] = useState<Point[]>([]);
+  const reload = useCallback(() => adminApi.routeRestrictions().then(setRestrictions), []);
+  useEffect(() => { reload(); }, [reload]);
+  async function create() {
+    try { await adminApi.createRouteRestriction(name.trim(), type, points, notes); setName(''); setNotes(''); setPoints([]); onMessage('Route restriction saved. Mobile route selection will avoid it after the next refresh.'); reload(); }
+    catch (error) { onMessage(error instanceof Error ? error.message : 'Enter a name and a three- or four-point area.'); }
+  }
+  async function toggle(item: RouteRestriction) {
+    try { await adminApi.setRouteRestrictionStatus(item.id, !item.isActive); onMessage(`${item.name} ${item.isActive ? 'disabled' : 'enabled'}.`); reload(); }
+    catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update restriction.'); }
+  }
+  return <><section className="panel wide"><h2>Developer-only route restrictions</h2><p className="muted">Draw a maximum four-point red boundary for a prohibited highway segment, unavailable service area, or restricted crossing. Passenger and driver route selection will choose a safe Google Routes alternative when one is available.</p><div className="form-grid"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restriction name, e.g. Circumferential Road highway segment" required /><select value={type} onChange={(event) => setType(event.target.value as RouteRestriction['type'])}><option value="prohibited_highway">Prohibited highway</option><option value="no_service_area">No-service area</option><option value="restricted_crossing">Restricted crossing</option></select></div><PolygonEditor points={points} onChange={setPoints} onFinish={create} maxPoints={4} /><div className="map-actions"><span>{points.length}/4 points</span><button onClick={() => setPoints(points.slice(0, -1))} disabled={!points.length}>Undo point</button><button onClick={() => setPoints([])} disabled={!points.length}>Clear</button><button className="primary" onClick={create} disabled={points.length < 3 || !name.trim()}>Save restriction</button></div><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Operational reason and driver guidance" /></section><section className="panel wide"><h2>Active and archived restrictions</h2><div className="table">{restrictions.map((item) => <div className="row" key={item.id}><span><b>{item.name}</b><small>{item.type.replace(/_/g, ' ')} · {item.polygon.length} points</small></span><span>{item.notes || 'No guidance'}</span><span className={item.isActive ? 'warning' : 'ok'}>{item.isActive ? 'active' : 'disabled'}</span><span className="actions"><button onClick={() => toggle(item)}>{item.isActive ? 'Disable' : 'Enable'}</button></span></div>)}{restrictions.length === 0 && <p className="muted">No route restrictions configured.</p>}</div></section></>;
 }
 
 function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage: (value: string) => void }) {

@@ -414,6 +414,38 @@ exports.adminUpdateZoneRequest = onCall({ region: 'asia-southeast1' }, async (re
   return { updated: true };
 });
 
+// Route restrictions are centrally managed safety/operations constraints.
+// They are read by both mobile apps to select a safe route alternative.
+exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const developer = await requireDeveloperAdmin(request);
+  const name = requiredString(request.data?.name, 'Restriction name');
+  const type = request.data?.type;
+  if (!['prohibited_highway', 'no_service_area', 'restricted_crossing'].includes(type)) {
+    throw new HttpsError('invalid-argument', 'Unsupported restriction type.');
+  }
+  const polygon = request.data?.polygon;
+  if (!Array.isArray(polygon) || polygon.length < 3 || polygon.length > 4 ||
+      !polygon.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) {
+    throw new HttpsError('invalid-argument', 'A three- or four-point polygon is required.');
+  }
+  const ref = await db.collection('routeRestrictions').add({
+    name, type, polygon, isActive: true,
+    notes: String(request.data?.notes || '').slice(0, 1000),
+    createdBy: developer.uid, createdAt: timestamp(), updatedAt: timestamp(),
+  });
+  return { restrictionId: ref.id };
+});
+
+exports.adminSetRouteRestrictionStatus = onCall({ region: 'asia-southeast1' }, async (request) => {
+  await requireDeveloperAdmin(request);
+  const restrictionId = requiredString(request.data?.restrictionId, 'Restriction ID');
+  if (typeof request.data?.isActive !== 'boolean') throw new HttpsError('invalid-argument', 'Restriction status is required.');
+  const ref = db.collection('routeRestrictions').doc(restrictionId);
+  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Route restriction not found.');
+  await ref.update({ isActive: request.data.isActive, updatedAt: timestamp() });
+  return { updated: true };
+});
+
 // Adds TODA scope to reports after creation. This supports efficient, scoped
 // TODA-admin report lists without exposing unrelated passenger reports.
 exports.enrichReportToda = onDocumentCreated('reports/{reportId}', async (event) => {

@@ -9,6 +9,7 @@ interface Props {
   onChange: (points: Point[]) => void;
   onFinish?: () => void;
   disabled?: boolean;
+  maxPoints?: number;
 }
 
 const bacolod: Point = [122.9511, 10.6765];
@@ -20,7 +21,20 @@ interface SearchResult {
   coordinates: Point;
 }
 
-export function PolygonEditor({ points, onChange, onFinish, disabled }: Props) {
+function zoneData(points: Point[]): GeoJSON.FeatureCollection {
+  const polygon = [...points, points[0]];
+  return {
+    type: 'FeatureCollection',
+    features: [
+      ...(points.length >= 3
+          ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [polygon] } }]
+          : []),
+      ...points.map((point) => ({ type: 'Feature' as const, properties: {}, geometry: { type: 'Point' as const, coordinates: point } })),
+    ],
+  } as GeoJSON.FeatureCollection;
+}
+
+export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints = 4 }: Props) {
   const element = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const latest = useRef(points);
@@ -46,24 +60,24 @@ export function PolygonEditor({ points, onChange, onFinish, disabled }: Props) {
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
     map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
     map.on('load', () => {
-      map.addSource('zone', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addSource('zone', { type: 'geojson', data: zoneData(latest.current) });
       map.addLayer({ id: 'zone-fill', type: 'fill', source: 'zone', paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.25 } });
       map.addLayer({ id: 'zone-line', type: 'line', source: 'zone', paint: { 'line-color': '#ef4444', 'line-width': 3 } });
       map.addLayer({ id: 'zone-points', type: 'circle', source: 'zone', paint: { 'circle-color': '#ffffff', 'circle-stroke-color': '#ef4444', 'circle-stroke-width': 3, 'circle-radius': 6 } });
     });
-    map.on('click', (event) => { if (!disabled) onChange([...latest.current, [event.lngLat.lng, event.lngLat.lat]]); });
+    map.on('click', (event) => {
+      if (!disabled && latest.current.length < maxPoints) {
+        onChange([...latest.current, [event.lngLat.lng, event.lngLat.lat]]);
+      }
+    });
     return () => { searchMarker.current?.remove(); map.remove(); };
-  }, [disabled, onChange]);
+  }, [disabled, maxPoints, onChange]);
 
   useEffect(() => {
     const map = mapRef.current;
     const source = map?.getSource('zone') as mapboxgl.GeoJSONSource | undefined;
     if (!source) return;
-    const coordinates = points.length >= 3 ? [[...points, points[0]]] : points;
-    source.setData({ type: 'FeatureCollection', features: [
-      ...(points.length >= 3 ? [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coordinates] } }] : []),
-      ...points.map((point) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: point } })),
-    ] } as GeoJSON.FeatureCollection);
+    source.setData(zoneData(points));
   }, [points]);
 
   useEffect(() => {

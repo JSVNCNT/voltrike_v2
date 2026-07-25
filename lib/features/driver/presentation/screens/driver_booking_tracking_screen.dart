@@ -119,6 +119,9 @@ class _DriverBookingTrackingScreenState
     required Booking booking,
     required LatLng driverLocation,
   }) async {
+    await ref
+        .read(driverNavigationControllerProvider.notifier)
+        .checkCurrentPosition(driverLocation);
     await _moveCamera(
       driverLocation,
     );
@@ -329,11 +332,32 @@ Widget build(
           padding: const EdgeInsets.all(
             16,
           ),
-          child: TripStatusCard(
-            status: booking.status,
-            role: RideParticipantRole.driver,
-            eta: navigation.eta,
-            distance: navigation.distance,
+          child: Column(
+            children: [
+              if (navigation.restrictionWarning?.isNotEmpty == true) ...[
+                Material(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(navigation.restrictionWarning!)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              TripStatusCard(
+                status: booking.status,
+                role: RideParticipantRole.driver,
+                eta: navigation.eta,
+                distance: navigation.distance,
+              ),
+            ],
           ),
         ),
 

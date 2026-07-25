@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/services/navigation_service.dart';
+import '../../../core/services/route_restriction_service.dart';
 
 /// ===========================================================================
 /// Driver Navigation State
@@ -14,6 +15,7 @@ class DriverNavigationState {
     this.eta,
     this.distance,
     this.duration,
+    this.restrictionWarning,
     this.loading = false,
   });
 
@@ -21,6 +23,7 @@ class DriverNavigationState {
   final String? eta;
   final String? distance;
   final String? duration;
+  final String? restrictionWarning;
   final bool loading;
 
   DriverNavigationState copyWith({
@@ -28,6 +31,7 @@ class DriverNavigationState {
     String? eta,
     String? distance,
     String? duration,
+    String? restrictionWarning,
     bool? loading,
   }) {
     return DriverNavigationState(
@@ -35,6 +39,7 @@ class DriverNavigationState {
       eta: eta ?? this.eta,
       distance: distance ?? this.distance,
       duration: duration ?? this.duration,
+      restrictionWarning: restrictionWarning ?? this.restrictionWarning,
       loading: loading ?? this.loading,
     );
   }
@@ -75,13 +80,19 @@ class DriverNavigationController
     state = state.copyWith(loading: true);
 
     try {
+      RouteRestrictionService.instance.clearLastConflict();
       final route = await _navigation.computeTrafficRoute(
         origin: origin,
         destination: destination,
       );
 
       if (route == null) {
-        clearRoute();
+        final conflict = RouteRestrictionService.instance.lastConflict;
+        state = DriverNavigationState(
+          restrictionWarning: conflict == null
+              ? 'No route is currently available.'
+              : 'Route blocked: ${conflict.name}. Use the approved alternate route.',
+        );
         return;
       }
 
@@ -129,6 +140,17 @@ class DriverNavigationController
     return loadRoute(
       origin: driverLocation,
       destination: destination,
+    );
+  }
+
+  /// Called from live GPS updates to warn a driver who enters a developer-
+  /// restricted polygon even if a previously rendered route is still visible.
+  Future<void> checkCurrentPosition(LatLng position) async {
+    final conflict = await RouteRestrictionService.instance.pointConflict(position);
+    state = state.copyWith(
+      restrictionWarning: conflict == null
+          ? ''
+          : 'Restricted area entered: ${conflict.name}. Leave via a safe route.',
     );
   }
 
