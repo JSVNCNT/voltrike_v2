@@ -13,7 +13,9 @@ const mapDocument = <T>(id: string, value: unknown) => ({ id, ...(value as objec
 
 export const adminApi = {
   bootstrap: (code: string) => call<{ role: string }>('bootstrapDeveloperAdmin', { code }),
+  registerToda: (data: Record<string, unknown>) => call<{ todaId: string }>('registerToda', data),
   createToda: (data: Record<string, unknown>) => call<{ todaId: string }>('adminCreateToda', data),
+  reviewTodaRegistration: (todaId: string, status: 'approved' | 'declined') => call<{ updated: boolean }>('adminReviewTodaRegistration', { todaId, status }),
   assignTodaAdmin: (uid: string, todaId: string) => call<{ assigned: boolean }>('adminAssignTodaAdmin', { uid, todaId }),
   setTodaStatus: (todaId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetTodaStatus', { todaId, isActive }),
   attachTodaDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('adminAttachTodaDocuments', { todaId, documents }),

@@ -11,6 +11,9 @@ const liveKitApiKey = defineSecret('LIVEKIT_API_KEY');
 const liveKitApiSecret = defineSecret('LIVEKIT_API_SECRET');
 const liveKitUrl = defineString('LIVEKIT_URL');
 const adminBootstrapCode = defineSecret('ADMIN_BOOTSTRAP_CODE');
+const psgcRegions = require('./data/regionJson/regions.json');
+const psgcCities = require('./data/regionJson/cities-municipalities.json');
+const psgcBarangays = require('./data/regionJson/barangays.json');
 const bacolodBarangayCodes = new Set([
   '064501001', '064501002', '064501003', '064501004', '064501005', '064501006',
   '064501007', '064501008', '064501009', '064501010', '064501011', '064501012',
@@ -77,6 +80,21 @@ function validPositiveInteger(value, name, min = 1, max = 9999) {
 
 function slugify(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
+function selectedPsgcLocation(data) {
+  const regionCode = requiredString(data.regionCode, 'Region');
+  const cityCode = requiredString(data.cityCode, 'City or municipality');
+  const barangayCode = requiredString(data.barangayCode, 'Barangay');
+  const region = psgcRegions.find((item) => item.code === regionCode);
+  const city = psgcCities.find((item) => item.code === cityCode && item.regionCode === regionCode);
+  const barangay = psgcBarangays.find((item) => item.code === barangayCode &&
+    item.regionCode === regionCode &&
+    (item.cityCode === cityCode || item.municipalityCode === cityCode));
+  if (!region || !city || !barangay) {
+    throw new HttpsError('invalid-argument', 'Select a valid region, city or municipality, and barangay from the official list.');
+  }
+  return { region, city, barangay };
 }
 
 async function assertTodaScope(profile, todaId) {
@@ -169,6 +187,61 @@ exports.adminCreateToda = onCall({ region: 'asia-southeast1' }, async (request) 
     createdAt: timestamp(), updatedAt: timestamp(),
   });
   return { todaId: id };
+});
+
+// TODA administrators create their own pending application. No privileged
+// claim is issued until a developer administrator explicitly approves it.
+exports.registerToda = onCall({ region: 'asia-southeast1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in before registering a TODA.');
+  const data = request.data || {};
+  const name = requiredString(data.name, 'TODA name');
+  const { region, city, barangay } = selectedPsgcLocation(data);
+  const userRef = db.collection('users').doc(request.auth.uid);
+  const existing = await userRef.get();
+  if (existing.exists && ['developer_admin', 'toda_admin'].includes(existing.data().role)) {
+    throw new HttpsError('failed-precondition', 'This account already has administrator access.');
+  }
+  const id = `${slugify(name)}-${Date.now().toString(36)}`;
+  const user = await admin.auth().getUser(request.auth.uid);
+  const batch = db.batch();
+  batch.set(db.collection('todas').doc(id), {
+    id, name, adminUid: request.auth.uid, isActive: false, status: 'pending',
+    regionCode: region.code, regionName: region.name,
+    cityCode: city.code, cityName: city.name,
+    barangayCode: barangay.code, barangayName: barangay.name,
+    createdAt: timestamp(), updatedAt: timestamp(),
+  });
+  batch.set(userRef, {
+    uid: request.auth.uid, email: user.email || '', role: 'toda_admin_pending', todaId: id,
+    isActive: true, todaApplicationStatus: 'pending', createdAt: timestamp(), updatedAt: timestamp(),
+  }, { merge: true });
+  await batch.commit();
+  return { todaId: id };
+});
+
+exports.adminReviewTodaRegistration = onCall({ region: 'asia-southeast1' }, async (request) => {
+  const developer = await requireDeveloperAdmin(request);
+  const todaId = requiredString(request.data?.todaId, 'TODA ID');
+  const status = request.data?.status;
+  if (!['approved', 'declined'].includes(status)) throw new HttpsError('invalid-argument', 'Unsupported TODA decision.');
+  const todaRef = db.collection('todas').doc(todaId);
+  const toda = await todaRef.get();
+  if (!toda.exists || toda.data().status !== 'pending') throw new HttpsError('failed-precondition', 'A pending TODA application is required.');
+  const uid = toda.data().adminUid;
+  if (status === 'approved') {
+    await admin.auth().setCustomUserClaims(uid, { adminRole: 'toda_admin', todaId });
+    const batch = db.batch();
+    batch.update(todaRef, { status: 'approved', isActive: true, approvedBy: developer.uid, approvedAt: timestamp(), updatedAt: timestamp() });
+    batch.set(db.collection('users').doc(uid), { role: 'toda_admin', todaId, isActive: true, todaApplicationStatus: 'approved', updatedAt: timestamp() }, { merge: true });
+    await batch.commit();
+  } else {
+    await admin.auth().setCustomUserClaims(uid, null);
+    const batch = db.batch();
+    batch.update(todaRef, { status: 'declined', isActive: false, reviewedBy: developer.uid, reviewedAt: timestamp(), updatedAt: timestamp() });
+    batch.set(db.collection('users').doc(uid), { role: 'toda_admin_pending', todaId, todaApplicationStatus: 'declined', updatedAt: timestamp() }, { merge: true });
+    await batch.commit();
+  }
+  return { updated: true };
 });
 
 // Promotion intentionally suspends the former driver's operating profile.

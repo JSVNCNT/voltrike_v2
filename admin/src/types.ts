@@ -13,7 +13,13 @@ export interface Toda {
   id: string;
   name: string;
   barangayCode: string;
+  barangayName?: string;
+  cityCode?: string;
+  cityName?: string;
+  regionCode?: string;
+  regionName?: string;
   isActive: boolean;
+  status?: 'pending' | 'approved' | 'declined';
   adminUid?: string | null;
   registration?: TodaRegistration;
   documents?: Record<string, string>;

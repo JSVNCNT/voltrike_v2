@@ -1,10 +1,12 @@
 import { FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { adminApi } from './admin-api';
+import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
 import { bacolodBarangays } from './data/bacolodBarangays';
 import type { AdminSession, Driver, FareConfig, Point, Report, Toda, TodaRegistration, ZoneRequest } from './types';
+import './registration.css';
 
 // Mapbox is substantial; only load it when an administrator opens Coverage.
 const PolygonEditor = lazy(() => import('./components/PolygonEditor').then((module) => ({ default: module.PolygonEditor })));
@@ -39,14 +41,14 @@ export default function App() {
   useEffect(() => onAuthStateChanged(auth, loadSession), [loadSession]);
   if (loading) return <main className="centered">Loading VolTrike Admin…</main>;
   if (!user) return <Login onMessage={setMessage} message={message} />;
-  if (!session) return <Bootstrap user={user} reload={() => loadSession(auth.currentUser)} onMessage={setMessage} message={message} />;
+  if (!session) return <AccountGate user={user} reload={() => loadSession(auth.currentUser)} onMessage={setMessage} message={message} />;
 
   const isDeveloper = session.role === 'developer_admin';
   const visiblePages: Array<[Page, string]> = isDeveloper
     ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['reports', 'Reports'], ['coverage', 'Coverage areas']]
     : [['overview', 'Overview'], ['drivers', 'My drivers'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
   return <div className="shell">
-    <aside className="sidebar"><div className="brand"><img src="/logo.png" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
+    <aside className="sidebar"><div className="brand"><img src="/images/logo.png" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
       <nav>{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} key={key} onClick={() => setPage(key)}>{text}</button>)}</nav>
       <div className="sidebar-footer"><span>{session.displayName}</span><button onClick={() => signOut(auth)}>Sign out</button></div>
     </aside>
@@ -62,10 +64,54 @@ export default function App() {
   </div>;
 }
 
-function Login({ message, onMessage }: { message: string; onMessage: (value: string) => void }) {
+function LegacyLogin({ message, onMessage }: { message: string; onMessage: (value: string) => void }) {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); try { await signInWithEmailAndPassword(auth, email.trim(), password); } catch { onMessage('Unable to sign in. Check the email and password.'); } finally { setBusy(false); } }
   return <main className="auth"><section><img src="/logo.png" className="auth-logo" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized Bacolod TODA and developer operations only.</p>{message && <div className="notice">{message}</div>}<form onSubmit={submit}><input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required /><input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required /><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form></section></main>;
+}
+
+function Login({ message, onMessage }: { message: string; onMessage: (value: string) => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setBusy(true);
+    try { await signInWithEmailAndPassword(auth, email.trim(), password); }
+    catch { onMessage('Unable to sign in. Check the email and password.'); }
+    finally { setBusy(false); }
+  }
+  if (registering) return <TodaSignUp onBack={() => setRegistering(false)} onMessage={onMessage} />;
+  return <main className="auth"><section><img src="/images/logo.png" className="auth-logo" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized TODA and developer operations only.</p>{message && <div className="notice">{message}</div>}<form onSubmit={submit}><input type="email" placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} required /><input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required /><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" onClick={() => { onMessage(''); setRegistering(true); }}>Register a TODA</button></form></section></main>;
+}
+
+function TodaSignUp({ onBack, onMessage }: { onBack: () => void; onMessage: (value: string) => void }) {
+  const [regions, setRegions] = useState<Region[]>([]); const [cities, setCities] = useState<City[]>([]); const [barangays, setBarangays] = useState<Barangay[]>([]);
+  const [regionCode, setRegionCode] = useState(''); const [cityCode, setCityCode] = useState(''); const [barangayCode, setBarangayCode] = useState('');
+  const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [busy, setBusy] = useState(false); const [loadError, setLoadError] = useState('');
+  useEffect(() => { loadPhilippineLocations().then(({ regions: nextRegions, cities: nextCities, barangays: nextBarangays }) => { setRegions(nextRegions); setCities(nextCities); setBarangays(nextBarangays); }).catch((error) => setLoadError(error instanceof Error ? error.message : 'Unable to load locations.')); }, []);
+  const cityOptions = useMemo(() => cities.filter((city) => city.regionCode === regionCode), [cities, regionCode]);
+  const barangayOptions = useMemo(() => barangays.filter((barangay) => barangay.regionCode === regionCode && (barangay.cityCode === cityCode || barangay.municipalityCode === cityCode)), [barangays, cityCode, regionCode]);
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setBusy(true);
+    try {
+      await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const region = regions.find((item) => item.code === regionCode); const city = cities.find((item) => item.code === cityCode); const barangay = barangays.find((item) => item.code === barangayCode);
+      if (!region || !city || !barangay) throw new Error('Select a region, city/municipality, and barangay.');
+      await adminApi.registerToda({ name, regionCode, regionName: region.name, cityCode, cityName: city.name, barangayCode, barangayName: barangay.name });
+      await signOut(auth); onMessage('TODA application submitted. A developer administrator must approve it before you can sign in.'); onBack();
+    } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to submit TODA registration.'); }
+    finally { setBusy(false); }
+  }
+  return <main className="auth"><section className="auth-wide"><p className="eyebrow">TODA onboarding</p><h1>Register a TODA</h1><p>For testing, legal documents are not required. Select locations only from the official PSGC list.</p>{loadError && <div className="notice">{loadError}</div>}<form onSubmit={submit}><input value={name} onChange={(event) => setName(event.target.value)} placeholder="TODA name" required /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Administrator email" required /><input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password (at least 6 characters)" required /><select value={regionCode} onChange={(event) => { setRegionCode(event.target.value); setCityCode(''); setBarangayCode(''); }} required><option value="">Select region</option>{regions.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}</select><select value={cityCode} onChange={(event) => { setCityCode(event.target.value); setBarangayCode(''); }} disabled={!regionCode} required><option value="">Select city / municipality</option>{cityOptions.map((city) => <option key={city.code} value={city.code}>{city.name}</option>)}</select><select value={barangayCode} onChange={(event) => setBarangayCode(event.target.value)} disabled={!cityCode} required><option value="">Select barangay</option>{barangayOptions.map((barangay) => <option key={barangay.code} value={barangay.code}>{barangay.name}</option>)}</select><button className="primary" disabled={busy || Boolean(loadError)}>{busy ? 'Submitting…' : 'Submit TODA registration'}</button><button type="button" onClick={onBack}>Back to sign in</button></form></section></main>;
+}
+
+function AccountGate({ user, reload, onMessage, message }: { user: User; reload: () => Promise<void>; onMessage: (value: string) => void; message: string }) {
+  const [applicationStatus, setApplicationStatus] = useState<string | null | undefined>(undefined);
+  useEffect(() => { getDoc(doc(db, 'users', user.uid)).then((snapshot) => { const profile = snapshot.data(); setApplicationStatus(profile?.role === 'toda_admin_pending' ? profile.todaApplicationStatus || 'pending' : null); }); }, [user.uid]);
+  if (applicationStatus === undefined) return <main className="centered">Checking administrator access…</main>;
+  if (applicationStatus) return <main className="auth"><section><p className="eyebrow">TODA registration</p><h1>{applicationStatus === 'declined' ? 'Application declined' : 'Approval pending'}</h1><p>{applicationStatus === 'declined' ? 'Your TODA application was declined. Contact the developer administrator before submitting another application.' : 'Your TODA registration has been submitted. A developer administrator must approve it before TODA-admin access is enabled.'}</p>{message && <div className="notice">{message}</div>}<button className="primary" onClick={() => signOut(auth)}>Sign out</button></section></main>;
+  return <Bootstrap user={user} reload={reload} onMessage={onMessage} message={message} />;
 }
 
 function Bootstrap({ user, reload, onMessage, message }: { user: User; reload: () => Promise<void>; onMessage: (value: string) => void; message: string }) {
@@ -81,13 +127,30 @@ function Overview({ session }: { session: AdminSession }) {
 }
 function Metric({ label: title, value, warning }: { label: string; value: string; warning?: boolean }) { return <div className="metric"><p>{title}</p><strong className={warning ? 'warning' : ''}>{value}</strong></div>; }
 
-function Todas({ onMessage }: { onMessage: (value: string) => void }) {
+function LegacyTodas({ onMessage }: { onMessage: (value: string) => void }) {
   const [todas, setTodas] = useState<Toda[]>([]); const [name, setName] = useState('Test TODA'); const [barangayCode, setBarangayCode] = useState('064501059'); const [registration, setRegistration] = useState<TodaRegistration>({ secCertificateNumber: '', spResolutionNumber: '', mayorsPermitNumber: '', barangayClearanceNumber: '', presidentName: '', presidentLicenseNumber: '', presidentTin: '' }); const [documents, setDocuments] = useState<Record<string, File>>({}); const [targetUid, setTargetUid] = useState(''); const [selectedToda, setSelectedToda] = useState('');
   const reload = useCallback(() => adminApi.todas().then((items) => { setTodas(items); if (!selectedToda && items[0]) setSelectedToda(items[0].id); }), [selectedToda]); useEffect(() => { reload(); }, [reload]);
   async function create(event: FormEvent) { event.preventDefault(); const requiredDocuments = ['secCertificate', 'spResolution', 'mayorsPermit', 'barangayClearance']; if (!requiredDocuments.every((key) => documents[key])) { onMessage('Upload the SEC certificate, SP resolution, Mayor’s permit, and Barangay clearance.'); return; } try { const result = await adminApi.createToda({ name, barangayCode, registration }); await adminApi.uploadTodaDocuments(result.todaId, documents); onMessage(`TODA registered with legal documents. ID: ${result.todaId}`); setDocuments({}); await reload(); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to create TODA.'); } }
   async function assign(event: FormEvent) { event.preventDefault(); try { await adminApi.assignTodaAdmin(targetUid.trim(), selectedToda); onMessage('Account promoted to TODA admin. Its former driver profile is suspended. The user must sign out and sign in again.'); setTargetUid(''); await reload(); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to assign TODA admin.'); } }
   async function toggleToda(toda: Toda) { if (!window.confirm(`${toda.isActive ? 'Suspend' : 'restore'} ${toda.name}?`)) return; try { await adminApi.setTodaStatus(toda.id, !toda.isActive); onMessage(`${toda.name} ${toda.isActive ? 'suspended' : 'restored'}.`); reload(); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update TODA.'); } }
   return <div className="two-column"><section className="panel"><h2>Register TODA</h2><p className="muted">Collects official city-registration details and four legal evidence files. Only official Bacolod barangays are accepted.</p><form className="form-grid" onSubmit={create}><input value={name} onChange={(e) => setName(e.target.value)} placeholder="TODA name" required /><select value={barangayCode} onChange={(e) => setBarangayCode(e.target.value)} required>{bacolodBarangays.map(([code, barangay]) => <option key={code} value={code}>{barangay} — {code}</option>)}</select>{registrationFields.map(([key, title]) => <input key={key} value={registration[key]} onChange={(e) => setRegistration({ ...registration, [key]: e.target.value })} placeholder={title} required />)}{[['secCertificate', 'SEC certificate'], ['spResolution', 'SP resolution'], ['mayorsPermit', "Mayor's permit / BPLO license"], ['barangayClearance', 'Barangay clearance']].map(([key, title]) => <label className="file-label" key={key}>{title}<input type="file" accept="image/*,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) setDocuments({ ...documents, [key]: file }); }} required /></label>)}<button className="primary">Create TODA</button></form></section><section className="panel"><h2>Test TODA administrator</h2><p className="muted">Enter the Firebase Authentication UID of the existing test-driver account. Promotion intentionally suspends its driving profile.</p><form className="form-grid" onSubmit={assign}><select value={selectedToda} onChange={(e) => setSelectedToda(e.target.value)} required><option value="">Select TODA</option>{todas.map((toda) => <option key={toda.id} value={toda.id}>{toda.name} — {toda.barangayCode}</option>)}</select><input value={targetUid} onChange={(e) => setTargetUid(e.target.value)} placeholder="Existing driver Firebase UID" required /><button className="primary">Make TODA admin</button></form><h3>Registered TODAs</h3><div className="table">{todas.map((toda) => <div className="row" key={toda.id}><b>{toda.name}</b><span>{toda.barangayCode}</span><span className={toda.isActive ? 'ok' : 'warning'}>{toda.isActive ? 'Active' : 'Suspended'}</span><button onClick={() => toggleToda(toda)}>{toda.isActive ? 'Suspend' : 'Restore'}</button></div>)}</div></section></div>;
+}
+
+function Todas({ onMessage }: { onMessage: (value: string) => void }) {
+  const [todas, setTodas] = useState<Toda[]>([]);
+  const reload = useCallback(() => adminApi.todas().then(setTodas), []);
+  useEffect(() => { reload(); }, [reload]);
+  async function review(toda: Toda, status: 'approved' | 'declined') {
+    if (!window.confirm(`${status === 'approved' ? 'Approve' : 'Decline'} ${toda.name}?`)) return;
+    try { await adminApi.reviewTodaRegistration(toda.id, status); onMessage(`${toda.name} ${status}.`); reload(); }
+    catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to review TODA registration.'); }
+  }
+  async function toggleToda(toda: Toda) {
+    try { await adminApi.setTodaStatus(toda.id, !toda.isActive); onMessage(`${toda.name} ${toda.isActive ? 'suspended' : 'restored'}.`); reload(); }
+    catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update TODA.'); }
+  }
+  const location = (toda: Toda) => [toda.barangayName, toda.cityName, toda.regionName].filter(Boolean).join(', ') || toda.barangayCode;
+  return <section className="panel wide"><h2>TODA applications and registrations</h2><p className="muted">TODA administrators register through the sign-in page. Review their application here; testing applications do not require documents.</p><div className="table">{todas.map((toda) => <div className="row toda-row" key={toda.id}><span><b>{toda.name}</b><small>{location(toda)}</small></span><span className={toda.status === 'pending' ? 'warning' : toda.isActive ? 'ok' : ''}>{toda.status || (toda.isActive ? 'approved' : 'suspended')}</span><span className="actions">{toda.status === 'pending' && <><button className="primary" onClick={() => review(toda, 'approved')}>Approve</button><button onClick={() => review(toda, 'declined')}>Decline</button></>}{toda.status !== 'pending' && <button onClick={() => toggleToda(toda)}>{toda.isActive ? 'Suspend' : 'Restore'}</button>}</span></div>)}{todas.length === 0 && <p className="muted">No TODA applications yet.</p>}</div></section>;
 }
 
 function Fares({ onMessage }: { onMessage: (value: string) => void }) {
