@@ -104,16 +104,16 @@ class DriverRatingController
         throw Exception('Only completed trips can be rated.');
       }
 
-      if (await _driverRatingRepository.hasRatingForBooking(bookingId)) {
+      if (await _driverRatingRepository.hasRatingForBooking(
+        bookingId: bookingId,
+        passengerId: passenger.uid,
+      )) {
         throw Exception('This trip has already been rated.');
       }
 
       final driverRating =
           DriverRating(
-        ratingId:
-            DateTime.now()
-                .millisecondsSinceEpoch
-                .toString(),
+        ratingId: '${booking.bookingId}_${passenger.uid}',
         bookingId: booking.bookingId,
         driverId:
             booking.driverId!,

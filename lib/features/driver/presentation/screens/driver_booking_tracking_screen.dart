@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:voltrike_v2/features/driver/providers/driver_location_provider.dart';
 
 import '../../../../data/models/booking.dart';
+import '../../../../data/repositories/auth_repository.dart';
+import '../../../../data/repositories/report_repository.dart';
+import '../../../../app/routes.dart';
 
 import '../../providers/driver_current_booking_provider.dart';
 import '../../providers/driver_booking_provider.dart';
@@ -18,6 +22,7 @@ import '../../../ride/tracking/models/ride_action.dart';
 import '../../../ride/tracking/services/ride_action_service.dart';
 import '../../../ride/tracking/widgets/ride_actions_card.dart';
 import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
+import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../../ride/tracking/widgets/ride_primary_button.dart';
 import '../../providers/passenger_listener_provider.dart';
 
@@ -181,6 +186,12 @@ class _DriverBookingTrackingScreenState
         SnackBar(content: Text('Could not cancel trip: $error')),
       );
     }
+  }
+
+  Future<void> _reportPassenger(Booking booking) async {
+    final user = AuthRepository().currentUser;
+    if (user == null) return;
+    await showDialog<void>(context: context, builder: (_) => ReportRideDialog(onSubmit: (category, details) => ReportRepository().create(bookingId: booking.bookingId, reporterId: user.uid, reportedUserId: booking.passengerId, category: category, details: details)));
   }
 
     //==========================================================================
@@ -378,6 +389,24 @@ Widget build(
                   const SizedBox(height: 8),
                   RideActionsCard(
                     onCancel: () => _cancelRide(booking),
+                  ),
+                ],
+
+                if (booking.status == BookingStatus.passengerOnBoard) ...[
+                  const SizedBox(height: 8),
+                  RideActionsCard(
+                    onCall: () => context.push(
+                      AppRoutes.bookingVoiceCall,
+                      extra: booking.bookingId,
+                    ),
+                    onMessage: () => context.push(
+                      AppRoutes.bookingChat,
+                      extra: {
+                        'bookingId': booking.bookingId,
+                        'members': [booking.passengerId, booking.driverId!],
+                      },
+                    ),
+                    onReport: () => _reportPassenger(booking),
                   ),
                 ],
 

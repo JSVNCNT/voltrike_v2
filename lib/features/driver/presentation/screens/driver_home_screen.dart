@@ -153,16 +153,16 @@ class _DriverHomeScreenState
     );
 
     if (online) {
-      statusNotifier.goOnline();
-
       await bookingController.goOnline();
+
+      statusNotifier.goOnline();
 
       await locationController
           .startTracking();
 
       bookingListener.startListening();
     } else {
-      statusNotifier.goOffline();
+      await bookingController.goOffline();
 
       await bookingListener
           .stopListening();
@@ -170,8 +170,7 @@ class _DriverHomeScreenState
       await locationController
           .stopTracking();
 
-      await bookingController
-          .goOffline();
+      statusNotifier.goOffline();
 
       setState(() {
         _routePoints.clear();

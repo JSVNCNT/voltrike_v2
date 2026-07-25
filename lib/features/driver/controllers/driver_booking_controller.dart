@@ -74,6 +74,11 @@ Future<void> goOnline() async {
       throw Exception('No authenticated driver.');
     }
 
+    final driver = await _driverRepository.getDriver(firebaseUser.uid);
+    if (driver == null || !driver.isApproved) {
+      throw StateError('Your driver account must be approved before going online.');
+    }
+
     await _driverRepository.goOnline(
       firebaseUser.uid,
     );
@@ -212,8 +217,8 @@ Future<void> declineBooking(
   state = const AsyncLoading();
 
   try {
-    // Declining is driver-local until offer records are introduced. Never
-    // rewrite a shared pending booking, which could race with acceptance.
+    // Declining is driver-local. Never rewrite a shared pending booking,
+    // which could race with another driver's acceptance transaction.
     _ref
         .read(
           driverIncomingBookingProvider.notifier,

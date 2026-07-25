@@ -171,6 +171,10 @@ static const String termsAndConditions =
   static const String notifications =
       '/notifications';
 
+  static const String bookingChat = '/ride/chat';
+
+  static const String bookingVoiceCall = '/ride/voice-call';
+
   //==========================================================================
   // Future
   //==========================================================================

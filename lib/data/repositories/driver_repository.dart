@@ -219,7 +219,7 @@ class DriverRepository {
     required File image,
   }) {
     return _storageRepository.uploadFile(
-      path: 'driver_profiles/$uid.jpg',
+      path: 'drivers/$uid/profile.jpg',
       file: image,
     );
   }

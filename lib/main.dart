@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 import 'config/firebase_options.dart';
+import 'features/common/services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +22,8 @@ Future<void> main() async {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      await NotificationService.instance.initialize();
 
       // Lock the application to portrait mode only.
       await SystemChrome.setPreferredOrientations([

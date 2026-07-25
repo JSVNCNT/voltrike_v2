@@ -1,0 +1,141 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function bookingMember(bookingId) {
+      return signedIn() && request.auth.uid in [
+        get(/databases/$(database)/documents/bookings/$(bookingId)).data.passengerId,
+        get(/databases/$(database)/documents/bookings/$(bookingId)).data.driverId
+      ];
+    }
+    function offeredDriver(bookingId) {
+      return signedIn() && exists(/databases/$(database)/documents/drivers/$(request.auth.uid)/bookingOffers/$(bookingId));
+    }
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+      match /devices/{token} { allow read, write: if signedIn() && request.auth.uid == uid; }
+    }
+    match /drivers/{driverId}/bookingOffers/{offerId} {
+      allow read: if signedIn() && request.auth.uid == driverId;
+      allow write: if false;
+    }
+    match /drivers/{driverId} {
+      // Driver onboarding, profile updates, online state, and the booking
+      // transaction all operate on the authenticated driver's own document.
+      allow create: if signedIn() && request.auth.uid == driverId &&
+        request.resource.data.uid == driverId &&
+        request.resource.data.driverStatus == 'pending' &&
+        request.resource.data.isOnline == false &&
+        request.resource.data.isAvailable == false;
+      allow read: if signedIn() && request.auth.uid == driverId;
+      allow update: if signedIn() && request.auth.uid == driverId &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.driverStatus == resource.data.driverStatus &&
+        request.resource.data.approvedAt == resource.data.approvedAt &&
+        request.resource.data.approvedBy == resource.data.approvedBy &&
+        request.resource.data.rating == resource.data.rating &&
+        request.resource.data.completedTrips == resource.data.completedTrips &&
+        request.resource.data.totalEarnings == resource.data.totalEarnings;
+      allow delete: if false;
+    }
+    match /vehicles/{vehicleId} {
+      allow create: if signedIn() &&
+        request.resource.data.driverId == request.auth.uid &&
+        request.resource.data.id == vehicleId &&
+        request.resource.data.isVerified == false;
+      allow read: if signedIn() && resource.data.driverId == request.auth.uid;
+      allow update: if signedIn() && resource.data.driverId == request.auth.uid &&
+        request.resource.data.driverId == resource.data.driverId &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.isVerified == resource.data.isVerified;
+      allow delete: if signedIn() && resource.data.driverId == request.auth.uid;
+    }
+    // TODAs are centrally maintained; the mobile apps only need read access
+    // during driver registration and booking display.
+    match /todas/{todaId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /chat/{bookingId} {
+      allow read: if bookingMember(bookingId);
+      allow create: if bookingMember(bookingId) && request.resource.data.bookingId == bookingId;
+      allow update: if bookingMember(bookingId) &&
+        request.resource.data.members == resource.data.members &&
+        request.resource.data.bookingId == resource.data.bookingId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'lastMessage', 'lastMessageAt', 'updatedAt'
+        ]);
+      match /messages/{messageId} {
+        allow read: if bookingMember(bookingId);
+        allow create: if bookingMember(bookingId) && request.resource.data.senderId == request.auth.uid;
+        allow update: if bookingMember(bookingId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy']);
+      }
+      match /typing/{userId} {
+        allow read: if bookingMember(bookingId);
+        allow create, update, delete: if bookingMember(bookingId) &&
+          request.auth.uid == userId;
+      }
+    }
+    match /reports/{reportId} {
+      allow create: if bookingMember(request.resource.data.bookingId) &&
+        request.resource.data.reporterId == request.auth.uid &&
+        request.resource.data.reportedUserId in [
+          get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.passengerId,
+          get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.driverId
+        ] && request.resource.data.reportedUserId != request.auth.uid;
+      allow read: if signedIn() && resource.data.reporterId == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /ratings/{ratingId} {
+      allow create: if signedIn() &&
+        request.resource.data.passengerId == request.auth.uid &&
+        request.resource.data.ratingId == ratingId &&
+        ratingId == request.resource.data.bookingId + '_' + request.auth.uid &&
+        request.resource.data.passengerId == get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.passengerId &&
+        request.resource.data.driverId == get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.driverId &&
+        get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.status == 'completed' &&
+        request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+        !exists(/databases/$(database)/documents/ratings/$(ratingId));
+      allow read: if signedIn() &&
+        (resource.data.passengerId == request.auth.uid || resource.data.driverId == request.auth.uid);
+      allow update, delete: if false;
+    }
+    match /bookings/{bookingId} {
+      allow create: if signedIn() &&
+        request.resource.data.passengerId == request.auth.uid &&
+        request.resource.data.driverId == null &&
+        request.resource.data.status == 'pending';
+      allow read: if bookingMember(bookingId) || offeredDriver(bookingId);
+      // An offered driver can only claim an unassigned pending booking. The
+      // transaction also updates that driver's own availability document.
+      allow update: if offeredDriver(bookingId) &&
+        resource.data.status == 'pending' && resource.data.driverId == null &&
+        request.resource.data.status == 'driverAssigned' &&
+        request.resource.data.driverId == request.auth.uid &&
+        request.resource.data.passengerId == resource.data.passengerId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'driverId', 'driverName', 'driverPhotoUrl', 'driverRating',
+          'vehicleNumber', 'plateNumber', 'todaName', 'status', 'updatedAt'
+        ]);
+      // A passenger may cancel only before boarding and cannot edit ride data.
+      allow update: if signedIn() && request.auth.uid == resource.data.passengerId &&
+        resource.data.status in ['pending', 'driverAssigned', 'driverArriving'] &&
+        request.resource.data.status == 'cancelled' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'updatedAt'
+        ]);
+      // The assigned driver exclusively controls the active ride lifecycle.
+      allow update: if signedIn() && request.auth.uid == resource.data.driverId && (
+        (resource.data.status == 'driverAssigned' && request.resource.data.status == 'driverArriving') ||
+        (resource.data.status == 'driverArriving' && request.resource.data.status == 'passengerOnBoard') ||
+        (resource.data.status == 'passengerOnBoard' && request.resource.data.status == 'completed') ||
+        (resource.data.status in ['driverAssigned', 'driverArriving'] && request.resource.data.status == 'cancelled')
+      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 'updatedAt', 'completedAt'
+      ]);
+      allow delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -68,14 +68,17 @@ class DriverRatingRepository {
     );
   }
 
-  Future<bool> hasRatingForBooking(String bookingId) async {
+  /// New ratings use a deterministic ID, allowing a direct read that remains
+  /// compatible with member-only Firestore rules and avoids a collection scan.
+  Future<bool> hasRatingForBooking({
+    required String bookingId,
+    required String passengerId,
+  }) async {
     final snapshot = await _firestoreService.firestore
         .collection(_collection)
-        .where('bookingId', isEqualTo: bookingId)
-        .limit(1)
+        .doc('${bookingId}_$passengerId')
         .get();
-
-    return snapshot.docs.isNotEmpty;
+    return snapshot.exists;
   }
 
   //==========================================================================

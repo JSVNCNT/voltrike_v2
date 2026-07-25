@@ -125,7 +125,7 @@ class PassengerRepository {
     required File image,
   }) {
     return _storageRepository.uploadFile(
-      path: 'passenger_profiles/$uid.jpg',
+      path: 'passengers/$uid/profile.jpg',
       file: image,
     );
   }

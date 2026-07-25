@@ -1,77 +1,165 @@
-import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:async';
+import 'dart:convert';
 
-/// ===========================================================================
-/// Notification Service
-///
-/// Wrapper around Firebase Cloud Messaging.
-///
-/// Responsibilities:
-/// • Request notification permission
-/// • Retrieve FCM token
-/// • Refresh FCM token
-/// • Listen for foreground notifications
-/// • Background notifications (configured elsewhere)
-/// ===========================================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../../../app/router.dart';
+import '../../../app/routes.dart';
+import '../../../config/firebase_options.dart';
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  // Notification payloads are displayed by Android. Durable state is read
+  // from Firestore when the app is opened.
+}
+
 class NotificationService {
   NotificationService._();
+  static final instance = NotificationService._();
 
-  static final NotificationService instance =
-      NotificationService._();
+  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+  StreamSubscription<String>? _tokenSubscription;
+  StreamSubscription<RemoteMessage>? _tapSubscription;
+  StreamSubscription<User?>? _authSubscription;
+  bool _initialized = false;
+  String? _userId;
+  int _notificationId = 0;
 
-  final FirebaseMessaging _messaging =
-      FirebaseMessaging.instance;
-
-  /// =========================================================================
-  /// Initialize Notifications
-  /// =========================================================================
+  static const _channel = AndroidNotificationChannel(
+    'ride_updates',
+    'Ride updates',
+    description: 'Booking and active ride updates',
+    importance: Importance.high,
+  );
 
   Future<void> initialize() async {
-    await _messaging.requestPermission();
+    if (_initialized) return;
+    _initialized = true;
+    await _initializeLocalNotifications();
+    await _messaging.requestPermission(alert: true, badge: true, sound: true);
+    FirebaseMessaging.onMessage.listen(_showForegroundNotification);
+    _tapSubscription = FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
+    final initial = await _messaging.getInitialMessage();
+    if (initial != null) _handleTap(initial);
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user == null) {
+        clearUser();
+      } else {
+        syncUser(user.uid);
+      }
+    });
+    _tokenSubscription = _messaging.onTokenRefresh.listen((token) {
+      final userId = _userId;
+      if (userId != null) _saveToken(userId, token);
+    });
+  }
 
-    await _messaging.getToken();
-
-    FirebaseMessaging.onMessage.listen(
-      _handleForegroundMessage,
+  Future<void> _initializeLocalNotifications() async {
+    const settings = InitializationSettings(
+      android: AndroidInitializationSettings('ic_stat_voltrike'),
     );
+    await _localNotifications.initialize(
+      settings: settings,
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload;
+        if (payload == null || payload.isEmpty) return;
+        final value = jsonDecode(payload);
+        if (value is Map) {
+          _handleData(Map<Object?, Object?>.from(value));
+        }
+      },
+    );
+    final android = _localNotifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    await android?.createNotificationChannel(_channel);
+    final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
+    final payload = launchDetails?.notificationResponse?.payload;
+    if (launchDetails?.didNotificationLaunchApp == true &&
+        payload != null &&
+        payload.isNotEmpty) {
+      final value = jsonDecode(payload);
+      if (value is Map) _handleData(Map<Object?, Object?>.from(value));
+    }
+  }
 
-    FirebaseMessaging.onMessageOpenedApp.listen(
-      _handleNotificationTap,
+  Future<void> _showForegroundNotification(RemoteMessage message) async {
+    final notification = message.notification;
+    final title = notification?.title ?? 'VolTrike update';
+    final body = notification?.body ?? 'You have a ride update.';
+    await _localNotifications.show(
+      id: _notificationId++,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'ride_updates',
+          'Ride updates',
+          channelDescription: 'Booking and active ride updates',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: 'ic_stat_voltrike',
+        ),
+      ),
+      payload: jsonEncode(message.data),
     );
   }
 
-  /// =========================================================================
-  /// Current FCM Token
-  /// =========================================================================
-
-  Future<String?> getToken() {
-    return _messaging.getToken();
+  Future<void> syncUser(String userId) async {
+    _userId = userId;
+    final token = await _messaging.getToken();
+    if (token != null) await _saveToken(userId, token);
   }
 
-  /// =========================================================================
-  /// Token Refresh
-  /// =========================================================================
-
-  Stream<String> get tokenRefreshStream =>
-      _messaging.onTokenRefresh;
-
-  /// =========================================================================
-  /// Foreground Notification
-  /// =========================================================================
-
-  void _handleForegroundMessage(
-    RemoteMessage message,
-  ) {
-    // Show in-app notification/snackbar.
+  Future<void> clearUser() async {
+    final userId = _userId;
+    final token = await _messaging.getToken();
+    if (userId != null && token != null) {
+      await FirebaseFirestore.instance.collection('users').doc(userId)
+          .collection('devices').doc(token).delete();
+    }
+    _userId = null;
   }
 
-  /// =========================================================================
-  /// Notification Tap
-  /// =========================================================================
-
-  void _handleNotificationTap(
-    RemoteMessage message,
-  ) {
-
-    // Navigate to the appropriate screen.
+  Future<void> _saveToken(String userId, String token) {
+    return FirebaseFirestore.instance.collection('users').doc(userId)
+        .collection('devices').doc(token).set({
+      'token': token,
+      'platform': 'android',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
-} 
+
+  void _handleTap(RemoteMessage message) {
+    _handleData(message.data);
+  }
+
+  void _handleData(Map<Object?, Object?> data) {
+    final bookingId = data['bookingId'] as String?;
+    if (bookingId == null || bookingId.isEmpty) return;
+    final target = data['target'] as String?;
+    final type = data['type'] as String?;
+    if (target == 'driver' && type == 'booking_offer') {
+      appRouter.go(AppRoutes.driverHome);
+      return;
+    }
+    appRouter.go(
+      target == 'driver' ? AppRoutes.driverBookingTracking : AppRoutes.driverTracking,
+      extra: bookingId,
+    );
+  }
+
+  Future<void> dispose() async {
+    await _tokenSubscription?.cancel();
+    await _tapSubscription?.cancel();
+    await _authSubscription?.cancel();
+  }
+}

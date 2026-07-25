@@ -16,6 +16,8 @@ import '../features/auth/presentation/screens/driver_registration/upload_documen
 import '../features/auth/presentation/screens/driver_registration/under_review_screen.dart';
 
 import '../features/auth/presentation/screens/splash/splash_screen.dart';
+import '../features/ride/calls/voice_call_screen.dart';
+import '../data/repositories/booking_voice_call_repository.dart';
 
 import '../features/driver/presentation/screens/driver_settings_screen.dart';
 import '../features/passenger/presentation/screens/passenger_shell_screen.dart';
@@ -39,6 +41,7 @@ import '../features/driver/presentation/screens/terms_and_conditions_screen.dart
 import '../features/passenger/presentation/screens/passenger_settings_screen.dart';
 import '../features/passenger/presentation/screens/edit_passenger_profile_screen.dart';
 import '../features/driver/presentation/screens/driver_booking_tracking_screen.dart';
+import '../features/ride/chat/booking_chat_screen.dart';
 
 import 'routes.dart';
 
@@ -429,14 +432,46 @@ GoRoute(
       ),
 ),
 
-GoRoute(
-  path: AppRoutes.currentBooking,
+    GoRoute(
+      path: AppRoutes.currentBooking,
   builder: (
     context,
     state,
   ) =>
       const DriverHomeScreen(),
-),
+    ),
+
+    GoRoute(
+      path: AppRoutes.bookingChat,
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        final bookingId = extra?['bookingId'] as String?;
+        final members = (extra?['members'] as List?)?.cast<String>();
+        if (bookingId == null || members == null) return const PassengerShellScreen();
+        return BookingChatScreen(bookingId: bookingId, members: members);
+      },
+    ),
+
+    GoRoute(
+      path: AppRoutes.bookingVoiceCall,
+      builder: (context, state) {
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const PassengerShellScreen();
+        }
+        return VoiceCallScreen(
+          connect: (service) async {
+            final credentials =
+                await BookingVoiceCallRepository().createCredentials(bookingId);
+            await service.connect(
+              serverUrl: credentials.serverUrl,
+              token: credentials.token,
+            );
+          },
+          endCall: () => BookingVoiceCallRepository().endCall(bookingId),
+        );
+      },
+    ),
 
 ],
 );
