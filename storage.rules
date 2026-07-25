@@ -14,6 +14,12 @@ service firebase.storage {
         (request.resource.contentType.matches('image/.*') ||
           request.resource.contentType == 'application/pdf');
     }
+    function pendingTodaApplicant(todaId) {
+      return signedIn() &&
+        firestore.exists(/databases/(default)/documents/todaApplications/$(todaId)) &&
+        firestore.get(/databases/(default)/documents/todaApplications/$(todaId)).data.adminUid == request.auth.uid &&
+        firestore.get(/databases/(default)/documents/todaApplications/$(todaId)).data.status == 'pending';
+    }
 
     match /drivers/{uid}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid || fileName == 'profile.jpg');
@@ -27,11 +33,11 @@ service firebase.storage {
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
-    // Legal TODA evidence contains sensitive registration data. It is managed
-    // by developer administrators only, not exposed to mobile users.
+    // Legal TODA evidence is visible to the developer reviewer. While an
+    // application is pending, only its own applicant may upload/read it.
     match /toda_documents/{todaId}/{fileName} {
-      allow read: if developerAdmin();
-      allow create, update: if developerAdmin() && isTodaDocument();
+      allow read: if developerAdmin() || pendingTodaApplicant(todaId);
+      allow create, update: if (developerAdmin() || pendingTodaApplicant(todaId)) && isTodaDocument();
       allow delete: if developerAdmin();
     }
 

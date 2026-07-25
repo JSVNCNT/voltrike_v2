@@ -30,6 +30,7 @@ export const adminApi = {
   assignTodaAdmin: (uid: string, todaId: string) => call<{ assigned: boolean }>('adminAssignTodaAdmin', { uid, todaId }),
   setTodaStatus: (todaId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetTodaStatus', { todaId, isActive }),
   attachTodaDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('adminAttachTodaDocuments', { todaId, documents }),
+  attachTodaRegistrationDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('attachTodaRegistrationDocuments', { todaId, documents }),
   updateFare: (fare: FareConfig) => call<{ updated: boolean }>('adminUpdateFare', { fare }),
   setDriverStatus: (uid: string, status: string) => call<{ updated: boolean }>('adminSetDriverStatus', { uid, status }),
   setUserStatus: (uid: string, isActive: boolean) => call<{ updated: boolean }>('adminSetUserStatus', { uid, isActive }),
@@ -41,7 +42,17 @@ export const adminApi = {
   setRouteRestrictionStatus: (restrictionId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetRouteRestrictionStatus', { restrictionId, isActive }),
   async todas(): Promise<Toda[]> {
     const snapshot = await getDocs(query(collection(db, 'todas'), orderBy('name')));
-    return snapshot.docs.map((entry) => mapDocument<Toda>(entry.id, entry.data()));
+    const todas = snapshot.docs.map((entry) => mapDocument<Toda>(entry.id, entry.data()));
+    return Promise.all(todas.map(async (toda) => {
+      try {
+        const application = await getDoc(doc(db, 'todaApplications', toda.id));
+        return application.exists() ? { ...toda, ...application.data() } as Toda : toda;
+      } catch {
+        // TODA administrators can load the public TODA list but cannot read
+        // legal applications belonging to any TODA.
+        return toda;
+      }
+    }));
   },
   async drivers(todaId?: string): Promise<Driver[]> {
     const source = collection(db, 'drivers');
@@ -97,5 +108,14 @@ export const adminApi = {
       todaId,
       documents: Object.fromEntries(documents),
     });
+  },
+  async uploadTodaRegistrationDocuments(todaId: string, files: Record<string, File>): Promise<void> {
+    const documents = await Promise.all(Object.entries(files).map(async ([key, file]) => {
+      const extension = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
+      const object = ref(storage, `toda_documents/${todaId}/${key}.${extension}`);
+      await uploadBytes(object, file, { contentType: file.type });
+      return [key, await getDownloadURL(object)] as const;
+    }));
+    await adminApi.attachTodaRegistrationDocuments(todaId, Object.fromEntries(documents));
   },
 };

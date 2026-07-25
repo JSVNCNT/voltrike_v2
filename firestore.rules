@@ -84,6 +84,12 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if false;
     }
+    // Legal TODA registration fields and evidence URLs are never placed on
+    // the public TODA record used by driver registration.
+    match /todaApplications/{todaId} {
+      allow read: if developerAdmin();
+      allow write: if false;
+    }
     match /settings/{settingId} {
       allow read: if signedIn();
       allow write: if false;

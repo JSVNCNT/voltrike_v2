@@ -109,6 +109,29 @@ function selectedPsgcLocation(data) {
   return { region, city, barangay };
 }
 
+function normalizedTodaRegistration(registration) {
+  return {
+    secCertificateNumber: requiredString(registration?.secCertificateNumber, 'SEC certificate number'),
+    spResolutionNumber: requiredString(registration?.spResolutionNumber, 'SP resolution number'),
+    mayorsPermitNumber: requiredString(registration?.mayorsPermitNumber, "Mayor's permit number"),
+    barangayClearanceNumber: requiredString(registration?.barangayClearanceNumber, 'Barangay clearance number'),
+    presidentName: requiredString(registration?.presidentName, "President's name"),
+    presidentLicenseNumber: requiredString(registration?.presidentLicenseNumber, "President's driver license"),
+    presidentTin: requiredString(registration?.presidentTin, "President's TIN"),
+  };
+}
+
+const todaDocumentKeys = [
+  'secCertificate', 'spResolution', 'mayorsPermit', 'barangayClearance', 'presidentLicense',
+];
+
+function validTodaDocuments(todaId, documents) {
+  if (!documents || typeof documents !== 'object' || Array.isArray(documents)) return false;
+  const expectedPrefix = encodeURIComponent(`toda_documents/${todaId}/`);
+  return todaDocumentKeys.every((key) =>
+    typeof documents[key] === 'string' && documents[key].includes(expectedPrefix));
+}
+
 async function assertTodaScope(profile, todaId) {
   if (profile.role === 'developer_admin') return;
   if (profile.todaId !== todaId) {
@@ -182,22 +205,19 @@ exports.adminCreateToda = onCall({ region: 'asia-southeast1' }, async (request) 
   if (!bacolodBarangayCodes.has(barangayCode)) {
     throw new HttpsError('invalid-argument', 'Select an official Bacolod barangay.');
   }
-  const registration = data.registration || {};
-  const normalizedRegistration = {
-    secCertificateNumber: requiredString(registration.secCertificateNumber, 'SEC certificate number'),
-    spResolutionNumber: requiredString(registration.spResolutionNumber, 'SP resolution number'),
-    mayorsPermitNumber: requiredString(registration.mayorsPermitNumber, "Mayor's permit number"),
-    barangayClearanceNumber: requiredString(registration.barangayClearanceNumber, 'Barangay clearance number'),
-    presidentName: requiredString(registration.presidentName, "President's name"),
-    presidentLicenseNumber: requiredString(registration.presidentLicenseNumber, "President's driver license"),
-    presidentTin: requiredString(registration.presidentTin, "President's TIN"),
-  };
+  const normalizedRegistration = normalizedTodaRegistration(data.registration);
   const id = `${slugify(name)}-${Date.now().toString(36)}`;
-  await db.collection('todas').doc(id).set({
+  const batch = db.batch();
+  batch.set(db.collection('todas').doc(id), {
     id, name, barangayCode, regionCode: '06', provinceCode: 'NEG', cityCode: 'BACOLOD',
-    isActive: true, adminUid: null, registration: normalizedRegistration,
+    isActive: true, adminUid: null,
     createdAt: timestamp(), updatedAt: timestamp(),
   });
+  batch.set(db.collection('todaApplications').doc(id), {
+    todaId: id, registration: normalizedRegistration, documents: {}, status: 'approved',
+    createdAt: timestamp(), updatedAt: timestamp(),
+  });
+  await batch.commit();
   return { todaId: id };
 });
 
@@ -208,6 +228,7 @@ exports.registerToda = onCall({ region: 'asia-southeast1' }, async (request) => 
   const data = request.data || {};
   const name = requiredString(data.name, 'TODA name');
   const { region, city, barangay } = selectedPsgcLocation(data);
+  const registration = normalizedTodaRegistration(data.registration);
   const userRef = db.collection('users').doc(request.auth.uid);
   const existing = await userRef.get();
   if (existing.exists && ['developer_admin', 'toda_admin'].includes(existing.data().role)) {
@@ -221,6 +242,10 @@ exports.registerToda = onCall({ region: 'asia-southeast1' }, async (request) => 
     regionCode: region.code, regionName: region.name,
     cityCode: city.code, cityName: city.name,
     barangayCode: barangay.code, barangayName: barangay.name,
+    createdAt: timestamp(), updatedAt: timestamp(),
+  });
+  batch.set(db.collection('todaApplications').doc(id), {
+    todaId: id, adminUid: request.auth.uid, registration, documents: {}, status: 'pending',
     createdAt: timestamp(), updatedAt: timestamp(),
   });
   batch.set(userRef, {
@@ -239,17 +264,25 @@ exports.adminReviewTodaRegistration = onCall({ region: 'asia-southeast1' }, asyn
   const todaRef = db.collection('todas').doc(todaId);
   const toda = await todaRef.get();
   if (!toda.exists || toda.data().status !== 'pending') throw new HttpsError('failed-precondition', 'A pending TODA application is required.');
+  const applicationRef = db.collection('todaApplications').doc(todaId);
+  const application = await applicationRef.get();
+  if (status === 'approved' &&
+      (!application.exists || !application.data().registration || !validTodaDocuments(todaId, application.data().documents))) {
+    throw new HttpsError('failed-precondition', 'The TODA must provide all legal registration details and five evidence files before approval.');
+  }
   const uid = toda.data().adminUid;
   if (status === 'approved') {
     await admin.auth().setCustomUserClaims(uid, { adminRole: 'toda_admin', todaId });
     const batch = db.batch();
     batch.update(todaRef, { status: 'approved', isActive: true, approvedBy: developer.uid, approvedAt: timestamp(), updatedAt: timestamp() });
+    batch.set(applicationRef, { status: 'approved', reviewedBy: developer.uid, reviewedAt: timestamp(), updatedAt: timestamp() }, { merge: true });
     batch.set(db.collection('users').doc(uid), { role: 'toda_admin', todaId, isActive: true, todaApplicationStatus: 'approved', updatedAt: timestamp() }, { merge: true });
     await batch.commit();
   } else {
     await admin.auth().setCustomUserClaims(uid, null);
     const batch = db.batch();
     batch.update(todaRef, { status: 'declined', isActive: false, reviewedBy: developer.uid, reviewedAt: timestamp(), updatedAt: timestamp() });
+    batch.set(applicationRef, { status: 'declined', reviewedBy: developer.uid, reviewedAt: timestamp(), updatedAt: timestamp() }, { merge: true });
     batch.set(db.collection('users').doc(uid), { role: 'toda_admin_pending', todaId, todaApplicationStatus: 'declined', updatedAt: timestamp() }, { merge: true });
     await batch.commit();
   }
@@ -307,16 +340,24 @@ exports.adminAttachTodaDocuments = onCall({ region: 'asia-southeast1' }, async (
   await requireDeveloperAdmin(request);
   const todaId = requiredString(request.data?.todaId, 'TODA ID');
   const documents = request.data?.documents;
-  if (!documents || typeof documents !== 'object' || Array.isArray(documents)) {
-    throw new HttpsError('invalid-argument', 'TODA documents are required.');
+  if (!validTodaDocuments(todaId, documents)) throw new HttpsError('invalid-argument', 'All TODA documents must use their secure TODA document location.');
+  await db.collection('todaApplications').doc(todaId).set({ todaId, documents, updatedAt: timestamp() }, { merge: true });
+  return { updated: true };
+});
+
+// A pending TODA applicant can upload their own legal evidence, but cannot
+// inspect other TODAs or change approval state.
+exports.attachTodaRegistrationDocuments = onCall({ region: 'asia-southeast1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in before uploading TODA documents.');
+  const todaId = requiredString(request.data?.todaId, 'TODA ID');
+  const documents = request.data?.documents;
+  const applicationRef = db.collection('todaApplications').doc(todaId);
+  const application = await applicationRef.get();
+  if (!application.exists || application.data().adminUid !== request.auth.uid || application.data().status !== 'pending') {
+    throw new HttpsError('permission-denied', 'Only the pending TODA applicant can attach these documents.');
   }
-  const expectedPrefix = `toda_documents/${todaId}/`;
-  for (const value of Object.values(documents)) {
-    if (typeof value !== 'string' || !value.includes(encodeURIComponent(expectedPrefix))) {
-      throw new HttpsError('invalid-argument', 'Invalid TODA document location.');
-    }
-  }
-  await db.collection('todas').doc(todaId).update({ documents, updatedAt: timestamp() });
+  if (!validTodaDocuments(todaId, documents)) throw new HttpsError('invalid-argument', 'Upload all required TODA evidence files.');
+  await applicationRef.update({ documents, updatedAt: timestamp() });
   return { updated: true };
 });
 
