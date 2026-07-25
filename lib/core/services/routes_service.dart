@@ -18,7 +18,13 @@ class RoutesService {
         'X-Goog-FieldMask':
             'routes.distanceMeters,'
             'routes.duration,'
-            'routes.polyline.encodedPolyline',
+            'routes.polyline.encodedPolyline,'
+            'routes.legs.steps.distanceMeters,'
+            'routes.legs.steps.staticDuration,'
+            'routes.legs.steps.startLocation,'
+            'routes.legs.steps.endLocation,'
+            'routes.legs.steps.polyline.encodedPolyline,'
+            'routes.legs.steps.navigationInstruction',
       };
 
   /// ==========================================================================
@@ -55,6 +61,7 @@ class RoutesService {
     );
 
     if (response.statusCode != 200) {
+      print(response.body);
       return null;
     }
 
@@ -76,23 +83,126 @@ class RoutesService {
     final durationString =
         route['duration'] as String? ?? '0s';
 
-    final durationSeconds = int.tryParse(
-          durationString.replaceAll('s', ''),
-        ) ??
-        0;
+    final durationSeconds =
+        int.tryParse(
+              durationString.replaceAll('s', ''),
+            ) ??
+            0;
 
     final encodedPolyline =
         (route['polyline']
-                as Map<String, dynamic>)['encodedPolyline']
+                as Map<String, dynamic>?)?['encodedPolyline']
             as String? ??
         '';
+
+    final List<RouteStep> steps = [];
+
+    final legs =
+        route['legs'] as List? ?? [];
+
+    for (final leg in legs) {
+      final legMap =
+          leg as Map<String, dynamic>;
+
+      final rawSteps =
+          legMap['steps'] as List? ?? [];
+
+      for (final raw in rawSteps) {
+        final step =
+            raw as Map<String, dynamic>;
+
+        final navigation =
+            step['navigationInstruction']
+                    as Map<String, dynamic>? ??
+                {};
+
+        final start =
+            step['startLocation']
+                    as Map<String, dynamic>? ??
+                {};
+
+        final end =
+            step['endLocation']
+                    as Map<String, dynamic>? ??
+                {};
+
+        final startLatLng =
+            start['latLng']
+                    as Map<String, dynamic>? ??
+                {};
+
+        final endLatLng =
+            end['latLng']
+                    as Map<String, dynamic>? ??
+                {};
+
+        final polyline =
+            step['polyline']
+                    as Map<String, dynamic>? ??
+                {};
+
+        final staticDuration =
+            step['staticDuration']
+                    as String? ??
+                '0s';
+
+        steps.add(
+          RouteStep(
+            instruction:
+                navigation['instructions']
+                        as String? ??
+                    '',
+            maneuver:
+                navigation['maneuver']
+                        as String? ??
+                    '',
+            distanceMeters:
+                step['distanceMeters']
+                        as int? ??
+                    0,
+            durationSeconds:
+                int.tryParse(
+                      staticDuration.replaceAll(
+                          's', ''),
+                    ) ??
+                    0,
+            startLocation: LatLng(
+              (startLatLng['latitude']
+                          as num?)
+                      ?.toDouble() ??
+                  0,
+              (startLatLng['longitude']
+                          as num?)
+                      ?.toDouble() ??
+                  0,
+            ),
+            endLocation: LatLng(
+              (endLatLng['latitude']
+                          as num?)
+                      ?.toDouble() ??
+                  0,
+              (endLatLng['longitude']
+                          as num?)
+                      ?.toDouble() ??
+                  0,
+            ),
+            encodedPolyline:
+                polyline['encodedPolyline']
+                        as String? ??
+                    '',
+          ),
+        );
+      }
+    }
 
     return RouteInfo(
       distanceMeters: distanceMeters,
       distanceKm: distanceMeters / 1000,
       durationMinutes:
           (durationSeconds / 60).ceil(),
-      encodedPolyline: encodedPolyline,
+      encodedPolyline:
+          encodedPolyline,
+      steps: steps,
     );
   }
 }
