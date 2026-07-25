@@ -229,7 +229,7 @@ function LegacyRouteRestrictionsPage({ onMessage }: { onMessage: (value: string)
   const reload = useCallback(() => adminApi.routeRestrictions().then(setRestrictions), []);
   useEffect(() => { reload(); }, [reload]);
   async function create() {
-    try { await adminApi.createRouteRestriction(name.trim(), type, points, notes); setName(''); setNotes(''); setPoints([]); onMessage('Route restriction saved. Mobile route selection will avoid it after the next refresh.'); reload(); }
+    try { await adminApi.createRouteRestriction(name.trim(), type, 'polygon', points, 0, notes); setName(''); setNotes(''); setPoints([]); onMessage('Route restriction saved. Mobile route selection will avoid it after the next refresh.'); reload(); }
     catch (error) { onMessage(error instanceof Error ? error.message : 'Enter a name and a three- or four-point area.'); }
   }
   async function toggle(item: RouteRestriction) {
