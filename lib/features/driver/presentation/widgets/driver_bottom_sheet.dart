@@ -8,6 +8,7 @@ class DriverBottomSheet extends StatelessWidget {
   const DriverBottomSheet({
     super.key,
     required this.isOnline,
+    this.offerCooldownSeconds = 0,
     this.passengerName,
     this.pickupAddress,
     this.destinationAddress,
@@ -25,6 +26,7 @@ class DriverBottomSheet extends StatelessWidget {
   });
 
   final bool isOnline;
+  final int offerCooldownSeconds;
   final String? passengerName;
   final String? pickupAddress;
   final String? destinationAddress;
@@ -77,11 +79,13 @@ class DriverBottomSheet extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             if (!hasBooking)
-              const Center(
+              Center(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Text(
-                    'Waiting for booking requests...',
+                    offerCooldownSeconds > 0
+                        ? 'New booking offers resume in $offerCooldownSeconds seconds.'
+                        : 'Waiting for booking requests...',
                     style: TextStyle(color: Colors.grey),
                   ),
                 ),

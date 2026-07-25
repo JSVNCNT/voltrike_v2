@@ -356,12 +356,17 @@ class BookingRepository {
   //==========================================================================
 
   Future<void> cancelBooking(
-    String bookingId,
-  ) async {
-    await updateStatus(
+    String bookingId, {
+    Set<BookingStatus> allowedCurrentStatuses = const {
+      BookingStatus.pending,
+      BookingStatus.driverAssigned,
+      BookingStatus.driverArriving,
+    },
+  }) {
+    return transitionStatus(
       bookingId: bookingId,
-      status:
-          BookingStatus.cancelled,
+      allowedCurrentStatuses: allowedCurrentStatuses,
+      nextStatus: BookingStatus.cancelled,
     );
   }
 
@@ -376,6 +381,35 @@ class BookingRepository {
       'status': BookingStatus.completed.name,
       'completedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Atomically advances a booking only from an allowed current state.
+  Future<void> transitionStatus({
+    required String bookingId,
+    required Set<BookingStatus> allowedCurrentStatuses,
+    required BookingStatus nextStatus,
+  }) {
+    final bookingRef = _collection.doc(bookingId);
+    return _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(bookingRef);
+      if (!snapshot.exists) {
+        throw StateError('Booking no longer exists.');
+      }
+
+      final value = snapshot.data()?['status'] as String?;
+      final statuses =
+          BookingStatus.values.where((status) => status.name == value);
+      if (statuses.isEmpty || !allowedCurrentStatuses.contains(statuses.first)) {
+        throw StateError('This ride has already changed state.');
+      }
+
+      transaction.update(bookingRef, {
+        'status': nextStatus.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (nextStatus == BookingStatus.completed)
+          'completedAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 

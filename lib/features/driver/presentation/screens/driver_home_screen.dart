@@ -16,6 +16,7 @@ import '../../providers/driver_current_booking_provider.dart';
 import '../../providers/driver_incoming_booking_provider.dart';
 import '../../providers/driver_location_controller_provider.dart';
 import '../../providers/driver_location_provider.dart';
+import '../../providers/driver_offer_cooldown_provider.dart';
 import '../../providers/driver_status_provider.dart';
 import '../../providers/driver_trip_provider.dart';
 
@@ -243,6 +244,9 @@ Future<void> _declineBooking() async {
         booking,
       );
 
+  await ref.read(driverBookingListenerProvider).stopListening();
+  ref.read(driverOfferCooldownProvider.notifier).start();
+
   ref
       .read(
         driverIncomingBookingProvider.notifier,
@@ -267,11 +271,17 @@ Future<void> _declineBooking() async {
 
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(
-      content: Text(
-        'Booking declined.',
-      ),
+      content: Text('Booking declined. New offers resume in 30 seconds.'),
     ),
   );
+
+  Future<void>.delayed(const Duration(seconds: 30), () {
+    if (!mounted ||
+        ref.read(driverStatusProvider) == DriverStatus.offline) {
+      return;
+    }
+    ref.read(driverBookingListenerProvider).startListening();
+  });
 }
 
   //==========================================================================
@@ -536,8 +546,10 @@ Widget build(
     driverTripProvider,
   );
 
+  final offerCooldown = ref.watch(driverOfferCooldownProvider);
+
   final hasIncomingBooking =
-      incomingBooking != null;
+      incomingBooking != null && !offerCooldown.isActive;
 
   final hasCurrentBooking =
       currentBooking != null;
@@ -610,22 +622,30 @@ Widget build(
                   driverStatus !=
                       DriverStatus.offline,
 
+              offerCooldownSeconds: offerCooldown.secondsRemaining,
+
               passengerName:
-                  displayBooking?.passengerId,
+                  hasIncomingBooking
+                      ? incomingBooking.passengerId
+                      : currentBooking?.passengerId,
 
               pickupAddress:
-                  displayBooking?.pickupAddress,
+                  hasIncomingBooking
+                      ? incomingBooking.pickupAddress
+                      : currentBooking?.pickupAddress,
 
               destinationAddress:
-                  displayBooking?.destinationAddress,
+                  hasIncomingBooking
+                      ? incomingBooking.destinationAddress
+                      : currentBooking?.destinationAddress,
 
               estimatedFare:
-                  displayBooking == null
+                  displayBooking == null || offerCooldown.isActive
                       ? null
                       : '₱${displayBooking.estimatedFare.toStringAsFixed(2)}',
 
               distance:
-                  displayBooking == null
+                  displayBooking == null || offerCooldown.isActive
                       ? null
                       : '${displayBooking.distanceMeters} m',
 

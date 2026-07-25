@@ -253,9 +253,10 @@ Future<void> arrived(
   state = const AsyncLoading();
 
   try {
-    await _bookingRepository.updateStatus(
+    await _bookingRepository.transitionStatus(
       bookingId: booking.bookingId,
-      status: BookingStatus.driverArriving,
+      allowedCurrentStatuses: const {BookingStatus.driverAssigned},
+      nextStatus: BookingStatus.driverArriving,
     );
 
     state = const AsyncData(null);
@@ -275,9 +276,10 @@ Future<void> startTrip(
   state = const AsyncLoading();
 
   try {
-    await _bookingRepository.updateStatus(
+    await _bookingRepository.transitionStatus(
       bookingId: booking.bookingId,
-      status: BookingStatus.passengerOnBoard,
+      allowedCurrentStatuses: const {BookingStatus.driverArriving},
+      nextStatus: BookingStatus.passengerOnBoard,
     );
 
     state = const AsyncData(null);
@@ -307,8 +309,10 @@ Future<void> completeTrip(
     }
 
     // Complete booking.
-    await _bookingRepository.completeBooking(
-      booking.bookingId,
+    await _bookingRepository.transitionStatus(
+      bookingId: booking.bookingId,
+      allowedCurrentStatuses: const {BookingStatus.passengerOnBoard},
+      nextStatus: BookingStatus.completed,
     );
 
     // Remove booking from driver.
@@ -359,6 +363,10 @@ Future<void> cancelTrip(
     // Cancel booking.
     await _bookingRepository.cancelBooking(
       booking.bookingId,
+      allowedCurrentStatuses: const {
+        BookingStatus.driverAssigned,
+        BookingStatus.driverArriving,
+      },
     );
 
     // Remove booking from driver.
