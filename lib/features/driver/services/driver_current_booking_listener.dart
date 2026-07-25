@@ -39,6 +39,7 @@ class DriverCurrentBookingListener {
     }
 
     _subscription?.cancel();
+    _currentBookingId = bookingId;
 
     developer.log(
   'DriverCurrentBookingListener started for $bookingId',

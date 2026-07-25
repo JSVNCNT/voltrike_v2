@@ -18,7 +18,6 @@ import '../../providers/driver_location_controller_provider.dart';
 import '../../providers/driver_location_provider.dart';
 import '../../providers/driver_status_provider.dart';
 import '../../providers/driver_trip_provider.dart';
-import '../../providers/driver_current_booking_listener_provider.dart';
 
 import '../widgets/booking_request_card.dart';
 import '../widgets/driver_bottom_sheet.dart';
@@ -88,6 +87,12 @@ class _DriverHomeScreenState
               .notifier,
         )
         .stopTracking();
+
+    await ref
+        .read(
+          driverBookingControllerProvider.notifier,
+        )
+        .restoreCurrentBooking();
   }
 
   //==========================================================================
@@ -179,15 +184,6 @@ Future<void> _acceptBooking() async {
         booking,
       );
 
-  // Start listening to the accepted booking.
-  ref
-      .read(
-        driverCurrentBookingListenerProvider,
-      )
-      .startListening(
-        booking.bookingId,
-      );
-
   // Remove the pending booking.
   ref
       .read(
@@ -201,13 +197,6 @@ Future<void> _acceptBooking() async {
       )
       .bookingAccepted();
 
-  if (!mounted) {
-    return;
-  }
-
-  context.go(
-    AppRoutes.driverBookingTracking,
-  );
 }
 
 Future<void> _declineBooking() async {

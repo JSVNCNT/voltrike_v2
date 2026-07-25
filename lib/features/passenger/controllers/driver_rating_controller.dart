@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/booking.dart';
 import '../../../data/models/driver_rating.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/booking_repository.dart';
@@ -60,6 +61,14 @@ class DriverRatingController
     state = const AsyncLoading();
 
     try {
+      if (rating < 1 || rating > 5) {
+        throw ArgumentError.value(
+          rating,
+          'rating',
+          'Rating must be between 1 and 5.',
+        );
+      }
+
       final passenger =
           _authRepository.currentUser;
 

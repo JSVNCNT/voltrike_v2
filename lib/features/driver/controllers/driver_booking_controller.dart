@@ -98,6 +98,10 @@ Future<void> goOffline() async {
   state = const AsyncLoading();
 
   try {
+    if (_ref.read(driverCurrentBookingProvider) != null) {
+      throw StateError('Complete or cancel the active trip before going offline.');
+    }
+
     final firebaseUser = _authRepository.currentUser;
 
     if (firebaseUser == null) {
@@ -168,8 +172,7 @@ Future<void> acceptBooking(
       throw Exception('TODA not found.');
     }
 
-    // Assign driver to booking.
-    await _bookingRepository.assignDriver(
+    await _bookingRepository.acceptBookingTransaction(
       bookingId: booking.bookingId,
       driverId: firebaseUser.uid,
       driverName: appUser.fullName,
@@ -178,12 +181,6 @@ Future<void> acceptBooking(
       vehicleNumber: vehicle.vehicleNumber,
       plateNumber: vehicle.plateNumber,
       todaName: toda.name,
-    );
-
-    // Store booking on driver record.
-    await _driverRepository.assignBooking(
-      uid: firebaseUser.uid,
-      bookingId: booking.bookingId,
     );
 
     // Start listening to the active booking.
@@ -215,12 +212,8 @@ Future<void> declineBooking(
   state = const AsyncLoading();
 
   try {
-    await _bookingRepository.updateStatus(
-      bookingId: booking.bookingId,
-      status: BookingStatus.pending,
-    );
-
-    // Remove the incoming request from the UI.
+    // Declining is driver-local until offer records are introduced. Never
+    // rewrite a shared pending booking, which could race with acceptance.
     _ref
         .read(
           driverIncomingBookingProvider.notifier,
@@ -236,6 +229,18 @@ Future<void> declineBooking(
 
     rethrow;
   }
+}
+
+/// Restores the driver's durable active booking after app restart.
+Future<void> restoreCurrentBooking() async {
+  final firebaseUser = _authRepository.currentUser;
+  if (firebaseUser == null) return;
+
+  final driver = await _driverRepository.getDriver(firebaseUser.uid);
+  final bookingId = driver?.currentBookingId;
+  if (bookingId == null || bookingId.isEmpty) return;
+
+  _currentBookingListener.startListening(bookingId);
 }
 
 //==========================================================================

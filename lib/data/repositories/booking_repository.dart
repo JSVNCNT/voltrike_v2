@@ -371,6 +371,62 @@ class BookingRepository {
     });
   }
 
+  /// Atomically reserves a pending booking for one available driver.
+  ///
+  /// Both booking assignment and driver availability are updated in the same
+  /// transaction, preventing two drivers from accepting the same request.
+  Future<void> acceptBookingTransaction({
+    required String bookingId,
+    required String driverId,
+    required String driverName,
+    required String driverPhotoUrl,
+    required double driverRating,
+    required String vehicleNumber,
+    required String plateNumber,
+    required String todaName,
+  }) {
+    final bookingRef = _collection.doc(bookingId);
+    final driverRef = _firestore.collection('drivers').doc(driverId);
+
+    return _firestore.runTransaction((transaction) async {
+      final bookingSnapshot = await transaction.get(bookingRef);
+      final driverSnapshot = await transaction.get(driverRef);
+
+      if (!bookingSnapshot.exists || !driverSnapshot.exists) {
+        throw StateError('Booking or driver record no longer exists.');
+      }
+
+      final bookingData = bookingSnapshot.data()!;
+      final driverData = driverSnapshot.data()!;
+      if (bookingData['status'] != BookingStatus.pending.name ||
+          bookingData['driverId'] != null) {
+        throw StateError('This booking has already been accepted.');
+      }
+
+      if (driverData['isOnline'] != true ||
+          driverData['isAvailable'] != true ||
+          driverData['currentBookingId'] != null) {
+        throw StateError('You are not available for a new booking.');
+      }
+
+      transaction.update(bookingRef, {
+        'driverId': driverId,
+        'driverName': driverName,
+        'driverPhotoUrl': driverPhotoUrl,
+        'driverRating': driverRating,
+        'vehicleNumber': vehicleNumber,
+        'plateNumber': plateNumber,
+        'todaName': todaName,
+        'status': BookingStatus.driverAssigned.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.update(driverRef, {
+        'currentBookingId': bookingId,
+        'isAvailable': false,
+      });
+    });
+  }
+
   //==========================================================================
   // Delete Booking
   //==========================================================================
