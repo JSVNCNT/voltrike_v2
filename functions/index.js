@@ -3,7 +3,6 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
-const { AccessToken, RoomServiceClient } = require('livekit-server-sdk');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -11,9 +10,6 @@ const liveKitApiKey = defineSecret('LIVEKIT_API_KEY');
 const liveKitApiSecret = defineSecret('LIVEKIT_API_SECRET');
 const liveKitUrl = defineString('LIVEKIT_URL');
 const adminBootstrapCode = defineSecret('ADMIN_BOOTSTRAP_CODE');
-const psgcRegions = require('./data/regionJson/regions.json');
-const psgcCities = require('./data/regionJson/cities-municipalities.json');
-const psgcBarangays = require('./data/regionJson/barangays.json');
 const bacolodBarangayCodes = new Set([
   '064501001', '064501002', '064501003', '064501004', '064501005', '064501006',
   '064501007', '064501008', '064501009', '064501010', '064501011', '064501012',
@@ -27,6 +23,21 @@ const bacolodBarangayCodes = new Set([
   '064501055', '064501056', '064501057', '064501058', '064501059', '064501060',
   '064501061',
 ]);
+
+// The nationwide PSGC data is only needed while registering a TODA. Keeping
+// this 10 MB dataset out of module startup lets Firebase discover functions
+// promptly during deployment and cold starts.
+let psgcData;
+function getPsgcData() {
+  if (!psgcData) {
+    psgcData = {
+      regions: require('./data/regionJson/regions.json'),
+      cities: require('./data/regionJson/cities-municipalities.json'),
+      barangays: require('./data/regionJson/barangays.json'),
+    };
+  }
+  return psgcData;
+}
 
 function timestamp() {
   return admin.firestore.FieldValue.serverTimestamp();
@@ -83,12 +94,13 @@ function slugify(value) {
 }
 
 function selectedPsgcLocation(data) {
+  const { regions, cities, barangays } = getPsgcData();
   const regionCode = requiredString(data.regionCode, 'Region');
   const cityCode = requiredString(data.cityCode, 'City or municipality');
   const barangayCode = requiredString(data.barangayCode, 'Barangay');
-  const region = psgcRegions.find((item) => item.code === regionCode);
-  const city = psgcCities.find((item) => item.code === cityCode && item.regionCode === regionCode);
-  const barangay = psgcBarangays.find((item) => item.code === barangayCode &&
+  const region = regions.find((item) => item.code === regionCode);
+  const city = cities.find((item) => item.code === cityCode && item.regionCode === regionCode);
+  const barangay = barangays.find((item) => item.code === barangayCode &&
     item.regionCode === regionCode &&
     (item.cityCode === cityCode || item.municipalityCode === cityCode));
   if (!region || !city || !barangay) {
@@ -483,6 +495,7 @@ exports.createBookingCallToken = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in before starting a call.');
     }
+    const { AccessToken } = require('livekit-server-sdk');
     const bookingId = request.data?.bookingId;
     if (typeof bookingId !== 'string' || bookingId.length === 0) {
       throw new HttpsError('invalid-argument', 'A booking ID is required.');
@@ -524,6 +537,7 @@ exports.endBookingCall = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in before ending a call.');
     }
+    const { RoomServiceClient } = require('livekit-server-sdk');
     const bookingId = request.data?.bookingId;
     if (typeof bookingId !== 'string' || bookingId.length === 0) {
       throw new HttpsError('invalid-argument', 'A booking ID is required.');
