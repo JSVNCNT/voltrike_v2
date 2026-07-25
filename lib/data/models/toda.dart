@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:equatable/equatable.dart';
 
 class Toda extends Equatable {
@@ -58,11 +59,15 @@ class Toda extends Equatable {
       cityCode: map['cityCode'] ?? '',
       barangayCode: map['barangayCode'] ?? '',
       isActive: map['isActive'] ?? true,
-      createdAt: DateTime.tryParse(
-            map['createdAt'] ?? '',
-          ) ??
-          DateTime.now(),
+      createdAt: _dateTime(map['createdAt']),
     );
+  }
+
+  static DateTime _dateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
   }
 
   Map<String, dynamic> toMap() {
@@ -80,13 +85,13 @@ class Toda extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        name,
-        regionCode,
-        provinceCode,
-        cityCode,
-        barangayCode,
-        isActive,
-        createdAt,
-      ];
+    id,
+    name,
+    regionCode,
+    provinceCode,
+    cityCode,
+    barangayCode,
+    isActive,
+    createdAt,
+  ];
 }
