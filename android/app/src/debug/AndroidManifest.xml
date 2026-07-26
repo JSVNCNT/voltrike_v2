@@ -1,7 +1,21 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- The INTERNET permission is required for development. Specifically,
          the Flutter tool needs it to communicate with the running application
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Firebase emulators use HTTP on the development host. This manifest is
+         merged only for debug builds and cannot weaken a release build. -->
+    <application android:usesCleartextTraffic="true">
+        <!-- Dart initializes Firebase with either the normal project options
+             or the explicit demo-voltrike options. Removing native automatic
+             initialization prevents a live-configured default app from being
+             created before emulator mode can fail closed. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove"/>
+    </application>
 </manifest>

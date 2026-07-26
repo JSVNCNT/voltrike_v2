@@ -7,23 +7,34 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
+import 'config/firebase_emulator_config.dart';
 import 'config/firebase_options.dart';
 import 'features/common/services/notification_service.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Handle Flutter framework errors.
-  FlutterError.onError = FlutterError.presentError;
-
   await runZonedGuarded(
     () async {
-      // Initialize Firebase
+      // Flutter bindings and runApp must use the same zone.
+      WidgetsFlutterBinding.ensureInitialized();
+
+      // Handle Flutter framework errors.
+      FlutterError.onError = FlutterError.presentError;
+
+      // Initialize either the connected project or the explicitly requested
+      // demo project. Demo mode is fail-closed and has no live resources.
       await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
+        options: FirebaseEmulatorConfig.enabled
+            ? FirebaseEmulatorConfig.firebaseOptions
+            : DefaultFirebaseOptions.currentPlatform,
       );
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      await NotificationService.instance.initialize();
+      await FirebaseEmulatorConfig.connect();
+      await FirebaseEmulatorConfig.signInTestRoleIfRequested();
+      if (!FirebaseEmulatorConfig.enabled) {
+        FirebaseMessaging.onBackgroundMessage(
+          firebaseMessagingBackgroundHandler,
+        );
+        await NotificationService.instance.initialize();
+      }
 
       // Lock the application to portrait mode only.
       await SystemChrome.setPreferredOrientations([

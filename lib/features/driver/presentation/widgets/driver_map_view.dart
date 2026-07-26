@@ -36,122 +36,96 @@ class DriverMapView extends StatefulWidget {
   final List<LatLng> routePoints;
 
   @override
-  State<DriverMapView> createState() =>
-      _DriverMapViewState();
+  State<DriverMapView> createState() => _DriverMapViewState();
 }
 
-class _DriverMapViewState
-    extends State<DriverMapView> {
+class _DriverMapViewState extends State<DriverMapView> {
   GoogleMapController? _controller;
 
-  static const CameraPosition
-      _defaultCamera =
-      CameraPosition(
-    target: LatLng(
-      14.5995,
-      120.9842,
-    ),
+  static const CameraPosition _defaultCamera = CameraPosition(
+    target: LatLng(14.5995, 120.9842),
     zoom: 15,
   );
 
   @override
   Widget build(BuildContext context) {
-    return GoogleMap(
-      initialCameraPosition:
-          _defaultCamera,
+    return Stack(
+      children: [
+        GoogleMap(
+          initialCameraPosition: _defaultCamera,
 
-      myLocationEnabled: true,
-      myLocationButtonEnabled: true,
+          myLocationEnabled: true,
+          myLocationButtonEnabled: true,
 
-      zoomControlsEnabled: false,
-      compassEnabled: true,
+          zoomControlsEnabled: false,
+          compassEnabled: true,
 
-      onMapCreated: (
-        controller,
-      ) {
-        _controller = controller;
-      },
+          onMapCreated: (controller) {
+            _controller = controller;
+          },
 
-      markers: {
-        //--------------------------------------------------------------
-        // Driver
-        //--------------------------------------------------------------
+          markers: {
+            //--------------------------------------------------------------
+            // Driver
+            //--------------------------------------------------------------
+            if (widget.driverLocation != null)
+              Marker(
+                markerId: const MarkerId('driver'),
+                position: widget.driverLocation!,
+                infoWindow: const InfoWindow(title: 'Your Location'),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueAzure,
+                ),
+              ),
 
-        if (widget.driverLocation != null)
-          Marker(
-            markerId: const MarkerId(
-              'driver',
-            ),
-            position:
-                widget.driverLocation!,
-            infoWindow:
-                const InfoWindow(
-              title:
-                  'Your Location',
-            ),
-            icon:
-                BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueAzure,
-            ),
+            //--------------------------------------------------------------
+            // Pickup
+            //--------------------------------------------------------------
+            if (widget.pickupLocation != null)
+              Marker(
+                markerId: const MarkerId('pickup'),
+                position: widget.pickupLocation!,
+                infoWindow: const InfoWindow(title: 'Passenger Pickup'),
+              ),
+
+            //--------------------------------------------------------------
+            // Destination
+            //--------------------------------------------------------------
+            if (widget.destinationLocation != null)
+              Marker(
+                markerId: const MarkerId('destination'),
+                position: widget.destinationLocation!,
+                infoWindow: const InfoWindow(title: 'Destination'),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueGreen,
+                ),
+              ),
+          },
+
+          polylines: {
+            if (widget.routePoints.isNotEmpty)
+              Polyline(
+                polylineId: const PolylineId('navigation_route'),
+                points: widget.routePoints,
+                width: 6,
+              ),
+          },
+        ),
+        Positioned(
+          right: 16,
+          bottom: 220,
+          child: FloatingActionButton.small(
+            heroTag: 'driver_current_location',
+            tooltip: 'My location',
+            onPressed: widget.driverLocation == null
+                ? null
+                : () => _controller?.animateCamera(
+                    CameraUpdate.newLatLngZoom(widget.driverLocation!, 16),
+                  ),
+            child: const Icon(Icons.my_location),
           ),
-
-        //--------------------------------------------------------------
-        // Pickup
-        //--------------------------------------------------------------
-
-        if (widget.pickupLocation != null)
-          Marker(
-            markerId: const MarkerId(
-              'pickup',
-            ),
-            position:
-                widget.pickupLocation!,
-            infoWindow:
-                const InfoWindow(
-              title:
-                  'Passenger Pickup',
-            ),
-          ),
-
-        //--------------------------------------------------------------
-        // Destination
-        //--------------------------------------------------------------
-
-        if (widget.destinationLocation !=
-            null)
-          Marker(
-            markerId: const MarkerId(
-              'destination',
-            ),
-            position:
-                widget
-                    .destinationLocation!,
-            infoWindow:
-                const InfoWindow(
-              title:
-                  'Destination',
-            ),
-            icon:
-                BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor
-                  .hueGreen,
-            ),
-          ),
-      },
-
-      polylines: {
-        if (widget.routePoints
-            .isNotEmpty)
-          Polyline(
-            polylineId:
-                const PolylineId(
-              'navigation_route',
-            ),
-            points:
-                widget.routePoints,
-            width: 6,
-          ),
-      },
+        ),
+      ],
     );
   }
 

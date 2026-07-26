@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:voltrike_v2/app/routes.dart';
 
 import '../../../../core/services/navigation_service.dart';
+import '../../../../data/models/booking.dart';
 
 import '../../../common/presentation/widgets/app_app_bar.dart';
 
@@ -389,12 +390,23 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     final hasIncomingBooking =
         incomingBooking != null && !offerCooldown.isActive;
 
-    final hasCurrentBooking = currentBooking != null;
+    // A stale driver profile can briefly point at a legacy, pending, or
+    // terminal booking. It is not an active trip and must not make the idle
+    // sheet look like a passenger request.
+    final activeBooking = switch (currentBooking?.status) {
+      BookingStatus.driverAssigned ||
+      BookingStatus.driverArriving ||
+      BookingStatus.passengerOnBoard
+          when _hasUsableTripAddresses(currentBooking) =>
+        currentBooking,
+      _ => null,
+    };
+    final hasCurrentBooking = activeBooking != null;
 
     // Booking shown in the bottom sheet.
     // Before acceptance -> incoming booking.
     // After acceptance -> active booking.
-    final displayBooking = currentBooking ?? incomingBooking;
+    final displayBooking = activeBooking ?? incomingBooking;
 
     return Scaffold(
       appBar: const AppAppBar(title: 'Driver', showNotifications: true),
@@ -444,17 +456,20 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
               offerCooldownSeconds: offerCooldown.secondsRemaining,
 
+              // Keep the idle sheet truly empty. A fallback name here made
+              // the sheet look as though an offer existed before one had
+              // been received, including blank pickup and destination rows.
               passengerName: hasIncomingBooking
                   ? (incomingBooking.passengerName ?? 'Passenger')
-                  : (currentBooking?.passengerName ?? 'Passenger'),
+                  : activeBooking?.passengerName,
 
               pickupAddress: hasIncomingBooking
                   ? incomingBooking.pickupAddress
-                  : currentBooking?.pickupAddress,
+                  : activeBooking?.pickupAddress,
 
               destinationAddress: hasIncomingBooking
                   ? incomingBooking.destinationAddress
-                  : currentBooking?.destinationAddress,
+                  : activeBooking?.destinationAddress,
 
               estimatedFare: displayBooking == null || offerCooldown.isActive
                   ? null
@@ -464,7 +479,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
                   ? null
                   : '${displayBooking.distanceMeters} m',
 
-              bookingStatus: currentBooking?.status,
+              bookingStatus: activeBooking?.status,
 
               onOnlineChanged: _toggleOnline,
 
@@ -486,5 +501,19 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
         ],
       ),
     );
+  }
+
+  bool _hasUsableTripAddresses(Booking? booking) {
+    if (booking == null) return false;
+    return _isUsableAddress(booking.pickupAddress) &&
+        _isUsableAddress(booking.destinationAddress);
+  }
+
+  bool _isUsableAddress(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.isNotEmpty &&
+        normalized != '--' &&
+        normalized != 'pickup location' &&
+        normalized != 'destination';
   }
 }

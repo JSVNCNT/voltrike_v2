@@ -377,16 +377,68 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
       data: (booking) {
         if (booking == null) {
-          return const Scaffold(
-            body: Center(child: Text('Booking not found.')),
+          return Scaffold(
+            appBar: AppBar(title: const Text('Booking unavailable')),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.receipt_long_outlined, size: 48),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'This booking is no longer available.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => context.go(AppRoutes.passengerHome),
+                      child: const Text('Back to home'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         }
 
         _navigateToReceipt(booking);
 
         if (booking.driverId == null) {
-          return const Scaffold(
-            body: Center(child: Text('Waiting for driver assignment...')),
+          final cancelled = booking.status == BookingStatus.cancelled;
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(cancelled ? 'Booking cancelled' : 'Finding a driver'),
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      cancelled ? Icons.cancel_outlined : Icons.search,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      cancelled
+                          ? 'This booking was cancelled.'
+                          : 'Waiting for a driver assignment...',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => context.go(AppRoutes.passengerHome),
+                      child: Text(
+                        cancelled ? 'Book another ride' : 'Back to home',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         }
 
@@ -414,6 +466,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
               body: Column(
                 children: [
                   Expanded(
+                    flex: 4,
                     child: GoogleMap(
                       onMapCreated: _onMapCreated,
                       myLocationEnabled: true,
@@ -440,115 +493,122 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                     ),
                   ),
 
-                  SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: Column(
-                        children: [
-                          DriverInformationCard(
-                            driverName: booking.driverName ?? 'VolTrike driver',
-                            vehicleNumber:
-                                booking.vehicleNumber ?? 'Not available',
-                            plateNumber: booking.plateNumber ?? 'Not available',
-                            todaName: booking.todaName ?? 'Not available',
-                            photoUrl: booking.driverPhotoUrl,
-                            rating: booking.driverRating,
-                          ),
-
-                          const SizedBox(height: 16),
-
-                          if (booking.status == BookingStatus.driverAssigned ||
-                              booking.status == BookingStatus.driverArriving)
-                            RideActionsCard(
-                              onCancel: () => _cancelBooking(booking),
-                              onSos: () => _triggerSos(booking),
+                  Expanded(
+                    flex: 6,
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        child: Column(
+                          children: [
+                            DriverInformationCard(
+                              driverName:
+                                  booking.driverName ?? 'VolTrike driver',
+                              vehicleNumber:
+                                  booking.vehicleNumber ?? 'Not available',
+                              plateNumber:
+                                  booking.plateNumber ?? 'Not available',
+                              todaName: booking.todaName ?? 'Not available',
+                              photoUrl: booking.driverPhotoUrl,
+                              rating: booking.driverRating,
                             ),
 
-                          if (booking.status ==
-                              BookingStatus.driverArriving) ...[
-                            const SizedBox(height: 8),
-                            StreamBuilder<String?>(
-                              stream: BookingRepository().watchPickupPin(
-                                passengerId: booking.passengerId,
-                                bookingId: booking.bookingId,
+                            const SizedBox(height: 16),
+
+                            if (booking.status ==
+                                    BookingStatus.driverAssigned ||
+                                booking.status == BookingStatus.driverArriving)
+                              RideActionsCard(
+                                onCancel: () => _cancelBooking(booking),
+                                onSos: () => _triggerSos(booking),
                               ),
-                              builder: (context, snapshot) => Card(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primaryContainer,
-                                child: ListTile(
-                                  leading: const Icon(Icons.pin_outlined),
-                                  title: const Text('Pickup PIN'),
-                                  subtitle: const Text(
-                                    'Tell this PIN only to your assigned driver.',
-                                  ),
-                                  trailing: Text(
-                                    snapshot.data ?? '••••',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 4,
-                                        ),
+
+                            if (booking.status ==
+                                BookingStatus.driverArriving) ...[
+                              const SizedBox(height: 8),
+                              StreamBuilder<String?>(
+                                stream: BookingRepository().watchPickupPin(
+                                  passengerId: booking.passengerId,
+                                  bookingId: booking.bookingId,
+                                ),
+                                builder: (context, snapshot) => Card(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primaryContainer,
+                                  child: ListTile(
+                                    leading: const Icon(Icons.pin_outlined),
+                                    title: const Text('Pickup PIN'),
+                                    subtitle: const Text(
+                                      'Tell this PIN only to your assigned driver.',
+                                    ),
+                                    trailing: Text(
+                                      snapshot.data ?? '••••',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: 4,
+                                          ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
 
-                          if (booking.status == BookingStatus.passengerOnBoard)
-                            RideActionsCard(
-                              onCall: () => context.push(
-                                AppRoutes.bookingVoiceCall,
-                                extra: booking.bookingId,
+                            if (booking.status ==
+                                BookingStatus.passengerOnBoard)
+                              RideActionsCard(
+                                onCall: () => context.push(
+                                  AppRoutes.bookingVoiceCall,
+                                  extra: booking.bookingId,
+                                ),
+                                onMessage: () => context.push(
+                                  AppRoutes.bookingChat,
+                                  extra: {
+                                    'bookingId': booking.bookingId,
+                                    'members': [
+                                      booking.passengerId,
+                                      booking.driverId!,
+                                    ],
+                                  },
+                                ),
+                                onReport: () => _reportDriver(booking),
+                                onSos: () => _triggerSos(booking),
                               ),
-                              onMessage: () => context.push(
-                                AppRoutes.bookingChat,
-                                extra: {
-                                  'bookingId': booking.bookingId,
-                                  'members': [
-                                    booking.passengerId,
-                                    booking.driverId!,
-                                  ],
-                                },
-                              ),
-                              onReport: () => _reportDriver(booking),
-                              onSos: () => _triggerSos(booking),
-                            ),
 
-                          if (booking.status ==
-                              BookingStatus.passengerOnBoard) ...[
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: booking.passengerPaidAt == null
-                                    ? () => _confirmCashPaid(booking)
-                                    : null,
-                                icon: const Icon(Icons.payments_outlined),
-                                label: Text(
-                                  booking.passengerPaidAt == null
-                                      ? 'Confirm cash paid · '
-                                            '₱${booking.amountDue.toStringAsFixed(2)}'
-                                      : 'Cash payment confirmed',
+                            if (booking.status ==
+                                BookingStatus.passengerOnBoard) ...[
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  onPressed: booking.passengerPaidAt == null
+                                      ? () => _confirmCashPaid(booking)
+                                      : null,
+                                  icon: const Icon(Icons.payments_outlined),
+                                  label: Text(
+                                    booking.passengerPaidAt == null
+                                        ? 'Confirm cash paid · '
+                                              '₱${booking.amountDue.toStringAsFixed(2)}'
+                                        : 'Cash payment confirmed',
+                                  ),
                                 ),
                               ),
+                            ],
+
+                            const SizedBox(height: 16),
+
+                            TripInformationCard(
+                              pickup: booking.pickupAddress,
+                              destination: booking.destinationAddress,
+                              distance:
+                                  '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                              duration: _eta ?? '--',
+                              fare:
+                                  '₱${booking.estimatedFare.toStringAsFixed(2)}',
                             ),
                           ],
-
-                          const SizedBox(height: 16),
-
-                          TripInformationCard(
-                            pickup: booking.pickupAddress,
-                            destination: booking.destinationAddress,
-                            distance:
-                                '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-                            duration: _eta ?? '--',
-                            fare:
-                                '₱${booking.estimatedFare.toStringAsFixed(2)}',
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),

@@ -15,6 +15,9 @@ import 'package:flutter/foundation.dart'
 /// );
 /// ```
 class DefaultFirebaseOptions {
+  static const String _databaseUrl =
+      'https://voltrike-v2-default-rtdb.asia-southeast1.firebasedatabase.app';
+
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
       return web;
@@ -46,6 +49,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '327670792817',
     projectId: 'voltrike-v2',
     authDomain: 'voltrike-v2.firebaseapp.com',
+    databaseURL: _databaseUrl,
     storageBucket: 'voltrike-v2.firebasestorage.app',
     measurementId: 'G-8QY0HQBB63',
   );
@@ -55,6 +59,7 @@ class DefaultFirebaseOptions {
     appId: '1:327670792817:android:9ce6477d6ed8f1a1c5d1d0',
     messagingSenderId: '327670792817',
     projectId: 'voltrike-v2',
+    databaseURL: _databaseUrl,
     storageBucket: 'voltrike-v2.firebasestorage.app',
   );
   static const FirebaseOptions ios = FirebaseOptions(
@@ -62,6 +67,7 @@ class DefaultFirebaseOptions {
     appId: '1:327670792817:ios:67a43da5ccd96512c5d1d0',
     messagingSenderId: '327670792817',
     projectId: 'voltrike-v2',
+    databaseURL: _databaseUrl,
     storageBucket: 'voltrike-v2.firebasestorage.app',
     iosBundleId: 'com.example.voltrikeV2',
   );
@@ -70,6 +76,7 @@ class DefaultFirebaseOptions {
     appId: '1:327670792817:ios:67a43da5ccd96512c5d1d0',
     messagingSenderId: '327670792817',
     projectId: 'voltrike-v2',
+    databaseURL: _databaseUrl,
     storageBucket: 'voltrike-v2.firebasestorage.app',
     iosBundleId: 'com.example.voltrikeV2',
   );
@@ -80,6 +87,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '327670792817',
     projectId: 'voltrike-v2',
     authDomain: 'voltrike-v2.firebaseapp.com',
+    databaseURL: _databaseUrl,
     storageBucket: 'voltrike-v2.firebasestorage.app',
     measurementId: 'G-P5JQBT1T4F',
   );

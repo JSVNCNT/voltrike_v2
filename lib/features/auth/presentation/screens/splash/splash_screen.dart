@@ -14,101 +14,104 @@ class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-
-  ConsumerState<SplashScreen> createState() =>
-      _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState
-    extends ConsumerState<SplashScreen> {
+class _SplashScreenState extends ConsumerState<SplashScreen> {
   @override
   void initState() {
     super.initState();
 
     Future.microtask(() {
-      ref
-          .read(splashControllerProvider.notifier)
-          .checkSession();
+      ref.read(splashControllerProvider.notifier).checkSession();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<SplashRecovery>>(
-      splashControllerProvider,
-      (previous, next) {
-        next.whenData((recovery) {
-          switch (recovery.destination) {
-            case SplashDestination.intro:
-              context.go(
-                AppRoutes.intro,
-              );
-              break;
+    final state = ref.watch(splashControllerProvider);
 
-            case SplashDestination.verifyEmail:
-              context.go(
-                AppRoutes.emailVerification,
-              );
-              break;
+    ref.listen<AsyncValue<SplashRecovery>>(splashControllerProvider, (
+      previous,
+      next,
+    ) {
+      next.whenData((recovery) {
+        switch (recovery.destination) {
+          case SplashDestination.intro:
+            context.go(AppRoutes.intro);
+            break;
 
-            case SplashDestination.passengerHome:
-              context.go(
-                AppRoutes.passengerHome,
-              );
-              break;
+          case SplashDestination.verifyEmail:
+            context.go(AppRoutes.emailVerification);
+            break;
 
-            case SplashDestination.driverHome:
-              context.go(
-                AppRoutes.driverHome,
-              );
-              break;
+          case SplashDestination.passengerHome:
+            context.go(AppRoutes.passengerHome);
+            break;
 
-            case SplashDestination.driverUnderReview:
-              context.go(
-                AppRoutes.driverUnderReview,
-              );
-              break;
+          case SplashDestination.driverHome:
+            context.go(AppRoutes.driverHome);
+            break;
 
-            case SplashDestination.passengerActiveBooking:
-              context.go(
-                AppRoutes.driverTracking,
-                extra: recovery.bookingId,
-              );
-              break;
+          case SplashDestination.driverUnderReview:
+            context.go(AppRoutes.driverUnderReview);
+            break;
 
-            case SplashDestination.driverActiveBooking:
-              context.go(
-                AppRoutes.driverBookingTracking,
-                extra: recovery.bookingId,
-              );
-              break;
-          }
-        });
-      },
-    );
+          case SplashDestination.passengerActiveBooking:
+            context.go(AppRoutes.driverTracking, extra: recovery.bookingId);
+            break;
 
-    return const AuthScaffold(
+          case SplashDestination.driverActiveBooking:
+            context.go(
+              AppRoutes.driverBookingTracking,
+              extra: recovery.bookingId,
+            );
+            break;
+        }
+      });
+    });
+
+    return AuthScaffold(
       backgroundColor: AppColors.primary,
       child: Column(
-        mainAxisAlignment:
-            MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          AuthLogo(
+          const AuthLogo(
             logoSize: 120,
             textColor: AppColors.textWhite,
             taglineColor: Colors.white70,
           ),
 
-          SizedBox(
-            height: AppConstants.defaultPadding * 2,
-          ),
+          const SizedBox(height: AppConstants.defaultPadding * 2),
 
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: Colors.white,
+          state.when(
+            loading: () => const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Colors.white,
+              ),
+            ),
+            data: (_) => const SizedBox.shrink(),
+            error: (_, _) => Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    'Unable to restore your session. Check your connection and try again.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(height: AppConstants.defaultPadding),
+                FilledButton.tonal(
+                  onPressed: () => ref
+                      .read(splashControllerProvider.notifier)
+                      .checkSession(),
+                  child: const Text('Retry'),
+                ),
+              ],
             ),
           ),
         ],

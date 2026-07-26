@@ -38,7 +38,7 @@ class BookingRequestCard extends StatelessWidget {
       elevation: 3,
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -62,22 +62,21 @@ class BookingRequestCard extends StatelessWidget {
               ],
             ),
 
-            const SizedBox(height: 20),
-
-            const Text('Pickup', style: TextStyle(fontWeight: FontWeight.bold)),
-
-            Text(pickupAddress),
-
             const SizedBox(height: 12),
-
-            const Text(
-              'Destination',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            _LocationLine(
+              icon: Icons.trip_origin,
+              label: 'Pickup',
+              address: pickupAddress,
+              color: Colors.green,
             ),
-
-            Text(destinationAddress),
-
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
+            _LocationLine(
+              icon: Icons.location_on,
+              label: 'Destination',
+              address: destinationAddress,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 12),
 
             Row(
               children: [
@@ -91,7 +90,7 @@ class BookingRequestCard extends StatelessWidget {
               ],
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
             Row(
               children: [
@@ -117,4 +116,43 @@ class BookingRequestCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LocationLine extends StatelessWidget {
+  const _LocationLine({
+    required this.icon,
+    required this.label,
+    required this.address,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String address;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 8),
+      Expanded(
+        child: RichText(
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          text: TextSpan(
+            style: DefaultTextStyle.of(context).style,
+            children: [
+              TextSpan(
+                text: '$label: ',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              TextSpan(text: address),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
 }

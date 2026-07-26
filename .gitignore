@@ -49,4 +49,5 @@ app.*.map.json
 /admin/.env
 /admin/.env.*
 !/admin/.env.example
+!/admin/.env.emulator
 **/node_modules/

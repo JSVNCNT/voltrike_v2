@@ -23,18 +23,17 @@ class SplashRecovery {
   final String? bookingId;
 }
 
-class SplashController
-    extends StateNotifier<AsyncValue<SplashRecovery>> {
+class SplashController extends StateNotifier<AsyncValue<SplashRecovery>> {
   SplashController({
     required AuthRepository authRepository,
     required UserRepository userRepository,
     required DriverRepository driverRepository,
     required BookingRepository bookingRepository,
-  })  : _authRepository = authRepository,
-        _userRepository = userRepository,
-        _driverRepository = driverRepository,
-        _bookingRepository = bookingRepository,
-        super(const AsyncLoading());
+  }) : _authRepository = authRepository,
+       _userRepository = userRepository,
+       _driverRepository = driverRepository,
+       _bookingRepository = bookingRepository,
+       super(const AsyncLoading());
 
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
@@ -42,6 +41,8 @@ class SplashController
   final BookingRepository _bookingRepository;
 
   Future<void> checkSession() async {
+    state = const AsyncLoading();
+
     try {
       final firebaseUser = _authRepository.currentUser;
 
@@ -57,9 +58,7 @@ class SplashController
         return;
       }
 
-      final user = await _userRepository.getUser(
-        firebaseUser.uid,
-      );
+      final user = await _userRepository.getUser(firebaseUser.uid);
 
       if (user == null || !user.isActive) {
         _setDestination(SplashDestination.intro);
@@ -71,10 +70,7 @@ class SplashController
       // ==========================================================
 
       if (user.isDriver) {
-        final driver =
-            await _driverRepository.getDriver(
-          firebaseUser.uid,
-        );
+        final driver = await _driverRepository.getDriver(firebaseUser.uid);
 
         if (driver == null) {
           _setDestination(SplashDestination.intro);
@@ -85,7 +81,8 @@ class SplashController
           final bookingId = driver.currentBookingId;
           if (bookingId != null && bookingId.isNotEmpty) {
             final booking = await _bookingRepository.getBooking(bookingId);
-            final isActive = booking != null &&
+            final isActive =
+                booking != null &&
                 booking.driverId == firebaseUser.uid &&
                 booking.status != BookingStatus.completed &&
                 booking.status != BookingStatus.cancelled;
@@ -110,9 +107,9 @@ class SplashController
       // Passenger
       // ==========================================================
 
-      final booking = await _bookingRepository.getActiveBookingForPassenger(
-        firebaseUser.uid,
-      );
+      final booking = await _bookingRepository
+          .getActiveBookingForPassenger(firebaseUser.uid)
+          .timeout(const Duration(seconds: 15));
       if (booking != null) {
         _setDestination(
           SplashDestination.passengerActiveBooking,
@@ -123,17 +120,11 @@ class SplashController
 
       _setDestination(SplashDestination.passengerHome);
     } catch (e, stackTrace) {
-      state = AsyncError(
-        e,
-        stackTrace,
-      );
+      state = AsyncError(e, stackTrace);
     }
   }
 
-  void _setDestination(
-    SplashDestination destination, {
-    String? bookingId,
-  }) {
+  void _setDestination(SplashDestination destination, {String? bookingId}) {
     state = AsyncData(
       SplashRecovery(destination: destination, bookingId: bookingId),
     );

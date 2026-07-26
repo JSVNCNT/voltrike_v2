@@ -44,8 +44,16 @@ class DriverBottomSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasBooking = passengerName != null;
     final isOffer = onAcceptBooking != null || onDeclineBooking != null;
+    // Treat malformed legacy state as idle. The offer card is the only path
+    // that may show a request before it is accepted; active-trip details need
+    // both trusted addresses.
+    final hasBooking =
+        isOffer ||
+        (bookingStatus != null &&
+            passengerName?.trim().isNotEmpty == true &&
+            _isUsableAddress(pickupAddress) &&
+            _isUsableAddress(destinationAddress));
 
     return Container(
       width: double.infinity,
@@ -140,6 +148,14 @@ class DriverBottomSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  bool _isUsableAddress(String? value) {
+    final normalized = value?.trim().toLowerCase() ?? '';
+    return normalized.isNotEmpty &&
+        normalized != '--' &&
+        normalized != 'pickup location' &&
+        normalized != 'destination';
   }
 }
 
