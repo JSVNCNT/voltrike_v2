@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'model_date_parser.dart';
 
 class Passenger extends Equatable {
   const Passenger({
@@ -57,13 +58,9 @@ class Passenger extends Equatable {
       ),
       totalTrips: map['totalTrips'] ?? 0,
       rating: (map['rating'] ?? 0).toDouble(),
-      createdAt: DateTime.tryParse(
-            map['createdAt'] ?? '',
-          ) ??
+      createdAt: parseModelDate(map['createdAt']) ??
           DateTime.now(),
-      updatedAt: DateTime.tryParse(
-            map['updatedAt'] ?? '',
-          ) ??
+      updatedAt: parseModelDate(map['updatedAt']) ??
           DateTime.now(),
     );
   }

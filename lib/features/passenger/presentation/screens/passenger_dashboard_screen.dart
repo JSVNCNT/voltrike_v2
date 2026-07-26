@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/booking_repository.dart';
+import '../../../../data/repositories/user_repository.dart';
 
 /// ===========================================================================
 /// Passenger Dashboard
@@ -161,16 +162,17 @@ class PassengerDashboardScreen extends ConsumerWidget {
                             height: 8,
                           ),
 
-                          Text(
-                            user.email ??
-                                'Passenger',
+                          FutureBuilder(
+                            future: UserRepository().getUser(user.uid),
+                            builder: (context, snapshot) => Text(
+                            snapshot.data?.fullName ?? user.displayName ?? user.email ?? 'Passenger',
                             style:
                                 const TextStyle(
                               fontSize: 22,
                               fontWeight:
                                   FontWeight.bold,
                             ),
-                          ),
+                          )),
                         ],
                       ),
                     ),

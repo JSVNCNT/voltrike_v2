@@ -115,7 +115,7 @@ class DriverBookingListener {
         );
 
         developer.log(
-          'Passenger  : ${booking.passengerId}',
+          'Passenger  : ${booking.passengerName ?? booking.passengerId}',
           name: 'DriverBookingListener',
         );
 

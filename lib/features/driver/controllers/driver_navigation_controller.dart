@@ -16,6 +16,9 @@ class DriverNavigationState {
     this.distance,
     this.duration,
     this.restrictionWarning,
+    this.instruction,
+    this.maneuver,
+    this.nextInstruction,
     this.loading = false,
   });
 
@@ -24,6 +27,9 @@ class DriverNavigationState {
   final String? distance;
   final String? duration;
   final String? restrictionWarning;
+  final String? instruction;
+  final String? maneuver;
+  final String? nextInstruction;
   final bool loading;
 
   DriverNavigationState copyWith({
@@ -32,6 +38,9 @@ class DriverNavigationState {
     String? distance,
     String? duration,
     String? restrictionWarning,
+    String? instruction,
+    String? maneuver,
+    String? nextInstruction,
     bool? loading,
   }) {
     return DriverNavigationState(
@@ -40,6 +49,9 @@ class DriverNavigationState {
       distance: distance ?? this.distance,
       duration: duration ?? this.duration,
       restrictionWarning: restrictionWarning ?? this.restrictionWarning,
+      instruction: instruction ?? this.instruction,
+      maneuver: maneuver ?? this.maneuver,
+      nextInstruction: nextInstruction ?? this.nextInstruction,
       loading: loading ?? this.loading,
     );
   }
@@ -81,12 +93,12 @@ class DriverNavigationController
 
     try {
       RouteRestrictionService.instance.clearLastConflict();
-      final route = await _navigation.computeTrafficRoute(
+      final routeInfo = await _navigation.computeRouteInfo(
         origin: origin,
         destination: destination,
       );
 
-      if (route == null) {
+      if (routeInfo == null) {
         final conflict = RouteRestrictionService.instance.lastConflict;
         state = DriverNavigationState(
           restrictionWarning: conflict == null
@@ -96,18 +108,19 @@ class DriverNavigationController
         return;
       }
 
-      final encodedPolyline =
-          _navigation.encodedPolyline(route);
+      final encodedPolyline = routeInfo.encodedPolyline;
 
       final points =
           _navigation.decodePolyline(encodedPolyline);
 
       state = DriverNavigationState(
         routePoints: points,
-        eta: _navigation.duration(route),
-        duration: _navigation.duration(route),
-        distance:
-            '${_navigation.distanceKm(route).toStringAsFixed(1)} km',
+        eta: '${routeInfo.durationMinutes} min',
+        duration: '${routeInfo.durationMinutes} min',
+        distance: '${routeInfo.distanceKm.toStringAsFixed(1)} km',
+        instruction: routeInfo.steps.isEmpty ? null : routeInfo.steps.first.instruction,
+        maneuver: routeInfo.steps.isEmpty ? null : routeInfo.steps.first.maneuver,
+        nextInstruction: routeInfo.steps.length < 2 ? null : routeInfo.steps[1].instruction,
         loading: false,
       );
     } catch (_) {

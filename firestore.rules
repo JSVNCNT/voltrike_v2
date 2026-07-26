@@ -38,6 +38,14 @@ service cloud.firestore {
       allow delete: if false;
       match /devices/{token} { allow read, write: if signedIn() && request.auth.uid == uid; }
     }
+    // Passenger profile data is kept separate from the public user identity.
+    // The passenger may maintain their own profile; admins can audit it.
+    match /passengers/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || developerAdmin() ||
+        (todaAdmin() && resource.data.todaId == adminTodaId()));
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
     match /drivers/{driverId}/bookingOffers/{offerId} {
       allow read: if signedIn() && (request.auth.uid == driverId || developerAdmin() ||
         todaAdminFor(resource.data.todaId));
@@ -161,7 +169,8 @@ service cloud.firestore {
         request.resource.data.passengerId == request.auth.uid &&
         request.resource.data.driverId == null &&
         request.resource.data.status == 'pending';
-      allow read: if bookingMember(bookingId) || offeredDriver(bookingId);
+      allow read: if (signedIn() && (resource.data.passengerId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid)) || offeredDriver(bookingId);
       // An offered driver can only claim an unassigned pending booking. The
       // transaction also updates that driver's own availability document.
       allow update: if offeredDriver(bookingId) &&

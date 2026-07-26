@@ -41,6 +41,7 @@ class DriverLocationController
   final FirebaseDatabase _database = FirebaseDatabase.instance;
 
   StreamSubscription<Position>? _subscription;
+  DateTime? _lastDatabaseWrite;
 
   bool get isTracking =>
       _subscription != null;
@@ -89,6 +90,12 @@ class DriverLocationController
           .locationStream
           .listen(
         (position) async {
+          final now = DateTime.now();
+          if (_lastDatabaseWrite != null &&
+              now.difference(_lastDatabaseWrite!) < const Duration(seconds: 10)) {
+            return;
+          }
+          _lastDatabaseWrite = now;
           await locationRef.set({
             'latitude': position.latitude,
             'longitude': position.longitude,

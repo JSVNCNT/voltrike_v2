@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'model_date_parser.dart';
 
 /// ===========================================================================
 /// Booking Status
@@ -42,6 +43,9 @@ class Booking {
   const Booking({
     required this.bookingId,
     required this.passengerId,
+    this.passengerName,
+    this.passengerPhone,
+    this.passengerPhotoUrl,
     this.driverId,
 
     //======================================================================
@@ -77,6 +81,9 @@ class Booking {
   final String bookingId;
 
   final String passengerId;
+  final String? passengerName;
+  final String? passengerPhone;
+  final String? passengerPhotoUrl;
 
   final String? driverId;
 
@@ -151,6 +158,9 @@ class Booking {
     return Booking(
       bookingId: doc.id,
       passengerId: data['passengerId'] as String,
+      passengerName: data['passengerName'] as String?,
+      passengerPhone: data['passengerPhone'] as String?,
+      passengerPhotoUrl: data['passengerPhotoUrl'] as String?,
       driverId: data['driverId'] as String?,
 
       //=========================
@@ -176,23 +186,19 @@ class Booking {
       pickupAddress: data['pickupAddress'] as String,
       destinationAddress:
           data['destinationAddress'] as String,
-      distanceMeters: data['distanceMeters'] as int,
+      distanceMeters: (data['distanceMeters'] as num).toInt(),
       estimatedFare:
           (data['estimatedFare'] as num).toDouble(),
       additionalPassengers:
           data['additionalPassengers'] as int,
-      baggageCount: data['baggageCount'] as int,
+      baggageCount: (data['baggageCount'] as num).toInt(),
       isOutsideToda: data['isOutsideToda'] as bool,
       status: BookingStatus.values.firstWhere(
         (status) => status.name == data['status'],
       ),
-      createdAt:
-          (data['createdAt'] as Timestamp).toDate(),
-      updatedAt:
-          (data['updatedAt'] as Timestamp).toDate(),
-      completedAt: data['completedAt'] != null
-          ? (data['completedAt'] as Timestamp).toDate()
-          : null,
+      createdAt: parseModelDate(data['createdAt']) ?? DateTime.now(),
+      updatedAt: parseModelDate(data['updatedAt']) ?? DateTime.now(),
+      completedAt: parseModelDate(data['completedAt']),
     );
   }
 
@@ -203,6 +209,9 @@ class Booking {
       //======================================================================
 
       'passengerId': passengerId,
+      'passengerName': passengerName,
+      'passengerPhone': passengerPhone,
+      'passengerPhotoUrl': passengerPhotoUrl,
       'driverId': driverId,
 
       //======================================================================
@@ -261,6 +270,9 @@ class Booking {
   Booking copyWith({
     String? bookingId,
     String? passengerId,
+    String? passengerName,
+    String? passengerPhone,
+    String? passengerPhotoUrl,
     String? driverId,
 
     //======================================================================
@@ -305,6 +317,9 @@ class Booking {
     return Booking(
       bookingId: bookingId ?? this.bookingId,
       passengerId: passengerId ?? this.passengerId,
+      passengerName: passengerName ?? this.passengerName,
+      passengerPhone: passengerPhone ?? this.passengerPhone,
+      passengerPhotoUrl: passengerPhotoUrl ?? this.passengerPhotoUrl,
       driverId: driverId ?? this.driverId,
 
       //====================================================================

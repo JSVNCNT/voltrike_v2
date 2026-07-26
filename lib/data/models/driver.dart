@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'model_date_parser.dart';
 
 class Driver extends Equatable {
   const Driver({
@@ -352,10 +353,7 @@ class Driver extends Equatable {
       licenseNumber:
           map['licenseNumber'] ?? '',
 
-      licenseExpiry:
-          DateTime.parse(
-        map['licenseExpiry'],
-      ),
+      licenseExpiry: parseModelDate(map['licenseExpiry']) ?? DateTime.now(),
 
       //====================================================================
       // Uploaded Documents
@@ -433,17 +431,9 @@ class Driver extends Equatable {
       // Dates
       //====================================================================
 
-      createdAt:
-          DateTime.parse(
-        map['createdAt'],
-      ),
+      createdAt: parseModelDate(map['createdAt']) ?? DateTime.now(),
 
-      approvedAt:
-          map['approvedAt'] != null
-              ? DateTime.parse(
-                  map['approvedAt'],
-                )
-              : null,
+      approvedAt: parseModelDate(map['approvedAt']),
 
       approvedBy:
           map['approvedBy']

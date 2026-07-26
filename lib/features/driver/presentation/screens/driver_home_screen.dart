@@ -184,7 +184,6 @@ class _DriverHomeScreenState
 
   @override
 void dispose() {
-  _navigation.dispose();
   _mapController?.dispose();
 
   super.dispose();
@@ -595,8 +594,7 @@ Widget build(
               left: 16,
               right: 16,
               child: BookingRequestCard(
-                passengerName:
-                    incomingBooking.passengerId,
+                passengerName: incomingBooking.passengerName ?? 'Passenger',
                 pickupAddress:
                     incomingBooking.pickupAddress,
                 destinationAddress:
@@ -625,8 +623,8 @@ Widget build(
 
               passengerName:
                   hasIncomingBooking
-                      ? incomingBooking.passengerId
-                      : currentBooking?.passengerId,
+                      ? (incomingBooking.passengerName ?? 'Passenger')
+                      : (currentBooking?.passengerName ?? 'Passenger'),
 
               pickupAddress:
                   hasIncomingBooking

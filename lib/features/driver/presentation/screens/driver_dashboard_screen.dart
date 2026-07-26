@@ -10,6 +10,7 @@ import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/booking_repository.dart';
 import '../../../../data/repositories/driver_rating_repository.dart';
 import '../../../../data/repositories/driver_repository.dart';
+import '../../../../data/repositories/user_repository.dart';
 
 /// ===========================================================================
 /// Driver Dashboard
@@ -255,8 +256,10 @@ class DriverDashboardScreen
                                     height: 6,
                                   ),
 
-                                  Text(
-                                    driver.uid,
+                                  FutureBuilder(
+                                    future: UserRepository().getUser(user.uid),
+                                    builder: (context, snapshot) => Text(
+                                    snapshot.data?.fullName ?? user.displayName ?? 'Driver',
                                     style:
                                         const TextStyle(
                                       fontSize:
@@ -265,7 +268,7 @@ class DriverDashboardScreen
                                           FontWeight
                                               .bold,
                                     ),
-                                  ),
+                                  )),
 
                                   const SizedBox(
                                     height: 16,

@@ -31,7 +31,7 @@ class DriverTripHistoryScreen extends ConsumerWidget {
                   final user = AuthRepository().currentUser;
                   return ExpandableTripCard(
                     booking: booking,
-                    otherPartyLabel: 'Passenger',
+                    otherPartyLabel: booking.passengerName ?? 'Passenger',
                     onReport: user == null ? null : () => showDialog<void>(context: context, builder: (_) => ReportRideDialog(onSubmit: (category, details) => ReportRepository().create(bookingId: booking.bookingId, reporterId: user.uid, reportedUserId: booking.passengerId, category: category, details: details))),
                   );
                 },

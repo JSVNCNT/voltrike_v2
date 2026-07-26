@@ -72,9 +72,7 @@ class _LoginScreenState
       // ==========================================================
 
       if (appUser.isPassenger) {
-        context.go(
-          AppRoutes.passengerHome,
-        );
+        context.go(AppRoutes.splash);
         return;
       }
 

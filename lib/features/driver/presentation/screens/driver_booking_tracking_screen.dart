@@ -24,7 +24,6 @@ import '../../../ride/tracking/widgets/ride_actions_card.dart';
 import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../../ride/tracking/widgets/ride_primary_button.dart';
-import '../../providers/passenger_listener_provider.dart';
 
 class DriverBookingTrackingScreen extends ConsumerStatefulWidget {
   const DriverBookingTrackingScreen({
@@ -236,11 +235,6 @@ Widget build(
     driverLocationProvider,
   );
 
-  final passengerAsync = ref.watch(
-    passengerListenerProvider(
-      booking.passengerId,
-    ),
-  );
   final primaryAction = booking.status == BookingStatus.driverAssigned ||
           booking.status == BookingStatus.driverArriving ||
           booking.status == BookingStatus.passengerOnBoard
@@ -357,6 +351,19 @@ Widget build(
                 eta: navigation.eta,
                 distance: navigation.distance,
               ),
+              if (navigation.instruction?.isNotEmpty == true) ...[
+                const SizedBox(height: 10),
+                Card(
+                  color: Colors.teal.shade50,
+                  child: ListTile(
+                    leading: const Icon(Icons.navigation, color: Colors.teal),
+                    title: Text(navigation.instruction!),
+                    subtitle: navigation.nextInstruction == null
+                        ? null
+                        : Text('Next: ${navigation.nextInstruction}'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -371,23 +378,9 @@ Widget build(
             ),
             child: Column(
               children: [
-                passengerAsync.when(
-                  loading: () => const PassengerInformationCard(
-                    passengerName: 'Loading...',
-                  ),
-                  error: (error, stackTrace) =>
-                      const PassengerInformationCard(
-                    passengerName: 'Unknown Passenger',
-                  ),
-                  data: (passenger) {
-                    return PassengerInformationCard(
-                      passengerName:
-                          passenger?.fullName ??
-                              'Unknown Passenger',
-                      photoUrl:
-                          passenger?.profileImage,
-                    );
-                  },
+                PassengerInformationCard(
+                  passengerName: booking.passengerName ?? 'Passenger',
+                  photoUrl: booking.passengerPhotoUrl,
                 ),
 
                 const SizedBox(

@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'model_date_parser.dart';
 
 class AppUser extends Equatable {
   const AppUser({
@@ -110,19 +111,13 @@ class AppUser extends Equatable {
       phoneNumber: map['phoneNumber'] ?? '',
       role: map['role'] ?? 'passenger',
       todaId: map['todaId'],
-      dateOfBirth: map['dateOfBirth'] != null
-          ? DateTime.tryParse(map['dateOfBirth'] as String)
-          : null,
+      dateOfBirth: parseModelDate(map['dateOfBirth']),
       profileImage: map['profileImage'] ?? '',
       emailVerified: map['emailVerified'] ?? false,
       isActive: map['isActive'] ?? true,
-      createdAt: DateTime.tryParse(
-            map['createdAt'] ?? '',
-          ) ??
+      createdAt: parseModelDate(map['createdAt']) ??
           DateTime.now(),
-      updatedAt: DateTime.tryParse(
-            map['updatedAt'] ?? '',
-          ) ??
+      updatedAt: parseModelDate(map['updatedAt']) ??
           DateTime.now(),
     );
   }

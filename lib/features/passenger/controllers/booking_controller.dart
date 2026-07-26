@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../../../data/models/booking.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/booking_repository.dart';
+import '../../../data/repositories/user_repository.dart';
 import '../providers/booking_session_provider.dart';
 
 /// ===========================================================================
@@ -29,6 +30,7 @@ class BookingController
   final AuthRepository _authRepository;
 
   final Uuid _uuid = const Uuid();
+  final UserRepository _userRepository = UserRepository();
 
   Future<String> createBooking({
     required BookingSession session,
@@ -55,9 +57,16 @@ class BookingController
         );
       }
 
+      final profile = await _userRepository.getUser(firebaseUser.uid);
+
       final booking = Booking(
         bookingId: _uuid.v4(),
         passengerId: firebaseUser.uid,
+        passengerName: profile?.fullName.trim().isNotEmpty == true
+            ? profile!.fullName
+            : (firebaseUser.displayName ?? firebaseUser.email ?? 'Passenger'),
+        passengerPhone: profile?.phoneNumber,
+        passengerPhotoUrl: profile?.profileImage,
         driverId: null,
         pickup: LatLng(
           pickupLatitude,
