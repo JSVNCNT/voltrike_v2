@@ -4,16 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'voice_call_service.dart';
+import '../../common/services/ringtone_service.dart';
 
 class VoiceCallScreen extends StatefulWidget {
   const VoiceCallScreen({
     super.key,
     required this.connect,
     required this.endCall,
+    required this.callStatus,
+    required this.initiate,
+    required this.incoming,
   });
   final Future<void> Function(VoiceCallService service) connect;
   final Future<void> Function() endCall;
-  @override State<VoiceCallScreen> createState() => _VoiceCallScreenState();
+  final Stream<String> callStatus;
+  final Future<void> Function() initiate;
+  final bool incoming;
+  @override
+  State<VoiceCallScreen> createState() => _VoiceCallScreenState();
 }
 
 class _VoiceCallScreenState extends State<VoiceCallScreen> {
@@ -23,14 +31,43 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   int _secondsRemaining = 120;
   String? _error;
   Timer? _callTimer;
+  StreamSubscription<String>? _statusSubscription;
+  String _remoteStatus = 'starting';
+  bool _joining = false;
 
   @override
   void initState() {
     super.initState();
-    _join();
+    unawaited(RingtoneService.instance.stopIncomingCall());
+    _statusSubscription = widget.callStatus.listen((status) {
+      if (!mounted) return;
+      setState(() => _remoteStatus = status);
+      if (status == 'accepted' && !_service.isConnected && !_joining) {
+        unawaited(_join());
+      }
+      if (status == 'declined' || status == 'ended' || status == 'expired') {
+        _callTimer?.cancel();
+        unawaited(_service.disconnect());
+      }
+    });
+    if (widget.incoming) {
+      unawaited(_join());
+    } else {
+      unawaited(_initiate());
+    }
+  }
+
+  Future<void> _initiate() async {
+    try {
+      await widget.initiate();
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    }
   }
 
   Future<void> _join() async {
+    if (_joining || _service.isConnected) return;
+    _joining = true;
     try {
       if (!(await Permission.microphone.request()).isGranted) {
         throw StateError('Microphone permission is required for a voice call.');
@@ -40,6 +77,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
+    } finally {
+      _joining = false;
     }
   }
 
@@ -76,6 +115,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   @override
   void dispose() {
     _callTimer?.cancel();
+    _statusSubscription?.cancel();
+    unawaited(RingtoneService.instance.stopIncomingCall());
     unawaited(_service.disconnect());
     super.dispose();
   }
@@ -92,14 +133,43 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.call, size: 80),
+                  Icon(
+                    _remoteStatus == 'declined'
+                        ? Icons.call_end
+                        : Icons.call,
+                    size: 80,
+                  ),
                   const SizedBox(height: 16),
-                  Text(_expired
-                      ? 'This two-minute call has ended.'
-                      : _service.isConnected
-                          ? 'Connected'
-                          : 'Connecting...'),
-                  if (!_expired) ...[
+                  Text(
+                    _remoteStatus == 'declined'
+                        ? 'The other participant declined the call.'
+                        : _remoteStatus == 'ended'
+                        ? 'The call has ended.'
+                        : _expired || _remoteStatus == 'expired'
+                        ? 'This two-minute call has ended.'
+                        : _remoteStatus == 'ringing'
+                        ? 'Calling your ride participant...'
+                        : !_service.isConnected
+                        ? 'Connecting...'
+                        : _service.hasRemoteParticipant
+                        ? 'Connected to the other rider'
+                        : 'Waiting for the other rider to tap Call...',
+                    textAlign: TextAlign.center,
+                  ),
+                  if (_service.isConnected &&
+                      !_service.hasRemoteParticipant &&
+                      !_expired) ...[
+                    const SizedBox(height: 8),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        'Waiting for the other participant to accept.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                  if (!_expired &&
+                      !['declined', 'ended', 'expired'].contains(_remoteStatus)) ...[
                     const SizedBox(height: 8),
                     Text('Call ends in $minutes:$seconds'),
                   ],
@@ -107,7 +177,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                   IconButton(
                     iconSize: 56,
                     icon: Icon(_muted ? Icons.mic_off : Icons.mic),
-                    onPressed: _expired
+                    onPressed: _expired ||
+                            ['declined', 'ended', 'expired'].contains(_remoteStatus)
                         ? null
                         : () async {
                             await _service.setMuted(!_muted);
@@ -119,7 +190,12 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       await _endCall();
                       if (context.mounted) Navigator.pop(context);
                     },
-                    child: Text(_expired ? 'Close' : 'End call'),
+                    child: Text(
+                      _expired ||
+                              ['declined', 'ended', 'expired'].contains(_remoteStatus)
+                          ? 'Close'
+                          : 'End call',
+                    ),
                   ),
                 ],
               ),

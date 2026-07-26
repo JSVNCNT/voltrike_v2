@@ -6,7 +6,6 @@ class Driver extends Equatable {
     //======================================================================
     // Identity
     //======================================================================
-
     required this.uid,
     required this.todaId,
     required this.vehicleId,
@@ -14,14 +13,12 @@ class Driver extends Equatable {
     //======================================================================
     // License
     //======================================================================
-
     required this.licenseNumber,
     required this.licenseExpiry,
 
     //======================================================================
     // Uploaded Documents
     //======================================================================
-
     required this.profilePhotoUrl,
     required this.driverLicenseFrontUrl,
     required this.driverLicenseBackUrl,
@@ -33,7 +30,6 @@ class Driver extends Equatable {
     //======================================================================
     // Driver Status
     //======================================================================
-
     required this.driverStatus,
     required this.isOnline,
     required this.isAvailable,
@@ -45,15 +41,14 @@ class Driver extends Equatable {
     //======================================================================
     // Statistics
     //======================================================================
-
     required this.rating,
+    required this.ratingCount,
     required this.completedTrips,
     required this.totalEarnings,
 
     //======================================================================
     // Dates
     //======================================================================
-
     required this.createdAt,
     this.approvedAt,
     this.approvedBy,
@@ -123,6 +118,8 @@ class Driver extends Equatable {
 
   final double rating;
 
+  final int ratingCount;
+
   final int completedTrips;
 
   final double totalEarnings;
@@ -141,31 +138,23 @@ class Driver extends Equatable {
   // Helpers
   //==========================================================================
 
-  bool get isApproved =>
-      driverStatus == 'approved';
+  bool get isApproved => driverStatus == 'approved';
 
-  bool get isPending =>
-      driverStatus == 'pending';
+  bool get isPending => driverStatus == 'pending';
 
-  bool get isRejected =>
-      driverStatus == 'rejected';
+  bool get isRejected => driverStatus == 'rejected';
 
-  bool get isSuspended =>
-      driverStatus == 'suspended';
+  bool get isSuspended => driverStatus == 'suspended';
 
-  bool get canReceiveBookings =>
-      isApproved &&
-      isOnline &&
-      isAvailable;
+  bool get canReceiveBookings => isApproved && isOnline && isAvailable;
 
   //==========================================================================
   // Copy
   //==========================================================================
-    Driver copyWith({
+  Driver copyWith({
     //======================================================================
     // Identity
     //======================================================================
-
     String? uid,
     String? todaId,
     String? vehicleId,
@@ -173,14 +162,12 @@ class Driver extends Equatable {
     //======================================================================
     // License
     //======================================================================
-
     String? licenseNumber,
     DateTime? licenseExpiry,
 
     //======================================================================
     // Uploaded Documents
     //======================================================================
-
     String? profilePhotoUrl,
     String? driverLicenseFrontUrl,
     String? driverLicenseBackUrl,
@@ -192,7 +179,6 @@ class Driver extends Equatable {
     //======================================================================
     // Driver Status
     //======================================================================
-
     String? driverStatus,
     bool? isOnline,
     bool? isAvailable,
@@ -204,15 +190,14 @@ class Driver extends Equatable {
     //======================================================================
     // Statistics
     //======================================================================
-
     double? rating,
+    int? ratingCount,
     int? completedTrips,
     double? totalEarnings,
 
     //======================================================================
     // Dates
     //======================================================================
-
     DateTime? createdAt,
     DateTime? approvedAt,
     String? approvedBy,
@@ -221,7 +206,6 @@ class Driver extends Equatable {
       //====================================================================
       // Identity
       //====================================================================
-
       uid: uid ?? this.uid,
       todaId: todaId ?? this.todaId,
       vehicleId: vehicleId ?? this.vehicleId,
@@ -229,119 +213,73 @@ class Driver extends Equatable {
       //====================================================================
       // License
       //====================================================================
+      licenseNumber: licenseNumber ?? this.licenseNumber,
 
-      licenseNumber:
-          licenseNumber ??
-              this.licenseNumber,
-
-      licenseExpiry:
-          licenseExpiry ??
-              this.licenseExpiry,
+      licenseExpiry: licenseExpiry ?? this.licenseExpiry,
 
       //====================================================================
       // Uploaded Documents
       //====================================================================
-
-      profilePhotoUrl:
-          profilePhotoUrl ??
-              this.profilePhotoUrl,
+      profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
 
       driverLicenseFrontUrl:
-          driverLicenseFrontUrl ??
-              this.driverLicenseFrontUrl,
+          driverLicenseFrontUrl ?? this.driverLicenseFrontUrl,
 
-      driverLicenseBackUrl:
-          driverLicenseBackUrl ??
-              this.driverLicenseBackUrl,
+      driverLicenseBackUrl: driverLicenseBackUrl ?? this.driverLicenseBackUrl,
 
-      governmentIdUrl:
-          governmentIdUrl ??
-              this.governmentIdUrl,
+      governmentIdUrl: governmentIdUrl ?? this.governmentIdUrl,
 
-      orDocumentUrl:
-          orDocumentUrl ??
-              this.orDocumentUrl,
+      orDocumentUrl: orDocumentUrl ?? this.orDocumentUrl,
 
-      crDocumentUrl:
-          crDocumentUrl ??
-              this.crDocumentUrl,
+      crDocumentUrl: crDocumentUrl ?? this.crDocumentUrl,
 
-      vehiclePhotoUrl:
-          vehiclePhotoUrl ??
-              this.vehiclePhotoUrl,
+      vehiclePhotoUrl: vehiclePhotoUrl ?? this.vehiclePhotoUrl,
 
       //====================================================================
       // Driver Status
       //====================================================================
+      driverStatus: driverStatus ?? this.driverStatus,
 
-      driverStatus:
-          driverStatus ??
-              this.driverStatus,
+      isOnline: isOnline ?? this.isOnline,
 
-      isOnline:
-          isOnline ??
-              this.isOnline,
+      isAvailable: isAvailable ?? this.isAvailable,
 
-      isAvailable:
-          isAvailable ??
-              this.isAvailable,
+      currentBookingId: currentBookingId ?? this.currentBookingId,
 
-      currentBookingId:
-          currentBookingId ??
-              this.currentBookingId,
+      currentLatitude: currentLatitude ?? this.currentLatitude,
 
-      currentLatitude:
-          currentLatitude ??
-              this.currentLatitude,
-
-      currentLongitude:
-          currentLongitude ??
-              this.currentLongitude,
+      currentLongitude: currentLongitude ?? this.currentLongitude,
 
       //====================================================================
       // Statistics
       //====================================================================
+      rating: rating ?? this.rating,
 
-      rating:
-          rating ?? this.rating,
+      ratingCount: ratingCount ?? this.ratingCount,
 
-      completedTrips:
-          completedTrips ??
-              this.completedTrips,
+      completedTrips: completedTrips ?? this.completedTrips,
 
-      totalEarnings:
-          totalEarnings ??
-              this.totalEarnings,
+      totalEarnings: totalEarnings ?? this.totalEarnings,
 
       //====================================================================
       // Dates
       //====================================================================
+      createdAt: createdAt ?? this.createdAt,
 
-      createdAt:
-          createdAt ??
-              this.createdAt,
+      approvedAt: approvedAt ?? this.approvedAt,
 
-      approvedAt:
-          approvedAt ??
-              this.approvedAt,
-
-      approvedBy:
-          approvedBy ??
-              this.approvedBy,
+      approvedBy: approvedBy ?? this.approvedBy,
     );
   }
 
   //==========================================================================
   // Firestore
   //==========================================================================
-    factory Driver.fromMap(
-    Map<String, dynamic> map,
-  ) {
+  factory Driver.fromMap(Map<String, dynamic> map) {
     return Driver(
       //====================================================================
       // Identity
       //====================================================================
-
       uid: map['uid'] ?? '',
       todaId: map['todaId'] ?? '',
       vehicleId: map['vehicleId'] ?? '',
@@ -349,107 +287,76 @@ class Driver extends Equatable {
       //====================================================================
       // License
       //====================================================================
-
-      licenseNumber:
-          map['licenseNumber'] ?? '',
+      licenseNumber: map['licenseNumber'] ?? '',
 
       licenseExpiry: parseModelDate(map['licenseExpiry']) ?? DateTime.now(),
 
       //====================================================================
       // Uploaded Documents
       //====================================================================
+      profilePhotoUrl: map['profilePhotoUrl'] ?? '',
 
-      profilePhotoUrl:
-          map['profilePhotoUrl'] ?? '',
+      driverLicenseFrontUrl: map['driverLicenseFrontUrl'] ?? '',
 
-      driverLicenseFrontUrl:
-          map['driverLicenseFrontUrl'] ?? '',
+      driverLicenseBackUrl: map['driverLicenseBackUrl'] ?? '',
 
-      driverLicenseBackUrl:
-          map['driverLicenseBackUrl'] ?? '',
+      governmentIdUrl: map['governmentIdUrl'] ?? '',
 
-      governmentIdUrl:
-          map['governmentIdUrl'] ?? '',
+      orDocumentUrl: map['orDocumentUrl'] ?? '',
 
-      orDocumentUrl:
-          map['orDocumentUrl'] ?? '',
+      crDocumentUrl: map['crDocumentUrl'] ?? '',
 
-      crDocumentUrl:
-          map['crDocumentUrl'] ?? '',
-
-      vehiclePhotoUrl:
-          map['vehiclePhotoUrl'] ?? '',
+      vehiclePhotoUrl: map['vehiclePhotoUrl'] ?? '',
 
       //====================================================================
       // Driver Status
       //====================================================================
+      driverStatus: map['driverStatus'] ?? 'pending',
 
-      driverStatus:
-          map['driverStatus'] ??
-              'pending',
+      isOnline: map['isOnline'] ?? false,
 
-      isOnline:
-          map['isOnline'] ?? false,
+      isAvailable: map['isAvailable'] ?? true,
 
-      isAvailable:
-          map['isAvailable'] ?? true,
+      currentBookingId: map['currentBookingId'] as String?,
 
-      currentBookingId:
-          map['currentBookingId']
-              as String?,
+      currentLatitude: map['currentLatitude'] != null
+          ? (map['currentLatitude'] as num).toDouble()
+          : null,
 
-      currentLatitude:
-          map['currentLatitude'] != null
-              ? (map['currentLatitude']
-                      as num)
-                  .toDouble()
-              : null,
-
-      currentLongitude:
-          map['currentLongitude'] != null
-              ? (map['currentLongitude']
-                      as num)
-                  .toDouble()
-              : null,
+      currentLongitude: map['currentLongitude'] != null
+          ? (map['currentLongitude'] as num).toDouble()
+          : null,
 
       //====================================================================
       // Statistics
       //====================================================================
+      rating: (map['rating'] ?? 0).toDouble(),
 
-      rating:
-          (map['rating'] ?? 0)
-              .toDouble(),
+      ratingCount: (map['ratingCount'] as num?)?.round() ?? 0,
 
-      completedTrips:
-          map['completedTrips'] ?? 0,
+      completedTrips: (map['completedTrips'] as num?)?.round() ?? 0,
 
-      totalEarnings:
-          (map['totalEarnings'] ?? 0)
-              .toDouble(),
+      totalEarnings: (map['totalEarnings'] ?? 0).toDouble(),
 
       //====================================================================
       // Dates
       //====================================================================
-
       createdAt: parseModelDate(map['createdAt']) ?? DateTime.now(),
 
       approvedAt: parseModelDate(map['approvedAt']),
 
-      approvedBy:
-          map['approvedBy']
-              as String?,
+      approvedBy: map['approvedBy'] as String?,
     );
   }
 
   //==========================================================================
   // Firestore Serialization
   //==========================================================================
-    Map<String, dynamic> toMap() {
+  Map<String, dynamic> toMap() {
     return {
       //====================================================================
       // Identity
       //====================================================================
-
       'uid': uid,
       'todaId': todaId,
       'vehicleId': vehicleId,
@@ -457,148 +364,116 @@ class Driver extends Equatable {
       //====================================================================
       // License
       //====================================================================
+      'licenseNumber': licenseNumber,
 
-      'licenseNumber':
-          licenseNumber,
-
-      'licenseExpiry':
-          licenseExpiry
-              .toIso8601String(),
+      'licenseExpiry': licenseExpiry.toIso8601String(),
 
       //====================================================================
       // Uploaded Documents
       //====================================================================
+      'profilePhotoUrl': profilePhotoUrl,
 
-      'profilePhotoUrl':
-          profilePhotoUrl,
+      'driverLicenseFrontUrl': driverLicenseFrontUrl,
 
-      'driverLicenseFrontUrl':
-          driverLicenseFrontUrl,
+      'driverLicenseBackUrl': driverLicenseBackUrl,
 
-      'driverLicenseBackUrl':
-          driverLicenseBackUrl,
+      'governmentIdUrl': governmentIdUrl,
 
-      'governmentIdUrl':
-          governmentIdUrl,
+      'orDocumentUrl': orDocumentUrl,
 
-      'orDocumentUrl':
-          orDocumentUrl,
+      'crDocumentUrl': crDocumentUrl,
 
-      'crDocumentUrl':
-          crDocumentUrl,
-
-      'vehiclePhotoUrl':
-          vehiclePhotoUrl,
+      'vehiclePhotoUrl': vehiclePhotoUrl,
 
       //====================================================================
       // Driver Status
       //====================================================================
+      'driverStatus': driverStatus,
 
-      'driverStatus':
-          driverStatus,
+      'isOnline': isOnline,
 
-      'isOnline':
-          isOnline,
+      'isAvailable': isAvailable,
 
-      'isAvailable':
-          isAvailable,
+      'currentBookingId': currentBookingId,
 
-      'currentBookingId':
-          currentBookingId,
+      'currentLatitude': currentLatitude,
 
-      'currentLatitude':
-          currentLatitude,
-
-      'currentLongitude':
-          currentLongitude,
+      'currentLongitude': currentLongitude,
 
       //====================================================================
       // Statistics
       //====================================================================
+      'rating': rating,
 
-      'rating':
-          rating,
+      'ratingCount': ratingCount,
 
-      'completedTrips':
-          completedTrips,
+      'completedTrips': completedTrips,
 
-      'totalEarnings':
-          totalEarnings,
+      'totalEarnings': totalEarnings,
 
       //====================================================================
       // Dates
       //====================================================================
+      'createdAt': createdAt.toIso8601String(),
 
-      'createdAt':
-          createdAt
-              .toIso8601String(),
+      'approvedAt': approvedAt?.toIso8601String(),
 
-      'approvedAt':
-          approvedAt
-              ?.toIso8601String(),
-
-      'approvedBy':
-          approvedBy,
+      'approvedBy': approvedBy,
     };
   }
 
   //==========================================================================
   // Equatable
   //==========================================================================
-    @override
+  @override
   List<Object?> get props => [
-        //====================================================================
-        // Identity
-        //====================================================================
+    //====================================================================
+    // Identity
+    //====================================================================
+    uid,
+    todaId,
+    vehicleId,
 
-        uid,
-        todaId,
-        vehicleId,
+    //====================================================================
+    // License
+    //====================================================================
+    licenseNumber,
+    licenseExpiry,
 
-        //====================================================================
-        // License
-        //====================================================================
+    //====================================================================
+    // Uploaded Documents
+    //====================================================================
+    profilePhotoUrl,
+    driverLicenseFrontUrl,
+    driverLicenseBackUrl,
+    governmentIdUrl,
+    orDocumentUrl,
+    crDocumentUrl,
+    vehiclePhotoUrl,
 
-        licenseNumber,
-        licenseExpiry,
+    //====================================================================
+    // Driver Status
+    //====================================================================
+    driverStatus,
+    isOnline,
+    isAvailable,
+    currentBookingId,
+    currentLatitude,
+    currentLongitude,
 
-        //====================================================================
-        // Uploaded Documents
-        //====================================================================
+    //====================================================================
+    // Statistics
+    //====================================================================
+    rating,
+    ratingCount,
+    completedTrips,
+    totalEarnings,
 
-        profilePhotoUrl,
-        driverLicenseFrontUrl,
-        driverLicenseBackUrl,
-        governmentIdUrl,
-        orDocumentUrl,
-        crDocumentUrl,
-        vehiclePhotoUrl,
-
-        //====================================================================
-        // Driver Status
-        //====================================================================
-
-        driverStatus,
-        isOnline,
-        isAvailable,
-        currentBookingId,
-        currentLatitude,
-        currentLongitude,
-
-        //====================================================================
-        // Statistics
-        //====================================================================
-
-        rating,
-        completedTrips,
-        totalEarnings,
-
-        //====================================================================
-        // Dates
-        //====================================================================
-
-        createdAt,
-        approvedAt,
-        approvedBy,
-      ];
+    //====================================================================
+    // Dates
+    //====================================================================
+    createdAt,
+    approvedAt,
+    approvedBy,
+  ];
 }

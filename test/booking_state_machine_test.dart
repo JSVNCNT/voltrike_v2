@@ -29,6 +29,13 @@ void main() {
       expect(
         BookingStateMachine.canTransition(
           BookingStatus.passengerOnBoard,
+          BookingStatus.paymentConfirmation,
+        ),
+        isTrue,
+      );
+      expect(
+        BookingStateMachine.canTransition(
+          BookingStatus.paymentConfirmation,
           BookingStatus.completed,
         ),
         isTrue,

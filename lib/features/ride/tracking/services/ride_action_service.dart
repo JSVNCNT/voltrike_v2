@@ -1,6 +1,8 @@
 import '../../../../data/models/booking.dart';
 
 import '../models/ride_action.dart';
+import '../models/ride_participant_role.dart';
+import 'ride_stage_presentation_service.dart';
 
 /// ===========================================================================
 /// Ride Action Service
@@ -18,27 +20,10 @@ class RideActionService {
 
   static RidePrimaryAction driverPrimaryAction(
     BookingStatus status,
-  ) {
-    switch (status) {
-      case BookingStatus.pending:
-        return RidePrimaryAction.none;
-
-      case BookingStatus.driverAssigned:
-        return RidePrimaryAction.arriveAtPickup;
-
-      case BookingStatus.driverArriving:
-        return RidePrimaryAction.startTrip;
-
-      case BookingStatus.passengerOnBoard:
-        return RidePrimaryAction.completeTrip;
-
-      case BookingStatus.completed:
-        return RidePrimaryAction.viewReceipt;
-
-      case BookingStatus.cancelled:
-        return RidePrimaryAction.none;
-    }
-  }
+  ) => RideStagePresentationService.resolve(
+    role: RideParticipantRole.driver,
+    status: status,
+  ).primaryAction;
 
   //==========================================================================
   // Passenger
@@ -46,27 +31,10 @@ class RideActionService {
 
   static RidePrimaryAction passengerPrimaryAction(
     BookingStatus status,
-  ) {
-    switch (status) {
-      case BookingStatus.pending:
-        return RidePrimaryAction.cancelRide;
-
-      case BookingStatus.driverAssigned:
-        return RidePrimaryAction.cancelRide;
-
-      case BookingStatus.driverArriving:
-        return RidePrimaryAction.cancelRide;
-
-      case BookingStatus.passengerOnBoard:
-        return RidePrimaryAction.none;
-
-      case BookingStatus.completed:
-        return RidePrimaryAction.rateDriver;
-
-      case BookingStatus.cancelled:
-        return RidePrimaryAction.none;
-    }
-  }
+  ) => RideStagePresentationService.resolve(
+    role: RideParticipantRole.passenger,
+    status: status,
+  ).primaryAction;
 
   //==========================================================================
   // Helpers

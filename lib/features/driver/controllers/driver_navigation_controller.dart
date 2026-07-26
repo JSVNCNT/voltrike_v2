@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/services/navigation_service.dart';
 import '../../../core/services/route_restriction_service.dart';
+import '../../ride/tracking/services/route_refresh_policy.dart';
 
 /// ===========================================================================
 /// Driver Navigation State
@@ -80,6 +81,7 @@ class DriverNavigationController
         super(DriverNavigationState.empty);
 
   final NavigationService _navigation;
+  final RouteRefreshPolicy _refreshPolicy = RouteRefreshPolicy();
 
   //==========================================================================
   // Load Route
@@ -89,6 +91,14 @@ class DriverNavigationController
     required LatLng origin,
     required LatLng destination,
   }) async {
+    if (!_refreshPolicy.shouldRefresh(
+      origin: origin,
+      destination: destination,
+      hasRoute: state.routePoints.isNotEmpty,
+    )) {
+      return;
+    }
+    _refreshPolicy.begin();
     state = state.copyWith(loading: true);
 
     try {
@@ -99,11 +109,13 @@ class DriverNavigationController
       );
 
       if (routeInfo == null) {
+        _refreshPolicy.fail();
         final conflict = RouteRestrictionService.instance.lastConflict;
-        state = DriverNavigationState(
+        state = state.copyWith(
           restrictionWarning: conflict == null
               ? 'No route is currently available.'
               : 'Route blocked: ${conflict.name}. Use the approved alternate route.',
+          loading: false,
         );
         return;
       }
@@ -123,8 +135,14 @@ class DriverNavigationController
         nextInstruction: routeInfo.steps.length < 2 ? null : routeInfo.steps[1].instruction,
         loading: false,
       );
+      _refreshPolicy.succeed(origin: origin, destination: destination);
     } catch (_) {
-      clearRoute();
+      _refreshPolicy.fail();
+      state = state.copyWith(
+        loading: false,
+        restrictionWarning: state.restrictionWarning ??
+            'Live route is temporarily unavailable.',
+      );
     }
   }
 
@@ -172,6 +190,7 @@ class DriverNavigationController
   //==========================================================================
 
   void clearRoute() {
+    _refreshPolicy.reset();
     state = DriverNavigationState.empty;
   }
 }

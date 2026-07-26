@@ -57,20 +57,12 @@ class DriverRating extends Equatable {
 
     return DriverRating(
       ratingId: doc.id,
-      bookingId:
-          data['bookingId'] as String,
-      driverId:
-          data['driverId'] as String,
-      passengerId:
-          data['passengerId'] as String,
-      rating:
-          data['rating'] as int,
-      comment:
-          data['comment'] as String,
-      createdAt:
-          (data['createdAt']
-                  as Timestamp)
-              .toDate(),
+      bookingId: data['bookingId'] as String,
+      driverId: data['driverId'] as String,
+      passengerId: data['passengerId'] as String,
+      rating: (data['rating'] as num).round(),
+      comment: data['comment'] as String? ?? '',
+      createdAt: (data['createdAt'] as Timestamp).toDate(),
     );
   }
 
@@ -81,10 +73,7 @@ class DriverRating extends Equatable {
       'passengerId': passengerId,
       'rating': rating,
       'comment': comment,
-      'createdAt':
-          Timestamp.fromDate(
-        createdAt,
-      ),
+      'createdAt': Timestamp.fromDate(createdAt),
     };
   }
 
@@ -102,33 +91,24 @@ class DriverRating extends Equatable {
     DateTime? createdAt,
   }) {
     return DriverRating(
-      ratingId:
-          ratingId ?? this.ratingId,
-      bookingId:
-          bookingId ?? this.bookingId,
-      driverId:
-          driverId ?? this.driverId,
-      passengerId:
-          passengerId ??
-              this.passengerId,
-      rating:
-          rating ?? this.rating,
-      comment:
-          comment ?? this.comment,
-      createdAt:
-          createdAt ??
-              this.createdAt,
+      ratingId: ratingId ?? this.ratingId,
+      bookingId: bookingId ?? this.bookingId,
+      driverId: driverId ?? this.driverId,
+      passengerId: passengerId ?? this.passengerId,
+      rating: rating ?? this.rating,
+      comment: comment ?? this.comment,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
   @override
   List<Object?> get props => [
-        ratingId,
-        bookingId,
-        driverId,
-        passengerId,
-        rating,
-        comment,
-        createdAt,
-      ];
+    ratingId,
+    bookingId,
+    driverId,
+    passengerId,
+    rating,
+    comment,
+    createdAt,
+  ];
 }

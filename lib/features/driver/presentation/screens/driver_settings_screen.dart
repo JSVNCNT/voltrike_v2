@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/routes.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
+import '../../../common/presentation/widgets/system_diagnostics_tile.dart';
 
 class DriverSettingsScreen extends StatelessWidget {
   const DriverSettingsScreen({
@@ -111,6 +112,8 @@ class DriverSettingsScreen extends StatelessWidget {
               );
             },
           ),
+
+          const SystemDiagnosticsTile(),
 
           const Divider(),
 

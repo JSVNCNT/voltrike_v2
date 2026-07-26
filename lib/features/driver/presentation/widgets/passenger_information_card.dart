@@ -64,6 +64,11 @@ class PassengerInformationCard extends StatelessWidget {
                     color: Colors.grey,
                   ),
             ),
+            const SizedBox(height: 8),
+            const Chip(
+              avatar: Icon(Icons.verified_user_outlined, size: 18),
+              label: Text('Confirmed ride passenger'),
+            ),
           ],
         ),
       ),

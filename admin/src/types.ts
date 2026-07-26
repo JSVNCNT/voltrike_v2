@@ -41,6 +41,7 @@ export interface Driver {
   driverStatus: 'pending' | 'approved' | 'rejected' | 'suspended';
   isOnline: boolean;
   rating: number;
+  ratingCount?: number;
   completedTrips: number;
   totalEarnings: number;
   licenseNumber?: string;
@@ -61,6 +62,21 @@ export interface Driver {
     plateNumber?: string;
     model?: string;
   } | null;
+}
+
+export interface DriverRatingRecord {
+  id: string;
+  ratingId?: string;
+  bookingId: string;
+  driverId: string;
+  passengerId: string;
+  todaId?: string | null;
+  todaName?: string | null;
+  driverName?: string | null;
+  passengerName?: string | null;
+  rating: number;
+  comment: string;
+  createdAt?: string | null;
 }
 
 export interface DriverApplicant {
@@ -109,6 +125,16 @@ export interface FareConfig {
 export interface PageResult<T> {
   items: T[];
   nextCursor: string | null;
+}
+
+export interface AdminMetrics {
+  drivers: number;
+  reports: number;
+  zones: number;
+  earnings: number;
+  trips: number;
+  tripRevenue: number;
+  scope: string;
 }
 
 export interface BookingOperation {

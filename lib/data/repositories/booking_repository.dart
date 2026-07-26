@@ -91,19 +91,6 @@ class BookingRepository {
     });
   }
 
-  Stream<String?> watchPickupPin({
-    required String passengerId,
-    required String bookingId,
-  }) {
-    return _firestore
-        .collection('users')
-        .doc(passengerId)
-        .collection('bookingSecrets')
-        .doc(bookingId)
-        .snapshots()
-        .map((snapshot) => snapshot.data()?['pickupPin'] as String?);
-  }
-
   //==========================================================================
   // Watch Pending Bookings
   //==========================================================================
@@ -334,19 +321,15 @@ class BookingRepository {
     );
   }
 
-  Future<void> confirmPickup({
-    required String bookingId,
-    required String pin,
-  }) async {
-    await _functions.httpsCallable('confirmBookingPickup').call({
-      'bookingId': bookingId,
-      'operationId': _uuid.v4(),
-      'pin': pin,
-    });
-  }
-
   Future<void> markNoShow({required String bookingId}) {
     return _transition(bookingId: bookingId, action: 'noShow');
+  }
+
+  Future<void> declineBookingOffer({required String bookingId}) async {
+    await _functions.httpsCallable('declineBookingOfferLifecycle').call<void>({
+      'bookingId': bookingId,
+      'operationId': _uuid.v4(),
+    });
   }
 
   Future<void> confirmCashPayment({
@@ -367,6 +350,12 @@ class BookingRepository {
     await _functions.httpsCallable('submitSettlementDispute').call<void>({
       'bookingId': bookingId,
       'reason': reason,
+    });
+  }
+
+  Future<void> acknowledgeDriverReceipt({required String bookingId}) async {
+    await _functions.httpsCallable('acknowledgeDriverReceipt').call<void>({
+      'bookingId': bookingId,
     });
   }
 
@@ -398,6 +387,8 @@ class BookingRepository {
         return 'arrived';
       case BookingStatus.passengerOnBoard:
         return 'start';
+      case BookingStatus.paymentConfirmation:
+        return 'dropOff';
       case BookingStatus.completed:
         return 'complete';
       case BookingStatus.cancelled:

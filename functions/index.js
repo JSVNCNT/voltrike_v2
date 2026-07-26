@@ -8,14 +8,14 @@ const {
   FieldPath,
   FieldValue,
   Timestamp,
+  AggregateField,
 } = require('firebase-admin/firestore');
 const { ServerValue } = require('firebase-admin/database');
 const {
   BOOKING_STATUS,
   distanceMeters,
+  nextRatingAggregate,
   normalizeCoordinate,
-  pickupPinHash,
-  randomPickupPin,
   validBookingId,
   validOperationId,
 } = require('./booking-lifecycle');
@@ -280,7 +280,10 @@ async function expireBookingOffers(bookingId, status) {
 const dispatchRadiusMeters = 5000;
 const driverLocationMaxAgeMs = 35000;
 const dispatchBatchSize = 5;
-const offerDurationMs = 30000;
+// Thirty seconds was too short once notification delivery, app rendering,
+// and a driver's decision time were included. Keep the offer authoritative
+// on the backend, but provide a practical response window.
+const offerDurationMs = 120000;
 
 async function rankedDispatchDrivers(booking) {
   const pickup = normalizeCoordinate(booking.pickup, 'Pickup');
@@ -517,11 +520,25 @@ async function sendToUser(userId, title, body, data) {
     .filter((entry) => typeof entry.token === 'string' && entry.token.length > 0);
   const tokens = deviceTokens.map((entry) => entry.token);
   if (tokens.length === 0) return;
+  const type = data.type;
+  const channelId = type === 'chat_message'
+    ? 'chat_messages'
+    : type === 'incoming_call'
+      ? 'incoming_calls'
+      : 'booking_updates';
+  const sound = type === 'chat_message'
+    ? 'chat_ringtone'
+    : type === 'incoming_call'
+      ? 'inside_chat_screen_ringtone'
+      : 'booking_ringtone';
   const response = await admin.messaging().sendEachForMulticast({
     tokens,
     notification: { title, body },
     data: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)])),
-    android: { priority: 'high' },
+    android: {
+      priority: 'high',
+      notification: { channelId, sound },
+    },
   });
   await Promise.all(response.responses.map((result, index) => {
     if (!result.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(result.error?.code)) {
@@ -530,6 +547,28 @@ async function sendToUser(userId, title, body, data) {
     return null;
   }));
 }
+
+exports.notifyRideChatMessage = onDocumentCreated(
+  'chat/{bookingId}/messages/{messageId}',
+  async (event) => {
+    const message = event.data?.data();
+    if (!message?.senderId || typeof message.text !== 'string') return;
+    const bookingId = event.params.bookingId;
+    const booking = await db.collection('bookings').doc(bookingId).get();
+    if (!booking.exists) return;
+    const data = booking.data();
+    const recipient = data.passengerId === message.senderId
+      ? data.driverId
+      : data.passengerId;
+    if (!recipient) return;
+    await sendToUser(
+      recipient,
+      'New ride message',
+      message.text.slice(0, 120),
+      { bookingId, type: 'chat_message' },
+    );
+  },
+);
 
 // One-time setup for the first developer administrator. The bootstrap code is
 // a Secret Manager value, never exposed to the browser bundle. Once a
@@ -830,6 +869,12 @@ exports.adminSetDriverStatus = onCall({ region: 'asia-southeast1' }, async (requ
   if (!['approved', 'rejected', 'suspended'].includes(status)) {
     throw new HttpsError('invalid-argument', 'Unsupported driver status.');
   }
+  if (status !== 'suspended' && profile.role !== 'toda_admin') {
+    throw new HttpsError(
+      'permission-denied',
+      'Routine driver decisions belong to the assigned TODA administrator.',
+    );
+  }
   const driverRef = db.collection('drivers').doc(uid);
   const driver = await driverRef.get();
   if (!driver.exists) throw new HttpsError('not-found', 'Driver not found.');
@@ -877,6 +922,12 @@ exports.adminSetVehicleVerification = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
     const actor = await requireAdmin(request);
+    if (actor.role !== 'toda_admin') {
+      throw new HttpsError(
+        'permission-denied',
+        'Vehicle verification belongs to the assigned TODA administrator.',
+      );
+    }
     const driverId = requiredString(request.data?.driverId, 'Driver ID');
     if (typeof request.data?.isVerified !== 'boolean') {
       throw new HttpsError(
@@ -1121,35 +1172,90 @@ function adminDate(value) {
   return value?.toDate?.()?.toISOString?.() || value || null;
 }
 
+exports.getSystemDiagnostics = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in to run diagnostics.');
+    }
+    return {
+      compatible: true,
+      functionsProtocolVersion: 3,
+      minimumClientProtocolVersion: 3,
+      bookingSchemaVersion: 2,
+      firestoreRulesVersion: 3,
+      realtimeRulesVersion: 2,
+      storageRulesVersion: 2,
+      region: 'asia-southeast1',
+      projectId: process.env.GCLOUD_PROJECT || null,
+      checkedAt: new Date().toISOString(),
+    };
+  },
+);
+
+exports.adminGetMetrics = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const scoped = (collectionName) => actor.role === 'toda_admin'
+      ? db.collection(collectionName).where('todaId', '==', actor.todaId)
+      : db.collection(collectionName);
+    const drivers = scoped('drivers');
+    const bookings = scoped('bookings');
+    const reports = scoped('reports');
+    const zones = scoped('zoneRequests');
+    const [driverCount, openReports, pendingZones, completedTrips,
+      driverEarnings, tripRevenue] = await Promise.all([
+      drivers.count().get(),
+      reports.where('status', '==', 'open').count().get(),
+      zones.where('status', '==', 'pending').count().get(),
+      bookings.where('status', '==', BOOKING_STATUS.completed).count().get(),
+      drivers.aggregate({
+        value: AggregateField.sum('totalEarnings'),
+      }).get(),
+      bookings.where('status', '==', BOOKING_STATUS.completed).aggregate({
+        value: AggregateField.sum('amountDue'),
+      }).get(),
+    ]);
+    return {
+      drivers: driverCount.data().count,
+      reports: openReports.data().count,
+      zones: pendingZones.data().count,
+      trips: completedTrips.data().count,
+      earnings: Number(driverEarnings.data().value || 0),
+      tripRevenue: Number(tripRevenue.data().value || 0),
+      scope: actor.role === 'toda_admin' ? actor.todaId : 'platform',
+    };
+  },
+);
+
 exports.adminListDrivers = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
     const actor = await requireAdmin(request);
     const pageSize = adminPageSize(request.data?.pageSize);
     const search = adminString(request.data?.search);
-    let query = db.collection('drivers')
-      .orderBy(FieldPath.documentId())
-      .limit(pageSize + 1);
+    let query = db.collection('drivers').orderBy(FieldPath.documentId());
     if (actor.role === 'toda_admin') {
       query = db.collection('drivers')
         .where('todaId', '==', actor.todaId)
-        .orderBy(FieldPath.documentId())
-        .limit(pageSize + 1);
+        .orderBy(FieldPath.documentId());
     }
     const cursor = request.data?.cursor;
     if (typeof cursor === 'string' && cursor.length > 0) {
       query = query.startAfter(cursor);
     }
+    if (!search) query = query.limit(pageSize + 1);
     const snapshot = await query.get();
-    const page = snapshot.docs.slice(0, pageSize);
-    const [profiles, vehicles] = page.length
+    const candidates = search ? snapshot.docs : snapshot.docs.slice(0, pageSize);
+    const [profiles, vehicles] = candidates.length
       ? await Promise.all([
-        db.getAll(...page.map((entry) => db.collection('users').doc(entry.id))),
-        db.getAll(...page.map((entry) => db.collection('vehicles')
+        db.getAll(...candidates.map((entry) => db.collection('users').doc(entry.id))),
+        db.getAll(...candidates.map((entry) => db.collection('vehicles')
           .doc(entry.data().vehicleId || '_missing'))),
       ])
       : [[], []];
-    let items = page.map((entry, index) => {
+    let items = candidates.map((entry, index) => {
       const driver = entry.data();
       const profile = profiles[index]?.data() || {};
       return {
@@ -1184,7 +1290,46 @@ exports.adminListDrivers = onCall(
         item.applicant.email,
         item.applicant.phoneNumber,
       ].some((value) => String(value || '').toLowerCase().includes(search)));
+      items = items.slice(0, pageSize);
     }
+    return {
+      items,
+      nextCursor: !search && snapshot.docs.length > pageSize
+        ? candidates.at(-1)?.id || null
+        : null,
+    };
+  },
+);
+
+exports.adminListRatings = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const pageSize = adminPageSize(request.data?.pageSize);
+    const ratings = db.collection('ratings');
+    let query = ratings.orderBy('createdAt', 'desc');
+    if (actor.role === 'toda_admin') {
+      query = ratings
+        .where('todaId', '==', actor.todaId)
+        .orderBy('createdAt', 'desc');
+    }
+    const cursor = request.data?.cursor;
+    if (typeof cursor === 'string' && cursor.length > 0) {
+      const cursorDocument = await ratings.doc(cursor).get();
+      if (cursorDocument.exists) {
+        query = query.startAfter(cursorDocument);
+      }
+    }
+    const snapshot = await query.limit(pageSize + 1).get();
+    const page = snapshot.docs.slice(0, pageSize);
+    const items = page.map((entry) => {
+      const rating = entry.data();
+      return {
+        id: entry.id,
+        ...rating,
+        createdAt: adminDate(rating.createdAt),
+      };
+    });
     return {
       items,
       nextCursor: snapshot.docs.length > pageSize
@@ -1200,22 +1345,20 @@ exports.adminListReports = onCall(
     const actor = await requireAdmin(request);
     const pageSize = adminPageSize(request.data?.pageSize);
     const search = adminString(request.data?.search);
-    let query = db.collection('reports')
-      .orderBy(FieldPath.documentId())
-      .limit(pageSize + 1);
+    let query = db.collection('reports').orderBy(FieldPath.documentId());
     if (actor.role === 'toda_admin') {
       query = db.collection('reports')
         .where('todaId', '==', actor.todaId)
-        .orderBy(FieldPath.documentId())
-        .limit(pageSize + 1);
+        .orderBy(FieldPath.documentId());
     }
     const cursor = request.data?.cursor;
     if (typeof cursor === 'string' && cursor.length > 0) {
       query = query.startAfter(cursor);
     }
+    if (!search) query = query.limit(pageSize + 1);
     const snapshot = await query.get();
-    const page = snapshot.docs.slice(0, pageSize);
-    const userIds = [...new Set(page.flatMap((entry) => [
+    const candidates = search ? snapshot.docs : snapshot.docs.slice(0, pageSize);
+    const userIds = [...new Set(candidates.flatMap((entry) => [
       entry.data().reporterId,
       entry.data().reportedUserId,
     ]).filter(Boolean))];
@@ -1225,7 +1368,7 @@ exports.adminListReports = onCall(
     const profileById = new Map(
       profiles.map((profile) => [profile.id, profile.data() || {}]),
     );
-    let items = page.map((entry) => {
+    let items = candidates.map((entry) => {
       const report = entry.data();
       return {
         id: entry.id,
@@ -1244,10 +1387,11 @@ exports.adminListReports = onCall(
         item.reportedUserName,
         item.status,
       ].some((value) => String(value || '').toLowerCase().includes(search)));
+      items = items.slice(0, pageSize);
     }
     return {
       items,
-      nextCursor: snapshot.docs.length > pageSize
+      nextCursor: !search && snapshot.docs.length > pageSize
         ? page.at(-1)?.id || null
         : null,
     };
@@ -1260,27 +1404,25 @@ exports.adminListBookings = onCall(
     const actor = await requireAdmin(request);
     const pageSize = adminPageSize(request.data?.pageSize);
     const search = adminString(request.data?.search);
-    let query = db.collection('bookings')
-      .orderBy(FieldPath.documentId())
-      .limit(pageSize + 1);
+    let query = db.collection('bookings').orderBy(FieldPath.documentId());
     if (actor.role === 'toda_admin') {
       query = db.collection('bookings')
         .where('todaId', '==', actor.todaId)
-        .orderBy(FieldPath.documentId())
-        .limit(pageSize + 1);
+        .orderBy(FieldPath.documentId());
     }
     const cursor = request.data?.cursor;
     if (typeof cursor === 'string' && cursor.length > 0) {
       query = query.startAfter(cursor);
     }
+    if (!search) query = query.limit(pageSize + 1);
     const snapshot = await query.get();
-    const page = snapshot.docs.slice(0, pageSize);
-    const settlements = page.length
+    const candidates = search ? snapshot.docs : snapshot.docs.slice(0, pageSize);
+    const settlements = candidates.length
       ? await db.getAll(
-        ...page.map((entry) => db.collection('settlements').doc(entry.id)),
+        ...candidates.map((entry) => db.collection('settlements').doc(entry.id)),
       )
       : [];
-    let items = page.map((entry, index) => {
+    let items = candidates.map((entry, index) => {
       const booking = entry.data();
       const settlement = settlements[index]?.data() || null;
       return {
@@ -1317,10 +1459,11 @@ exports.adminListBookings = onCall(
         item.receiptNumber,
         item.status,
       ].some((value) => String(value || '').toLowerCase().includes(search)));
+      items = items.slice(0, pageSize);
     }
     return {
       items,
-      nextCursor: snapshot.docs.length > pageSize
+      nextCursor: !search && snapshot.docs.length > pageSize
         ? page.at(-1)?.id || null
         : null,
     };
@@ -1520,9 +1663,7 @@ exports.createBookingLifecycle = onCall(
     const bookingRef = db.collection('bookings').doc(bookingId);
     const lockRef = db.collection('activePassengerBookings').doc(uid);
     const operationRef = operationReference(bookingId, uid, operationId);
-    const secretRef = userRef.collection('bookingSecrets').doc(bookingId);
     const auditRef = auditReference(bookingId, uid, operationId);
-    const pin = randomPickupPin();
 
     // Avoid a second Google call for ordinary retries while retaining the
     // transaction below as the final race-safe idempotency boundary.
@@ -1536,7 +1677,6 @@ exports.createBookingLifecycle = onCall(
       return {
         bookingId,
         idempotent: true,
-        pickupPin: null,
         distanceMeters: existingBooking.data()?.distanceMeters ?? null,
         estimatedFare: existingBooking.data()?.estimatedFare ?? null,
       };
@@ -1566,7 +1706,7 @@ exports.createBookingLifecycle = onCall(
         transaction.get(operationRef),
       ]);
       if (operation.exists) {
-        return { idempotent: true, pickupPin: null };
+        return { idempotent: true };
       }
       if (!user.exists || user.data().isActive === false ||
           user.data().role !== 'passenger') {
@@ -1577,7 +1717,7 @@ exports.createBookingLifecycle = onCall(
       }
       if (booking.exists) {
         if (booking.data().passengerId === uid) {
-          return { idempotent: true, pickupPin: null };
+          return { idempotent: true };
         }
         throw new HttpsError('already-exists', 'This booking ID is already in use.');
       }
@@ -1634,9 +1774,6 @@ exports.createBookingLifecycle = onCall(
         baggageCount,
         isOutsideToda: request.data.isOutsideToda,
         status: BOOKING_STATUS.pending,
-        pickupPinHash: pickupPinHash(bookingId, pin),
-        pickupPinAttempts: 0,
-        pickupConfirmedAt: null,
         createdAt: timestamp(),
         updatedAt: timestamp(),
         completedAt: null,
@@ -1649,11 +1786,6 @@ exports.createBookingLifecycle = onCall(
         bookingId,
         createdAt: timestamp(),
         updatedAt: timestamp(),
-      });
-      transaction.set(secretRef, {
-        bookingId,
-        pickupPin: pin,
-        createdAt: timestamp(),
       });
       transaction.create(operationRef, {
         bookingId,
@@ -1673,7 +1805,7 @@ exports.createBookingLifecycle = onCall(
         toStatus: BOOKING_STATUS.pending,
         createdAt: timestamp(),
       });
-      return { idempotent: false, pickupPin: pin };
+      return { idempotent: false };
     });
 
     return {
@@ -1837,80 +1969,6 @@ exports.acceptBookingLifecycle = onCall(
   },
 );
 
-exports.confirmBookingPickup = onCall(
-  { region: 'asia-southeast1' },
-  async (request) => {
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'Sign in before confirming pickup.');
-    }
-    const { bookingId, operationId } = lifecycleIdentity(request.data);
-    const pin = requiredString(request.data?.pin, 'Pickup PIN');
-    if (!/^\d{4}$/.test(pin)) {
-      throw new HttpsError('invalid-argument', 'Enter the four-digit pickup PIN.');
-    }
-    const uid = request.auth.uid;
-    const bookingRef = db.collection('bookings').doc(bookingId);
-    const operationRef = operationReference(bookingId, uid, operationId);
-    const auditRef = auditReference(bookingId, uid, operationId);
-    const result = await db.runTransaction(async (transaction) => {
-      const [booking, operation] = await Promise.all([
-        transaction.get(bookingRef),
-        transaction.get(operationRef),
-      ]);
-      if (operation.exists) return { idempotent: true };
-      if (!booking.exists || booking.data().driverId !== uid) {
-        throw new HttpsError('permission-denied', 'Only the assigned driver can confirm pickup.');
-      }
-      const data = booking.data();
-      if (data.driverId === uid && data.pickupConfirmedAt != null) {
-        return { idempotent: true, incorrectPin: false };
-      }
-      if (data.status !== BOOKING_STATUS.driverArriving) {
-        throw new HttpsError('failed-precondition', 'Pickup is not ready for confirmation.');
-      }
-      const attempts = Number(data.pickupPinAttempts || 0);
-      if (attempts >= 5) {
-        throw new HttpsError('resource-exhausted', 'Too many incorrect pickup PIN attempts.');
-      }
-      if (data.pickupPinHash !== pickupPinHash(bookingId, pin)) {
-        transaction.update(bookingRef, {
-          pickupPinAttempts: attempts + 1,
-          updatedAt: timestamp(),
-        });
-        return { idempotent: false, incorrectPin: true };
-      }
-      transaction.update(bookingRef, {
-        pickupConfirmedAt: timestamp(),
-        pickupConfirmedBy: uid,
-        updatedAt: timestamp(),
-      });
-      transaction.create(operationRef, {
-        bookingId,
-        operationId,
-        actorId: uid,
-        action: 'confirmPickup',
-        resultStatus: data.status,
-        createdAt: timestamp(),
-      });
-      transaction.create(auditRef, {
-        type: 'booking_lifecycle',
-        action: 'confirmPickup',
-        bookingId,
-        actorId: uid,
-        actorRole: 'driver',
-        fromStatus: data.status,
-        toStatus: data.status,
-        createdAt: timestamp(),
-      });
-      return { idempotent: false, incorrectPin: false };
-    });
-    if (result.incorrectPin) {
-      throw new HttpsError('permission-denied', 'The pickup PIN is incorrect.');
-    }
-    return { bookingId, confirmed: true, ...result };
-  },
-);
-
 exports.confirmCashPayment = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
@@ -1922,7 +1980,7 @@ exports.confirmCashPayment = onCall(
     }
     const { bookingId, operationId } = lifecycleIdentity(request.data);
     const confirmation = request.data?.confirmation;
-    if (!['paid', 'received'].includes(confirmation)) {
+    if (confirmation !== 'received') {
       throw new HttpsError(
         'invalid-argument',
         'A valid cash confirmation is required.',
@@ -1941,32 +1999,23 @@ exports.confirmCashPayment = onCall(
       if (operation.exists) return { idempotent: true };
       if (!booking.exists) throw new HttpsError('not-found', 'Booking not found.');
       const data = booking.data();
-      const isPassenger = data.passengerId === uid;
       const isDriver = data.driverId === uid;
-      if ((confirmation === 'paid' && !isPassenger) ||
-          (confirmation === 'received' && !isDriver)) {
+      if (confirmation !== 'received' || !isDriver) {
         throw new HttpsError(
           'permission-denied',
-          confirmation === 'paid'
-            ? 'Only the passenger can confirm payment.'
-            : 'Only the assigned driver can confirm receipt.',
+          'Only the assigned driver can confirm cash received.',
         );
       }
-      if (data.status !== BOOKING_STATUS.passengerOnBoard) {
+      if (data.status !== BOOKING_STATUS.paymentConfirmation) {
         throw new HttpsError(
           'failed-precondition',
-          'Cash can be confirmed only during the active trip.',
+          'Cash can be confirmed only after drop-off.',
         );
       }
-      const targetField = confirmation === 'paid'
-        ? 'passengerPaidAt'
-        : 'driverReceivedAt';
+      const targetField = 'driverReceivedAt';
       if (data[targetField] != null) return { idempotent: true };
 
-      const otherConfirmed = confirmation === 'paid'
-        ? data.driverReceivedAt != null
-        : data.passengerPaidAt != null;
-      const settled = otherConfirmed;
+      const settled = false;
       const receiptNumber = settled
         ? `VT-${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()}`
         : null;
@@ -2004,7 +2053,7 @@ exports.confirmCashPayment = onCall(
         action: `confirm_${confirmation}`,
         bookingId,
         actorId: uid,
-        actorRole: isPassenger ? 'passenger' : 'driver',
+        actorRole: 'driver',
         amountDue: Number(data.amountDue ?? data.estimatedFare ?? 0),
         createdAt: timestamp(),
       });
@@ -2016,6 +2065,96 @@ exports.confirmCashPayment = onCall(
 
 // Advances or terminates a ride. Terminal transitions release the driver and
 // passenger active-booking lock in the same transaction.
+exports.acknowledgeDriverReceipt = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before closing a receipt.');
+    }
+    const bookingId = request.data?.bookingId;
+    if (!validBookingId(bookingId)) {
+      throw new HttpsError('invalid-argument', 'A valid booking ID is required.');
+    }
+    const driverRef = db.collection('drivers').doc(request.auth.uid);
+    await db.runTransaction(async (transaction) => {
+      const driver = await transaction.get(driverRef);
+      if (!driver.exists) {
+        throw new HttpsError('not-found', 'Driver profile not found.');
+      }
+      if (driver.data().pendingReceiptBookingId == null) return;
+      if (driver.data().pendingReceiptBookingId !== bookingId) {
+        throw new HttpsError('failed-precondition', 'A newer receipt is pending.');
+      }
+      transaction.update(driverRef, {
+        pendingReceiptBookingId: null,
+        updatedAt: timestamp(),
+      });
+    });
+    return { bookingId, acknowledged: true };
+  },
+);
+
+exports.declineBookingOfferLifecycle = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before declining a ride.');
+    }
+    const { bookingId, operationId } = lifecycleIdentity(request.data);
+    const driverId = request.auth.uid;
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    const offerRef = db.doc(`drivers/${driverId}/bookingOffers/${bookingId}`);
+    const operationRef = operationReference(bookingId, driverId, operationId);
+    const auditRef = auditReference(bookingId, driverId, operationId);
+
+    const result = await db.runTransaction(async (transaction) => {
+      const [booking, offer, operation] = await Promise.all([
+        transaction.get(bookingRef),
+        transaction.get(offerRef),
+        transaction.get(operationRef),
+      ]);
+      if (operation.exists) return { idempotent: true };
+      if (!booking.exists || booking.data().status !== BOOKING_STATUS.pending) {
+        throw new HttpsError('failed-precondition', 'This offer is no longer active.');
+      }
+      if (!offer.exists || !['offered', 'declined'].includes(offer.data().status)) {
+        throw new HttpsError('failed-precondition', 'No active offer was found.');
+      }
+      transaction.set(offerRef, {
+        status: 'declined',
+        declinedAt: timestamp(),
+        updatedAt: timestamp(),
+      }, { merge: true });
+      transaction.update(bookingRef, {
+        nextDispatchAt: Timestamp.fromMillis(Date.now() - 1000),
+        updatedAt: timestamp(),
+      });
+      transaction.create(operationRef, {
+        bookingId,
+        operationId,
+        actorId: driverId,
+        action: 'declineOffer',
+        terminal: false,
+        resultStatus: BOOKING_STATUS.pending,
+        passengerId: booking.data().passengerId,
+        driverId,
+        createdAt: timestamp(),
+      });
+      transaction.create(auditRef, {
+        type: 'booking_offer',
+        action: 'decline',
+        bookingId,
+        actorId: driverId,
+        actorRole: 'driver',
+        createdAt: timestamp(),
+      });
+      return { idempotent: false };
+    });
+    if (!result.idempotent) await dispatchNextOfferBatch(bookingId);
+    return { bookingId, idempotent: result.idempotent };
+  },
+);
+
 exports.transitionBookingLifecycle = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
@@ -2024,7 +2163,7 @@ exports.transitionBookingLifecycle = onCall(
     }
     const { bookingId, operationId } = lifecycleIdentity(request.data);
     const action = request.data?.action;
-    if (!['arrived', 'start', 'complete', 'cancel', 'noShow'].includes(action)) {
+    if (!['arrived', 'start', 'dropOff', 'complete', 'cancel', 'noShow'].includes(action)) {
       throw new HttpsError('invalid-argument', 'Unsupported booking action.');
     }
     const uid = request.auth.uid;
@@ -2068,23 +2207,14 @@ exports.transitionBookingLifecycle = onCall(
         nextStatus = BOOKING_STATUS.passengerOnBoard;
         expectedStatuses = [BOOKING_STATUS.driverArriving];
         actorRole = 'driver';
-        if (data.pickupConfirmedAt == null) {
-          throw new HttpsError(
-            'failed-precondition',
-            'Confirm the passenger pickup PIN before starting the trip.',
-          );
-        }
       } else if (action === 'complete') {
         nextStatus = BOOKING_STATUS.completed;
+        expectedStatuses = [BOOKING_STATUS.paymentConfirmation];
+        actorRole = 'driver';
+      } else if (action === 'dropOff') {
+        nextStatus = BOOKING_STATUS.paymentConfirmation;
         expectedStatuses = [BOOKING_STATUS.passengerOnBoard];
         actorRole = 'driver';
-        if (data.passengerPaidAt == null || data.driverReceivedAt == null ||
-            data.settlementStatus !== 'confirmed') {
-          throw new HttpsError(
-            'failed-precondition',
-            'Passenger payment and driver receipt must both be confirmed.',
-          );
-        }
       } else {
         nextStatus = BOOKING_STATUS.cancelled;
         actorRole = isDriver ? 'driver' : 'passenger';
@@ -2141,10 +2271,16 @@ exports.transitionBookingLifecycle = onCall(
       };
       if (action === 'arrived') lifecycleUpdate.arrivedAt = timestamp();
       if (action === 'start') lifecycleUpdate.startedAt = timestamp();
+      if (action === 'dropOff') lifecycleUpdate.droppedOffAt = timestamp();
       if (action === 'complete') {
+        const receiptNumber = data.receiptNumber ||
+          `VT-${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()}`;
         lifecycleUpdate.completedAt = timestamp();
+        lifecycleUpdate.driverReceivedAt = data.driverReceivedAt || timestamp();
+        lifecycleUpdate.cashConfirmedByDriverAt = timestamp();
         lifecycleUpdate.settlementStatus = 'settled';
         lifecycleUpdate.settlementTimestamp = timestamp();
+        lifecycleUpdate.receiptNumber = receiptNumber;
       }
       if (nextStatus === BOOKING_STATUS.cancelled) {
         lifecycleUpdate.cancelledAt = timestamp();
@@ -2164,12 +2300,22 @@ exports.transitionBookingLifecycle = onCall(
           updatedAt: timestamp(),
         };
         if (action === 'complete') {
+          driverUpdate.pendingReceiptBookingId = bookingId;
           driverUpdate.completedTrips = FieldValue.increment(1);
           driverUpdate.totalEarnings = FieldValue.increment(
             Number(data.amountDue ?? data.estimatedFare ?? 0),
           );
         }
         transaction.update(driverRef, driverUpdate);
+      } else if (driverRef && driver?.exists && action === 'complete') {
+        transaction.update(driverRef, {
+          pendingReceiptBookingId: bookingId,
+          completedTrips: FieldValue.increment(1),
+          totalEarnings: FieldValue.increment(
+            Number(data.amountDue ?? data.estimatedFare ?? 0),
+          ),
+          updatedAt: timestamp(),
+        });
       }
       if (action === 'complete' && passenger?.exists) {
         transaction.update(passengerRef, {
@@ -2178,6 +2324,8 @@ exports.transitionBookingLifecycle = onCall(
         });
       }
       if (action === 'complete') {
+        const receiptNumber = data.receiptNumber ||
+          `VT-${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()}`;
         transaction.set(settlementRef, {
           bookingId,
           passengerId: data.passengerId,
@@ -2187,7 +2335,9 @@ exports.transitionBookingLifecycle = onCall(
           amountDue: Number(data.amountDue ?? data.estimatedFare ?? 0),
           currency: 'PHP',
           status: 'settled',
-          receiptNumber: data.receiptNumber,
+          driverReceivedAt: data.driverReceivedAt || timestamp(),
+          cashConfirmedByDriverAt: timestamp(),
+          receiptNumber,
           settlementTimestamp: timestamp(),
           adjustmentStatus: settlement?.data()?.adjustmentStatus || 'none',
           updatedAt: timestamp(),
@@ -2217,6 +2367,10 @@ exports.transitionBookingLifecycle = onCall(
         fromStatus: data.status,
         toStatus: nextStatus,
         cancellationCode,
+        paymentMethod: action === 'complete' ? 'cash' : null,
+        amountDue: action === 'complete'
+          ? Number(data.amountDue ?? data.estimatedFare ?? 0)
+          : null,
         createdAt: timestamp(),
       });
       return {
@@ -2328,8 +2482,7 @@ exports.createSafetyIncident = onCall(
     if (![data.passengerId, data.driverId].includes(request.auth.uid)) {
       throw new HttpsError('permission-denied', 'You are not part of this ride.');
     }
-    if (![BOOKING_STATUS.driverAssigned, BOOKING_STATUS.driverArriving,
-      BOOKING_STATUS.passengerOnBoard].includes(data.status)) {
+    if (data.status !== BOOKING_STATUS.passengerOnBoard) {
       throw new HttpsError(
         'failed-precondition',
         'SOS incident capture is available during an active ride.',
@@ -2481,22 +2634,27 @@ exports.submitDriverRating = onCall(
       }
       const ratingCount = Number(driver.data().ratingCount || 0);
       const previousAverage = Number(driver.data().rating || 0);
-      const nextCount = ratingCount + 1;
-      const nextAverage = Math.round(
-        ((previousAverage * ratingCount + rating) / nextCount) * 100,
-      ) / 100;
+      const nextAggregate = nextRatingAggregate(
+        previousAverage,
+        ratingCount,
+        rating,
+      );
       transaction.create(ratingRef, {
         ratingId,
         bookingId,
         driverId: data.driverId,
         passengerId,
+        todaId: data.todaId || driver.data().todaId || null,
+        todaName: data.todaName || null,
+        driverName: data.driverName || null,
+        passengerName: data.passengerName || null,
         rating,
         comment,
         createdAt: timestamp(),
       });
       transaction.update(driverRef, {
-        rating: nextAverage,
-        ratingCount: nextCount,
+        rating: nextAggregate.rating,
+        ratingCount: nextAggregate.ratingCount,
         updatedAt: timestamp(),
       });
       transaction.create(db.collection('auditLogs').doc(), {
@@ -2508,7 +2666,7 @@ exports.submitDriverRating = onCall(
         rating,
         createdAt: timestamp(),
       });
-      return { idempotent: false, rating: nextAverage, ratingCount: nextCount };
+      return { idempotent: false, ...nextAggregate };
     });
     return { ratingId, ...result };
   },
@@ -2631,7 +2789,7 @@ exports.createBookingCallToken = onCall(
       throw new HttpsError('not-found', 'Booking not found.');
     }
     const booking = bookingSnapshot.data();
-    const activeStatuses = ['driverAssigned', 'driverArriving', 'passengerOnBoard'];
+    const activeStatuses = ['driverAssigned', 'driverArriving'];
     if (!activeStatuses.includes(booking.status)) {
       throw new HttpsError('failed-precondition', 'Voice calls are only available during an active ride.');
     }
@@ -2648,7 +2806,71 @@ exports.createBookingCallToken = onCall(
       ttl: '2m',
     });
     token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
+    const recipientId = booking.passengerId === request.auth.uid
+      ? booking.driverId
+      : booking.passengerId;
+    const accepting = request.data?.accepting === true;
+    const callRef = db.collection('bookingCalls').doc(bookingId);
+    if (accepting) {
+      await callRef.set({
+        status: 'accepted',
+        acceptedBy: request.auth.uid,
+        acceptedAt: timestamp(),
+        updatedAt: timestamp(),
+      }, { merge: true });
+    } else {
+      await callRef.set({
+        bookingId,
+        callerId: request.auth.uid,
+        recipientId,
+        status: 'ringing',
+        createdAt: timestamp(),
+        updatedAt: timestamp(),
+        expiresAt: Timestamp.fromMillis(Date.now() + 30000),
+      });
+    }
+    if (recipientId && !accepting) {
+      await sendToUser(
+        recipientId,
+        'Incoming ride call',
+        'Your ride participant is calling you.',
+        { bookingId, type: 'incoming_call' },
+      );
+    }
     return { serverUrl: url, token: await token.toJwt(), roomName };
+  },
+);
+
+exports.respondBookingCall = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before responding.');
+    }
+    const bookingId = requiredString(request.data?.bookingId, 'Booking ID');
+    const response = requiredString(request.data?.response, 'Response');
+    if (!['declined', 'expired'].includes(response)) {
+      throw new HttpsError('invalid-argument', 'Unsupported call response.');
+    }
+    const [booking, call] = await Promise.all([
+      db.collection('bookings').doc(bookingId).get(),
+      db.collection('bookingCalls').doc(bookingId).get(),
+    ]);
+    if (!booking.exists ||
+        ![booking.data().passengerId, booking.data().driverId]
+          .includes(request.auth.uid)) {
+      throw new HttpsError('permission-denied', 'You are not part of this call.');
+    }
+    if (call.exists && ['declined', 'ended'].includes(call.data().status)) {
+      return { idempotent: true, status: call.data().status };
+    }
+    await db.collection('bookingCalls').doc(bookingId).set({
+      status: response,
+      respondedBy: request.auth.uid,
+      respondedAt: timestamp(),
+      updatedAt: timestamp(),
+    }, { merge: true });
+    return { idempotent: false, status: response };
   },
 );
 
@@ -2694,6 +2916,12 @@ exports.endBookingCall = onCall(
         error: String(error),
       });
     }
+    await db.collection('bookingCalls').doc(bookingId).set({
+      status: 'ended',
+      endedBy: request.auth.uid,
+      endedAt: timestamp(),
+      updatedAt: timestamp(),
+    }, { merge: true });
     return { ended: true };
   },
 );
@@ -2728,15 +2956,32 @@ exports.notifyBookingLifecycle = onDocumentUpdated('bookings/{bookingId}', async
   const driver = after.driverId;
   const passengerMessages = {
     driverAssigned: ['Driver assigned', 'Your driver accepted the booking.'],
-    driverArriving: ['Driver arriving', 'Your driver has arrived at pickup.'],
+    driverArriving: ['Driver arrived', 'Your driver has arrived at pickup.'],
     passengerOnBoard: ['Trip started', 'You are on the way to your destination.'],
+    paymentConfirmation: ['Payment confirmation', 'Waiting for the driver to confirm cash received.'],
     completed: ['Trip completed', 'Your receipt is ready.'],
     cancelled: ['Booking cancelled', 'Your booking was cancelled.'],
   };
   const driverMessages = {
     passengerOnBoard: ['Trip started', 'Navigate to the destination.'],
-    cancelled: ['Trip cancelled', 'The passenger cancelled the trip.'],
+    paymentConfirmation: ['Confirm cash received', 'Confirm cash to complete the trip.'],
+    completed: ['Trip completed', 'Your earnings receipt is ready.'],
   };
+  const cancellationCode = String(after.cancellationCode || '');
+  if (after.status === BOOKING_STATUS.cancelled) {
+    const noShow = cancellationCode === 'passenger_no_show';
+    const byPassenger = cancellationCode.includes('passenger');
+    passengerMessages.cancelled = noShow
+      ? ['Passenger no-show', 'This booking was closed as a passenger no-show.']
+      : byPassenger
+        ? ['Cancelled by passenger', 'You cancelled this booking.']
+        : ['Cancelled by driver', 'Your driver cancelled this booking.'];
+    driverMessages.cancelled = noShow
+      ? ['Passenger no-show', 'The no-show booking was closed.']
+      : byPassenger
+        ? ['Cancelled by passenger', 'The passenger cancelled the trip.']
+        : ['Cancelled by driver', 'You cancelled the trip.'];
+  }
   const passengerMessage = passengerMessages[after.status];
   const driverMessage = driverMessages[after.status];
   const tasks = [];

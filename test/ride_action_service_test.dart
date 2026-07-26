@@ -8,7 +8,8 @@ void main() {
     test('driver lifecycle actions follow booking order', () {
       expect(RideActionService.driverPrimaryAction(BookingStatus.driverAssigned), RidePrimaryAction.arriveAtPickup);
       expect(RideActionService.driverPrimaryAction(BookingStatus.driverArriving), RidePrimaryAction.startTrip);
-      expect(RideActionService.driverPrimaryAction(BookingStatus.passengerOnBoard), RidePrimaryAction.completeTrip);
+      expect(RideActionService.driverPrimaryAction(BookingStatus.passengerOnBoard), RidePrimaryAction.dropOffPassenger);
+      expect(RideActionService.driverPrimaryAction(BookingStatus.paymentConfirmation), RidePrimaryAction.completeTrip);
     });
 
     test('passenger cancellation is limited to pre-trip states', () {

@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class BookingVoiceCallCredentials {
   const BookingVoiceCallCredentials({
@@ -19,10 +20,33 @@ class BookingVoiceCallRepository {
 
   final FirebaseFunctions _functions;
 
-  Future<BookingVoiceCallCredentials> createCredentials(String bookingId) async {
+  Stream<String> watchStatus(String bookingId) {
+    return FirebaseFirestore.instance
+        .collection('bookingCalls')
+        .doc(bookingId)
+        .snapshots()
+        .map((snapshot) => snapshot.data()?['status'] as String? ?? 'starting');
+  }
+
+  Future<void> initiateCall(String bookingId) async {
+    await _functions
+        .httpsCallable('createBookingCallToken')
+        .call<Map<Object?, Object?>>({
+          'bookingId': bookingId,
+          'accepting': false,
+        });
+  }
+
+  Future<BookingVoiceCallCredentials> createCredentials(
+    String bookingId, {
+    bool accepting = false,
+  }) async {
     final result = await _functions
         .httpsCallable('createBookingCallToken')
-        .call<Map<Object?, Object?>>({'bookingId': bookingId});
+        .call<Map<Object?, Object?>>({
+          'bookingId': bookingId,
+          'accepting': accepting,
+        });
     final data = result.data;
     final serverUrl = data['serverUrl'] as String?;
     final token = data['token'] as String?;
@@ -36,5 +60,14 @@ class BookingVoiceCallRepository {
     await _functions
         .httpsCallable('endBookingCall')
         .call<void>({'bookingId': bookingId});
+  }
+
+  Future<void> declineCall(String bookingId, {bool expired = false}) async {
+    await _functions
+        .httpsCallable('respondBookingCall')
+        .call<void>({
+          'bookingId': bookingId,
+          'response': expired ? 'expired' : 'declined',
+        });
   }
 }

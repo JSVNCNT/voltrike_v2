@@ -1,25 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../app/routes.dart';
 import '../../../../core/services/fare_service.dart';
 import '../../../../core/services/places_service.dart';
 import '../../../../core/services/polyline_service.dart';
 import '../../../../core/services/route_restriction_service.dart';
 import '../../../../core/services/routes_service.dart';
-import '../../../../data/models/booking.dart';
 import '../../../../data/models/place_prediction.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/booking_session_provider.dart';
-import '../../providers/active_booking_provider.dart';
 import '../../providers/fare_configuration_provider.dart';
 import '../widgets/home_bottom_sheet.dart';
 import '../widgets/map_view.dart';
 import 'destination_search_screen.dart';
-import 'searching_driver_screen.dart';
-import 'booking_tracking_screen.dart';
 
 /// ===========================================================================
 /// Passenger Home Screen
@@ -45,49 +43,8 @@ class PassengerHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
-  ProviderSubscription<AsyncValue<Booking?>>? _activeBookingSubscription;
-  String? _restoredBookingId;
   FareConfiguration get _fareConfiguration =>
       ref.read(fareConfigurationProvider).valueOrNull ?? devFareConfiguration;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _activeBookingSubscription = ref.listenManual<AsyncValue<Booking?>>(
-      activePassengerBookingProvider,
-      (_, next) => next.whenData(_restoreActiveBooking),
-    );
-  }
-
-  void _restoreActiveBooking(Booking? booking) {
-    if (booking == null || _restoredBookingId == booking.bookingId) {
-      return;
-    }
-
-    _restoredBookingId = booking.bookingId;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-
-      final Widget screen;
-      switch (booking.status) {
-        case BookingStatus.pending:
-          screen = SearchingDriverScreen(bookingId: booking.bookingId);
-          break;
-        case BookingStatus.cancelled:
-          return;
-        default:
-          screen = BookingTrackingScreen(bookingId: booking.bookingId);
-      }
-
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute<void>(builder: (_) => screen));
-    });
-  }
 
   //==========================================================================
   // Select Pickup
@@ -466,12 +423,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
           .read(bookingProvider.notifier)
           .update(PassengerBookingState.searchingDriver);
 
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SearchingDriverScreen(bookingId: bookingId),
-        ),
-      );
+      context.go(AppRoutes.searchingDriver, extra: bookingId);
     } catch (e) {
       if (!mounted) {
         return;
@@ -481,15 +433,5 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Booking failed: $e')));
     }
-  }
-
-  //==========================================================================
-  // Lifecycle
-  //==========================================================================
-
-  @override
-  void dispose() {
-    _activeBookingSubscription?.close();
-    super.dispose();
   }
 }

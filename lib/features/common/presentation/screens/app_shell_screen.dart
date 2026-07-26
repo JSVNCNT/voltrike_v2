@@ -18,19 +18,21 @@ class AppShellScreen extends StatefulWidget {
     super.key,
     required this.destinations,
     this.initialIndex = 0,
+    this.onDestinationSelected,
   });
 
   final List<AppNavigationDestination> destinations;
 
   final int initialIndex;
 
+  /// Returns true when the destination was handled by an external coordinator.
+  final bool Function(int index)? onDestinationSelected;
+
   @override
-  State<AppShellScreen> createState() =>
-      _AppShellScreenState();
+  State<AppShellScreen> createState() => _AppShellScreenState();
 }
 
-class _AppShellScreenState
-    extends State<AppShellScreen> {
+class _AppShellScreenState extends State<AppShellScreen> {
   late int _currentIndex;
 
   @override
@@ -41,14 +43,20 @@ class _AppShellScreenState
   }
 
   @override
+  void didUpdateWidget(covariant AppShellScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialIndex != widget.initialIndex) {
+      _currentIndex = widget.initialIndex;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
         children: widget.destinations
-            .map(
-              (destination) => destination.page,
-            )
+            .map((destination) => destination.page)
             .toList(),
       ),
 
@@ -56,6 +64,9 @@ class _AppShellScreenState
         destinations: widget.destinations,
         currentIndex: _currentIndex,
         onDestinationSelected: (index) {
+          if (widget.onDestinationSelected?.call(index) == true) {
+            return;
+          }
           setState(() {
             _currentIndex = index;
           });

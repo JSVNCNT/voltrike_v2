@@ -15,6 +15,8 @@ enum RidePrimaryAction {
 
   startTrip,
 
+  dropOffPassenger,
+
   completeTrip,
 
   cancelRide,
@@ -36,8 +38,11 @@ extension RidePrimaryActionExtension on RidePrimaryAction {
       case RidePrimaryAction.startTrip:
         return 'Start Trip';
 
-      case RidePrimaryAction.completeTrip:
+      case RidePrimaryAction.dropOffPassenger:
         return 'Drop Off Passenger';
+
+      case RidePrimaryAction.completeTrip:
+        return 'Confirm Cash Received';
 
       case RidePrimaryAction.cancelRide:
         return 'Cancel Ride';
@@ -60,6 +65,9 @@ extension RidePrimaryActionExtension on RidePrimaryAction {
 
       case RidePrimaryAction.startTrip:
         return Icons.play_arrow;
+
+      case RidePrimaryAction.dropOffPassenger:
+        return Icons.location_on;
 
       case RidePrimaryAction.completeTrip:
         return Icons.flag;

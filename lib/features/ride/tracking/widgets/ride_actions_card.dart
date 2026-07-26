@@ -18,6 +18,7 @@ class RideActionsCard extends StatelessWidget {
     this.onCancel,
     this.onSos,
     this.onNoShow,
+    this.messageBadge = 0,
   });
 
   final VoidCallback? onCall;
@@ -26,6 +27,7 @@ class RideActionsCard extends StatelessWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onSos;
   final VoidCallback? onNoShow;
+  final int messageBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,7 @@ class RideActionsCard extends StatelessWidget {
           icon: Icons.chat_bubble_outline,
           label: 'Message',
           onPressed: onMessage!,
+          badge: messageBadge,
         ),
       if (onReport != null)
         _ActionButton(
@@ -92,22 +95,58 @@ class _ActionButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.foregroundColor,
+    this.badge = 0,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
   final Color? foregroundColor;
+  final int badge;
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: foregroundColor,
-        minimumSize: const Size.fromHeight(48),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon),
+          label: Text(label),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: foregroundColor,
+            minimumSize: const Size(0, 44),
+          ),
+        ),
+        if (badge > 0)
+          Positioned(top: -7, right: -7, child: _UnreadBadge(count: badge)),
+      ],
+    );
+  }
+}
+
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.error,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onError,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }

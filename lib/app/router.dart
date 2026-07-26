@@ -17,26 +17,24 @@ import '../features/auth/presentation/screens/driver_registration/under_review_s
 
 import '../features/auth/presentation/screens/splash/splash_screen.dart';
 import '../features/ride/calls/voice_call_screen.dart';
+import '../features/ride/calls/incoming_call_screen.dart';
 import '../data/repositories/booking_voice_call_repository.dart';
 
 import '../features/driver/presentation/screens/driver_settings_screen.dart';
 import '../features/passenger/presentation/screens/passenger_shell_screen.dart';
-import '../features/passenger/presentation/screens/passenger_dashboard_screen.dart';
-import '../features/passenger/presentation/screens/passenger_profile_screen.dart';
-import '../features/passenger/presentation/screens/passenger_trip_history_screen.dart';
 import '../features/passenger/presentation/screens/searching_driver_screen.dart';
 import '../features/passenger/presentation/screens/booking_tracking_screen.dart';
 import '../features/passenger/presentation/screens/rating_screen.dart';
+import '../features/passenger/presentation/screens/trip_receipt_screen.dart';
 
 import '../features/driver/presentation/screens/driver_shell_screen.dart';
 import '../features/driver/presentation/screens/driver_home_screen.dart';
-import '../features/driver/presentation/screens/driver_dashboard_screen.dart';
-import '../features/driver/presentation/screens/driver_profile_screen.dart';
-import '../features/driver/presentation/screens/driver_trip_history_screen.dart';
 import '../features/driver/presentation/screens/driver_earnings_screen.dart';
 import '../features/driver/presentation/screens/edit_driver_profile_screen.dart';
-import '../features/driver/presentation/screens/about_voltrike_screen.dart' as about;
-import '../features/driver/presentation/screens/privacy_policy_screen.dart' as privacy;
+import '../features/driver/presentation/screens/about_voltrike_screen.dart'
+    as about;
+import '../features/driver/presentation/screens/privacy_policy_screen.dart'
+    as privacy;
 import '../features/driver/presentation/screens/terms_and_conditions_screen.dart';
 import '../features/passenger/presentation/screens/passenger_settings_screen.dart';
 import '../features/passenger/presentation/screens/edit_passenger_profile_screen.dart';
@@ -49,396 +47,270 @@ final GoRouter appRouter = GoRouter(
   initialLocation: AppRoutes.splash,
   debugLogDiagnostics: true,
 
-  errorBuilder: (
-    context,
-    state,
-  ) {
+  errorBuilder: (context, state) {
     return Scaffold(
       body: Center(
         child: Text(
           'Route not found:\n${state.uri}',
-          textAlign:
-              TextAlign.center,
+          textAlign: TextAlign.center,
         ),
       ),
     );
   },
 
   routes: [
-        //==========================================================================
+    //==========================================================================
     // Startup
     //==========================================================================
-
     GoRoute(
       path: AppRoutes.splash,
-      builder: (
-        context,
-        state,
-      ) =>
-          const SplashScreen(),
+      builder: (context, state) => const SplashScreen(),
     ),
 
     GoRoute(
       path: AppRoutes.intro,
-      builder: (
-        context,
-        state,
-      ) =>
-          const IntroScreen(),
+      builder: (context, state) => const IntroScreen(),
     ),
 
     //==========================================================================
     // Authentication
     //==========================================================================
-
     GoRoute(
       path: AppRoutes.login,
-      builder: (
-        context,
-        state,
-      ) =>
-          const LoginScreen(),
+      builder: (context, state) => const LoginScreen(),
     ),
 
     GoRoute(
       path: AppRoutes.forgotPassword,
-      builder: (
-        context,
-        state,
-      ) =>
-          const ForgotPasswordScreen(),
+      builder: (context, state) => const ForgotPasswordScreen(),
     ),
 
     GoRoute(
       path: AppRoutes.emailVerification,
-      builder: (
-        context,
-        state,
-      ) =>
-          const EmailVerificationScreen(),
+      builder: (context, state) => const EmailVerificationScreen(),
     ),
 
     //==========================================================================
     // Passenger Registration
     //==========================================================================
-
     GoRoute(
       path: AppRoutes.passengerRegister,
-      builder: (
-        context,
-        state,
-      ) =>
-          const PassengerRegistrationScreen(),
+      builder: (context, state) => const PassengerRegistrationScreen(),
     ),
 
     GoRoute(
       path: AppRoutes.passengerRegisterSuccess,
-      builder: (
-        context,
-        state,
-      ) =>
-          const PassengerRegistrationSuccessScreen(),
+      builder: (context, state) => const PassengerRegistrationSuccessScreen(),
     ),
 
     //==========================================================================
     // Driver Registration
     //==========================================================================
-
     GoRoute(
       path: AppRoutes.driverRegister,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverRegistrationStep1Screen(),
+      builder: (context, state) => const DriverRegistrationStep1Screen(),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep1,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverRegistrationStep1Screen(),
+      builder: (context, state) => const DriverRegistrationStep1Screen(),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep2,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverRegistrationStep2Screen(),
+      builder: (context, state) => const DriverRegistrationStep2Screen(),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep3,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverRegistrationStep3Screen(),
+      builder: (context, state) => const DriverRegistrationStep3Screen(),
     ),
 
     GoRoute(
       path: AppRoutes.uploadDocuments,
-      builder: (
-        context,
-        state,
-      ) =>
-          const UploadDocumentsScreen(),
+      builder: (context, state) => const UploadDocumentsScreen(),
     ),
 
     GoRoute(
       path: AppRoutes.driverUnderReview,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverUnderReviewScreen(),
+      builder: (context, state) => const DriverUnderReviewScreen(),
     ),
-        //==========================================================================
+
+    //==========================================================================
     // Passenger
     //==========================================================================
-
     GoRoute(
       path: AppRoutes.passengerHome,
-      builder: (
-        context,
-        state,
-      ) =>
-          const PassengerShellScreen(),
+      builder: (context, state) => const PassengerShellScreen(),
     ),
 
     GoRoute(
       path: AppRoutes.passengerDashboard,
-      builder: (
-        context,
-        state,
-      ) =>
-          const PassengerDashboardScreen(),
+      builder: (context, state) => const PassengerShellScreen(initialIndex: 1),
     ),
 
     GoRoute(
       path: AppRoutes.passengerProfile,
-      builder: (
-        context,
-        state,
-      ) =>
-          const PassengerProfileScreen(),
+      builder: (context, state) => const PassengerShellScreen(initialIndex: 3),
     ),
 
     GoRoute(
-  path: AppRoutes.editPassengerProfile,
-  builder: (
-    context,
-    state,
-  ) =>
-      const EditPassengerProfileScreen(),
-),
+      path: AppRoutes.editPassengerProfile,
+      builder: (context, state) => const EditPassengerProfileScreen(),
+    ),
 
-GoRoute(
-  path: AppRoutes.passengerSettings,
-  builder: (
-    context,
-    state,
-  ) =>
-      const PassengerSettingsScreen(),
-),
+    GoRoute(
+      path: AppRoutes.passengerSettings,
+      builder: (context, state) => const PassengerSettingsScreen(),
+    ),
 
     GoRoute(
       path: AppRoutes.passengerTripHistory,
-      builder: (
-        context,
-        state,
-      ) =>
-          const PassengerTripHistoryScreen(),
+      builder: (context, state) => const PassengerShellScreen(initialIndex: 2),
     ),
 
     //==========================================================================
     // Passenger Booking Flow
     //==========================================================================
-
     GoRoute(
       path: AppRoutes.searchingDriver,
-      builder: (
-        context,
-        state,
-      ) {
+      builder: (context, state) {
         final bookingId = state.extra as String?;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
 
-        return SearchingDriverScreen(
-          bookingId: bookingId,
-        );
+        return SearchingDriverScreen(bookingId: bookingId);
       },
     ),
 
     GoRoute(
       path: AppRoutes.driverTracking,
-      builder: (
-        context,
-        state,
-      ) {
+      builder: (context, state) {
         final bookingId = state.extra as String?;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
 
-        return BookingTrackingScreen(
-          bookingId: bookingId,
-        );
+        return BookingTrackingScreen(bookingId: bookingId);
       },
     ),
 
     GoRoute(
       path: AppRoutes.passengerTrip,
-      builder: (
-        context,
-        state,
-      ) {
+      builder: (context, state) {
         final bookingId = state.extra as String?;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
 
-        return BookingTrackingScreen(
-          bookingId: bookingId,
-        );
+        return BookingTrackingScreen(bookingId: bookingId);
       },
     ),
 
     GoRoute(
       path: AppRoutes.rateDriver,
-      builder: (
-        context,
-        state,
-      ) {
-        final bookingId =
-            state.extra as String;
+      builder: (context, state) {
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const PassengerShellScreen();
+        }
 
-        return RatingScreen(
+        return RatingScreen(bookingId: bookingId);
+      },
+    ),
+
+    GoRoute(
+      path: AppRoutes.passengerReceipt,
+      builder: (context, state) {
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const PassengerShellScreen();
+        }
+        return TripReceiptScreen(
           bookingId: bookingId,
+          completionFlow: true,
         );
       },
     ),
-        //==========================================================================
+
+    //==========================================================================
     // Driver
     //==========================================================================
-
     GoRoute(
       path: AppRoutes.driverHome,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverShellScreen(),
+      builder: (context, state) => const DriverShellScreen(),
     ),
 
     GoRoute(
       path: AppRoutes.driverDashboard,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverDashboardScreen(),
+      builder: (context, state) => const DriverShellScreen(initialIndex: 1),
     ),
 
     GoRoute(
       path: AppRoutes.driverProfile,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverProfileScreen(),
+      builder: (context, state) => const DriverShellScreen(initialIndex: 3),
     ),
 
     GoRoute(
-  path: AppRoutes.editDriverProfile,
-  builder: (
-    context,
-    state,
-  ) =>
-      const EditDriverProfileScreen(),
-),
+      path: AppRoutes.editDriverProfile,
+      builder: (context, state) => const EditDriverProfileScreen(),
+    ),
 
-GoRoute(
-  path: AppRoutes.aboutVoltrike,
-  builder: (
-    context,
-    state,
-  ) =>
-      const about.AboutVoltrikeScreen(),
-),
+    GoRoute(
+      path: AppRoutes.aboutVoltrike,
+      builder: (context, state) => const about.AboutVoltrikeScreen(),
+    ),
 
-GoRoute(
-  path: AppRoutes.privacyPolicy,
-  builder: (
-    context,
-    state,
-  ) =>
-      const privacy.PrivacyPolicyScreen(),
-),
+    GoRoute(
+      path: AppRoutes.privacyPolicy,
+      builder: (context, state) => const privacy.PrivacyPolicyScreen(),
+    ),
 
-GoRoute(
-  path: AppRoutes.termsAndConditions,
-  builder: (
-    context,
-    state,
-  ) =>
-      const TermsAndConditionsScreen(),
-),
+    GoRoute(
+      path: AppRoutes.termsAndConditions,
+      builder: (context, state) => const TermsAndConditionsScreen(),
+    ),
 
-GoRoute(
-  path: AppRoutes.driverSettings,
-  builder: (
-    context,
-    state,
-  ) =>
-      const DriverSettingsScreen(),
-),
-
+    GoRoute(
+      path: AppRoutes.driverSettings,
+      builder: (context, state) => const DriverSettingsScreen(),
+    ),
 
     GoRoute(
       path: AppRoutes.driverTripHistory,
-      builder: (
-        context,
-        state,
-      ) =>
-          const DriverTripHistoryScreen(),
+      builder: (context, state) => const DriverShellScreen(initialIndex: 2),
     ),
 
     GoRoute(
-  path: AppRoutes.driverEarnings,
-  builder: (context, state) {
-    final driverId = state.extra as String;
+      path: AppRoutes.driverEarnings,
+      builder: (context, state) {
+        final driverId = state.extra as String;
 
-    return DriverEarningsScreen(
-      driverId: driverId,
-    );
-  },
-),
+        return DriverEarningsScreen(driverId: driverId);
+      },
+    ),
 
-GoRoute(
-  path: AppRoutes.driverBookingTracking,
-  builder: (
-    context,
-    state,
-  ) =>
-      DriverBookingTrackingScreen(
-        bookingId: state.extra as String?,
-      ),
-),
+    GoRoute(
+      path: AppRoutes.driverBookingTracking,
+      builder: (context, state) =>
+          DriverBookingTrackingScreen(bookingId: state.extra as String?),
+    ),
+
+    GoRoute(
+      path: AppRoutes.driverReceipt,
+      builder: (context, state) {
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const DriverShellScreen();
+        }
+        return TripReceiptScreen(bookingId: bookingId, driverView: true);
+      },
+    ),
 
     GoRoute(
       path: AppRoutes.currentBooking,
-  builder: (
-    context,
-    state,
-  ) =>
-      const DriverHomeScreen(),
+      builder: (context, state) => const DriverHomeScreen(),
     ),
 
     GoRoute(
@@ -447,7 +319,9 @@ GoRoute(
         final extra = state.extra as Map<String, dynamic>?;
         final bookingId = extra?['bookingId'] as String?;
         final members = (extra?['members'] as List?)?.cast<String>();
-        if (bookingId == null || members == null) return const PassengerShellScreen();
+        if (bookingId == null || members == null) {
+          return const PassengerShellScreen();
+        }
         return BookingChatScreen(bookingId: bookingId, members: members);
       },
     ),
@@ -455,14 +329,23 @@ GoRoute(
     GoRoute(
       path: AppRoutes.bookingVoiceCall,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final extra = state.extra;
+        final bookingId = extra is String
+            ? extra
+            : (extra as Map<String, dynamic>?)?['bookingId'] as String?;
+        final accepting = extra is Map<String, dynamic> &&
+            extra['accepting'] == true;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
         return VoiceCallScreen(
+          callStatus: BookingVoiceCallRepository().watchStatus(bookingId),
+          incoming: accepting,
+          initiate: () =>
+              BookingVoiceCallRepository().initiateCall(bookingId),
           connect: (service) async {
-            final credentials =
-                await BookingVoiceCallRepository().createCredentials(bookingId);
+            final credentials = await BookingVoiceCallRepository()
+                .createCredentials(bookingId, accepting: true);
             await service.connect(
               serverUrl: credentials.serverUrl,
               token: credentials.token,
@@ -473,5 +356,15 @@ GoRoute(
       },
     ),
 
-],
+    GoRoute(
+      path: AppRoutes.incomingBookingCall,
+      builder: (context, state) {
+        final bookingId = state.extra as String?;
+        if (bookingId == null || bookingId.isEmpty) {
+          return const PassengerShellScreen();
+        }
+        return IncomingCallScreen(bookingId: bookingId);
+      },
+    ),
+  ],
 );

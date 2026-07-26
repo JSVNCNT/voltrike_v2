@@ -27,6 +27,7 @@ enum BookingStatus {
   driverAssigned,
   driverArriving,
   passengerOnBoard,
+  paymentConfirmation,
   completed,
   cancelled,
 }

@@ -3,7 +3,7 @@ import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from '
 import { db, functions } from './firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
-import type { BookingOperation, Driver, FareConfig, PageResult, Report, RouteRestriction, SafetyIncident, Toda, ZoneRequest } from './types';
+import type { AdminMetrics, BookingOperation, Driver, DriverRatingRecord, FareConfig, PageResult, Report, RouteRestriction, SafetyIncident, Toda, ZoneRequest } from './types';
 
 async function call<T>(name: string, data: Record<string, unknown>): Promise<T> {
   return (await httpsCallable<Record<string, unknown>, T>(functions, name)(data)).data;
@@ -12,6 +12,7 @@ async function call<T>(name: string, data: Record<string, unknown>): Promise<T> 
 const mapDocument = <T>(id: string, value: unknown) => ({ id, ...(value as object) }) as T;
 
 export const adminApi = {
+  metrics: () => call<AdminMetrics>('adminGetMetrics', {}),
   bootstrap: (code: string) => call<{ role: string }>('bootstrapDeveloperAdmin', { code }),
   registerToda: (data: Record<string, unknown>) => call<{ todaId: string }>('registerToda', data),
   createToda: (data: Record<string, unknown>) => call<{ todaId: string }>('adminCreateToda', data),
@@ -53,6 +54,14 @@ export const adminApi = {
     }),
   async drivers(_todaId?: string): Promise<Driver[]> {
     return (await adminApi.driverPage()).items;
+  },
+  ratingPage: (cursor?: string | null) =>
+    call<PageResult<DriverRatingRecord>>('adminListRatings', {
+      cursor: cursor || '',
+      pageSize: 50,
+    }),
+  async ratings(): Promise<DriverRatingRecord[]> {
+    return (await adminApi.ratingPage()).items;
   },
   reportPage: (cursor?: string | null, search = '') =>
     call<PageResult<Report>>('adminListReports', {

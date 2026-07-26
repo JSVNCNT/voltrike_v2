@@ -25,21 +25,27 @@ class DriverBookingListener {
     required BookingRepository bookingRepository,
     required AuthRepository authRepository,
     required Ref ref,
-  })  : _bookingRepository = bookingRepository,
-        _authRepository = authRepository,
-        _ref = ref;
+  }) : _bookingRepository = bookingRepository,
+       _authRepository = authRepository,
+       _ref = ref;
 
   final BookingRepository _bookingRepository;
   final AuthRepository _authRepository;
   final Ref _ref;
 
   StreamSubscription<List<Booking>>? _subscription;
+  Timer? _retryTimer;
+  bool _shouldListen = false;
 
   //==========================================================================
   // Start Listening
   //==========================================================================
 
   void startListening() {
+    _shouldListen = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+
     final driverId = _authRepository.currentUser?.uid;
     if (driverId == null) return;
     developer.log(
@@ -52,96 +58,100 @@ class DriverBookingListener {
     _subscription = _bookingRepository
         .watchDriverOffers(driverId)
         .listen(
-      (bookings) {
-        developer.log(
-          '========================',
-          name: 'DriverBookingListener',
+          (bookings) {
+            developer.log(
+              '========================',
+              name: 'DriverBookingListener',
+            );
+
+            developer.log(
+              'Pending bookings: ${bookings.length}',
+              name: 'DriverBookingListener',
+            );
+
+            //----------------------------------------------------------------------
+            // No pending bookings
+            //----------------------------------------------------------------------
+
+            if (bookings.isEmpty) {
+              developer.log(
+                'No pending bookings.',
+                name: 'DriverBookingListener',
+              );
+
+              _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+
+              _ref.read(driverTripProvider.notifier).waitingBooking();
+
+              developer.log(
+                'Trip state -> waitingBooking',
+                name: 'DriverBookingListener',
+              );
+
+              return;
+            }
+
+            //----------------------------------------------------------------------
+            // Incoming booking
+            //----------------------------------------------------------------------
+
+            final booking = bookings.first;
+
+            developer.log(
+              'Incoming booking received.',
+              name: 'DriverBookingListener',
+            );
+
+            developer.log(
+              'Booking ID : ${booking.bookingId}',
+              name: 'DriverBookingListener',
+            );
+
+            developer.log(
+              'Status     : ${booking.status}',
+              name: 'DriverBookingListener',
+            );
+
+            developer.log(
+              'Passenger  : ${booking.passengerName ?? booking.passengerId}',
+              name: 'DriverBookingListener',
+            );
+
+            developer.log(
+              'Saving booking to IncomingBookingProvider...',
+              name: 'DriverBookingListener',
+            );
+
+            _ref
+                .read(driverIncomingBookingProvider.notifier)
+                .setBooking(booking);
+
+            developer.log(
+              'Updating trip state -> bookingReceived',
+              name: 'DriverBookingListener',
+            );
+
+            _ref.read(driverTripProvider.notifier).bookingReceived();
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            // The booking document is readable only while this driver has an
+            // active offer. Once it expires Firestore can reject an in-flight
+            // document read; do not leave the listener permanently terminated.
+            developer.log(
+              'Offer listener error: $error',
+              name: 'DriverBookingListener',
+              stackTrace: stackTrace,
+            );
+            _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+            _ref.read(driverTripProvider.notifier).waitingBooking();
+
+            if (!_shouldListen) return;
+            _retryTimer?.cancel();
+            _retryTimer = Timer(const Duration(seconds: 1), () {
+              if (_shouldListen) startListening();
+            });
+          },
         );
-
-        developer.log(
-          'Pending bookings: ${bookings.length}',
-          name: 'DriverBookingListener',
-        );
-
-        //----------------------------------------------------------------------
-        // No pending bookings
-        //----------------------------------------------------------------------
-
-        if (bookings.isEmpty) {
-          developer.log(
-            'No pending bookings.',
-            name: 'DriverBookingListener',
-          );
-
-          _ref
-              .read(
-                driverIncomingBookingProvider.notifier,
-              )
-              .clearBooking();
-
-          _ref
-              .read(
-                driverTripProvider.notifier,
-              )
-              .waitingBooking();
-
-          developer.log(
-            'Trip state -> waitingBooking',
-            name: 'DriverBookingListener',
-          );
-
-          return;
-        }
-
-        //----------------------------------------------------------------------
-        // Incoming booking
-        //----------------------------------------------------------------------
-
-        final booking = bookings.first;
-
-        developer.log(
-          'Incoming booking received.',
-          name: 'DriverBookingListener',
-        );
-
-        developer.log(
-          'Booking ID : ${booking.bookingId}',
-          name: 'DriverBookingListener',
-        );
-
-        developer.log(
-          'Status     : ${booking.status}',
-          name: 'DriverBookingListener',
-        );
-
-        developer.log(
-          'Passenger  : ${booking.passengerName ?? booking.passengerId}',
-          name: 'DriverBookingListener',
-        );
-
-        developer.log(
-          'Saving booking to IncomingBookingProvider...',
-          name: 'DriverBookingListener',
-        );
-
-        _ref
-            .read(
-              driverIncomingBookingProvider.notifier,
-            )
-            .setBooking(booking);
-
-        developer.log(
-          'Updating trip state -> bookingReceived',
-          name: 'DriverBookingListener',
-        );
-
-        _ref
-            .read(
-              driverTripProvider.notifier,
-            )
-            .bookingReceived();
-      },
-    );
   }
 
   //==========================================================================
@@ -154,14 +164,13 @@ class DriverBookingListener {
       name: 'DriverBookingListener',
     );
 
+    _shouldListen = false;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     await _subscription?.cancel();
     _subscription = null;
 
-    _ref
-        .read(
-          driverIncomingBookingProvider.notifier,
-        )
-        .clearBooking();
+    _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
   }
 
   //==========================================================================

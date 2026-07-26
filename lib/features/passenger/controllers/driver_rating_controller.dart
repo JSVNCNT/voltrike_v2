@@ -23,31 +23,21 @@ import '../../../data/repositories/driver_rating_repository.dart';
 ///      ↓
 /// Rating saved to Firestore
 /// ===========================================================================
-class DriverRatingController
-    extends StateNotifier<AsyncValue<void>> {
+class DriverRatingController extends StateNotifier<AsyncValue<void>> {
   DriverRatingController({
-    required DriverRatingRepository
-        driverRatingRepository,
-    required BookingRepository
-        bookingRepository,
-    required AuthRepository
-        authRepository,
-  })  : _driverRatingRepository =
-            driverRatingRepository,
-        _bookingRepository =
-            bookingRepository,
-        _authRepository =
-            authRepository,
-        super(const AsyncData(null));
+    required DriverRatingRepository driverRatingRepository,
+    required BookingRepository bookingRepository,
+    required AuthRepository authRepository,
+  }) : _driverRatingRepository = driverRatingRepository,
+       _bookingRepository = bookingRepository,
+       _authRepository = authRepository,
+       super(const AsyncData(null));
 
-  final DriverRatingRepository
-      _driverRatingRepository;
+  final DriverRatingRepository _driverRatingRepository;
 
-  final BookingRepository
-      _bookingRepository;
+  final BookingRepository _bookingRepository;
 
-  final AuthRepository
-      _authRepository;
+  final AuthRepository _authRepository;
 
   //==========================================================================
   // Submit Rating
@@ -69,31 +59,20 @@ class DriverRatingController
         );
       }
 
-      final passenger =
-          _authRepository.currentUser;
+      final passenger = _authRepository.currentUser;
 
       if (passenger == null) {
-        throw Exception(
-          'No authenticated passenger.',
-        );
+        throw Exception('No authenticated passenger.');
       }
 
-      final booking =
-          await _bookingRepository
-              .getBooking(
-        bookingId,
-      );
+      final booking = await _bookingRepository.getBooking(bookingId);
 
       if (booking == null) {
-        throw Exception(
-          'Booking not found.',
-        );
+        throw Exception('Booking not found.');
       }
 
       if (booking.driverId == null) {
-        throw Exception(
-          'Booking has no assigned driver.',
-        );
+        throw Exception('Booking has no assigned driver.');
       }
 
       if (booking.passengerId != passenger.uid) {
@@ -104,40 +83,21 @@ class DriverRatingController
         throw Exception('Only completed trips can be rated.');
       }
 
-      if (await _driverRatingRepository.hasRatingForBooking(
-        bookingId: bookingId,
-        passengerId: passenger.uid,
-      )) {
-        throw Exception('This trip has already been rated.');
-      }
-
-      final driverRating =
-          DriverRating(
+      final driverRating = DriverRating(
         ratingId: '${booking.bookingId}_${passenger.uid}',
         bookingId: booking.bookingId,
-        driverId:
-            booking.driverId!,
-        passengerId:
-            passenger.uid,
+        driverId: booking.driverId!,
+        passengerId: passenger.uid,
         rating: rating,
-        comment:
-            comment.trim(),
-        createdAt:
-            DateTime.now(),
+        comment: comment.trim(),
+        createdAt: DateTime.now(),
       );
 
-      await _driverRatingRepository
-          .createRating(
-        driverRating,
-      );
+      await _driverRatingRepository.createRating(driverRating);
 
-      state =
-          const AsyncData(null);
+      state = const AsyncData(null);
     } catch (error, stackTrace) {
-      state = AsyncError(
-        error,
-        stackTrace,
-      );
+      state = AsyncError(error, stackTrace);
 
       rethrow;
     }

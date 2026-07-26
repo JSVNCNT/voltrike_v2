@@ -182,8 +182,9 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
     state = const AsyncLoading();
 
     try {
-      // Declining is driver-local. Never rewrite a shared pending booking,
-      // which could race with another driver's acceptance transaction.
+      await _bookingRepository.declineBookingOffer(
+        bookingId: booking.bookingId,
+      );
       _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
 
       state = const AsyncData(null);
@@ -195,15 +196,31 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
   }
 
   /// Restores the driver's durable active booking after app restart.
-  Future<void> restoreCurrentBooking() async {
+  Future<Booking?> restoreCurrentBooking() async {
     final firebaseUser = _authRepository.currentUser;
-    if (firebaseUser == null) return;
+    if (firebaseUser == null) return null;
 
     final driver = await _driverRepository.getDriver(firebaseUser.uid);
     final bookingId = driver?.currentBookingId;
-    if (bookingId == null || bookingId.isEmpty) return;
+    if (bookingId == null || bookingId.isEmpty) {
+      _ref.read(driverCurrentBookingProvider.notifier).clearBooking();
+      return null;
+    }
 
+    final booking = await _bookingRepository.getBooking(bookingId);
+    final isActive =
+        booking != null &&
+        booking.driverId == firebaseUser.uid &&
+        booking.status != BookingStatus.completed &&
+        booking.status != BookingStatus.cancelled;
+    if (!isActive) {
+      _ref.read(driverCurrentBookingProvider.notifier).clearBooking();
+      return null;
+    }
+
+    _ref.read(driverCurrentBookingProvider.notifier).setBooking(booking);
     _currentBookingListener.startListening(bookingId);
+    return booking;
   }
 
   //==========================================================================
@@ -246,23 +263,6 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  Future<void> confirmPickup({
-    required Booking booking,
-    required String pin,
-  }) async {
-    state = const AsyncLoading();
-    try {
-      await _bookingRepository.confirmPickup(
-        bookingId: booking.bookingId,
-        pin: pin,
-      );
-      state = const AsyncData(null);
-    } catch (error, stackTrace) {
-      state = AsyncError(error, stackTrace);
-      rethrow;
-    }
-  }
-
   Future<void> markPassengerNoShow(Booking booking) async {
     state = const AsyncLoading();
     try {
@@ -289,7 +289,7 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
       // Complete booking.
       await _bookingRepository.transitionStatus(
         bookingId: booking.bookingId,
-        allowedCurrentStatuses: const {BookingStatus.passengerOnBoard},
+        allowedCurrentStatuses: const {BookingStatus.paymentConfirmation},
         nextStatus: BookingStatus.completed,
       );
 
@@ -303,6 +303,21 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
     } catch (e, stackTrace) {
       state = AsyncError(e, stackTrace);
 
+      rethrow;
+    }
+  }
+
+  Future<void> confirmDropOff(Booking booking) async {
+    state = const AsyncLoading();
+    try {
+      await _bookingRepository.transitionStatus(
+        bookingId: booking.bookingId,
+        allowedCurrentStatuses: const {BookingStatus.passengerOnBoard},
+        nextStatus: BookingStatus.paymentConfirmation,
+      );
+      state = const AsyncData(null);
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
       rethrow;
     }
   }

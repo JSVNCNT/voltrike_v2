@@ -5,8 +5,13 @@ class VoiceCallService {
   Room? _room;
   Room? get room => _room;
   bool get isConnected => _room?.connectionState == ConnectionState.connected;
+  bool get hasRemoteParticipant =>
+      _room?.remoteParticipants.isNotEmpty ?? false;
 
-  Future<void> connect({required String serverUrl, required String token}) async {
+  Future<void> connect({
+    required String serverUrl,
+    required String token,
+  }) async {
     await disconnect();
     final room = Room();
     await room.connect(serverUrl, token);

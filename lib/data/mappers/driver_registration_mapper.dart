@@ -55,7 +55,6 @@ class DriverRegistrationMapper {
       //======================================================================
       // Identity
       //======================================================================
-
       uid: uid,
       todaId: registration.todaId,
       vehicleId: vehicleId,
@@ -63,14 +62,12 @@ class DriverRegistrationMapper {
       //======================================================================
       // License
       //======================================================================
-
       licenseNumber: registration.licenseNumber,
       licenseExpiry: registration.licenseExpiry!,
 
       //======================================================================
       // Uploaded Documents
       //======================================================================
-
       profilePhotoUrl: profilePhotoUrl,
       driverLicenseFrontUrl: driverLicenseFrontUrl,
       driverLicenseBackUrl: driverLicenseBackUrl,
@@ -82,7 +79,6 @@ class DriverRegistrationMapper {
       //======================================================================
       // Driver Status
       //======================================================================
-
       driverStatus: 'pending',
       isOnline: false,
       // Pending drivers cannot receive offers until their selected TODA has
@@ -96,15 +92,14 @@ class DriverRegistrationMapper {
       //======================================================================
       // Statistics
       //======================================================================
-
       rating: 0,
+      ratingCount: 0,
       completedTrips: 0,
       totalEarnings: 0,
 
       //======================================================================
       // Dates
       //======================================================================
-
       createdAt: DateTime.now(),
       approvedAt: null,
       approvedBy: null,
@@ -125,8 +120,7 @@ class DriverRegistrationMapper {
       driverId: uid,
       plateNumber: registration.plateNumber,
       vehicleNumber: registration.vehicleType,
-      model:
-          '${registration.vehicleBrand} ${registration.vehicleModel}',
+      model: '${registration.vehicleBrand} ${registration.vehicleModel}',
       color: registration.vehicleColor,
       capacity: registration.seatingCapacity,
       isVerified: false,

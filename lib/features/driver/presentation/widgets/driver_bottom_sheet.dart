@@ -186,6 +186,8 @@ class _ActiveRideControls extends StatelessWidget {
       actions.add(_button('Start Trip', onStartTrip));
     } else if (status == BookingStatus.passengerOnBoard) {
       actions.add(_button('Drop Off Passenger', onCompleteTrip, filled: true));
+    } else if (status == BookingStatus.paymentConfirmation) {
+      actions.add(_button('Confirm Cash Received', onCompleteTrip, filled: true));
     }
     if (status == BookingStatus.driverAssigned ||
         status == BookingStatus.driverArriving) {

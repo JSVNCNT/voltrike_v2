@@ -44,6 +44,8 @@ class DriverHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
+  bool _isAcceptingBooking = false;
+
   Future<void> _cancelTrip() async {
     final booking = ref.read(driverCurrentBookingProvider);
     if (booking == null) return;
@@ -100,11 +102,37 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
   }
 
   Future<void> _initializeDriver() async {
-    await ref.read(driverLocationControllerProvider.notifier).stopTracking();
+    final user = ref.read(driverAuthRepositoryProvider).currentUser;
+    if (user == null) return;
 
-    await ref
-        .read(driverBookingControllerProvider.notifier)
-        .restoreCurrentBooking();
+    final driver = await ref.read(driverRepositoryProvider).getDriver(user.uid);
+    if (driver == null) return;
+    final pendingReceipt = await ref
+        .read(driverRepositoryProvider)
+        .getPendingReceiptBookingId(user.uid);
+    if (pendingReceipt != null && mounted) {
+      context.go(AppRoutes.driverReceipt, extra: pendingReceipt);
+      return;
+    }
+    if (!driver.isOnline) return;
+
+    final hasActiveBooking = driver.currentBookingId?.isNotEmpty == true;
+    final status = ref.read(driverStatusProvider.notifier);
+    if (hasActiveBooking || !driver.isAvailable) {
+      status.goBusy();
+    } else {
+      status.goOnline();
+    }
+
+    try {
+      await ref.read(driverLocationControllerProvider.notifier).startTracking();
+      if (!hasActiveBooking && driver.isAvailable) {
+        ref.read(driverBookingListenerProvider).startListening();
+      }
+    } catch (_) {
+      // The online state remains backend-authoritative. The toggle can retry
+      // GPS setup after the driver grants a missing location permission.
+    }
   }
 
   //==========================================================================
@@ -163,20 +191,53 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
   //==========================================================================
 
   Future<void> _acceptBooking() async {
+    if (_isAcceptingBooking) {
+      return;
+    }
+
     final booking = ref.read(driverIncomingBookingProvider);
 
     if (booking == null) {
       return;
     }
 
-    await ref
-        .read(driverBookingControllerProvider.notifier)
-        .acceptBooking(booking);
+    setState(() => _isAcceptingBooking = true);
 
-    // Remove the pending booking.
-    ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+    try {
+      await ref
+          .read(driverBookingControllerProvider.notifier)
+          .acceptBooking(booking);
 
-    ref.read(driverTripProvider.notifier).bookingAccepted();
+      // Remove the pending booking only after the backend transaction commits.
+      ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+      ref.read(driverTripProvider.notifier).bookingAccepted();
+      if (mounted) {
+        context.go(AppRoutes.driverBookingTracking, extra: booking.bookingId);
+      }
+    } catch (error) {
+      if (!mounted) return;
+
+      final message = error.toString();
+      final isExpired = message.toLowerCase().contains('offer has expired');
+      if (isExpired) {
+        ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+        ref.read(driverTripProvider.notifier).waitingBooking();
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isExpired
+                ? 'This booking request expired. Waiting for a new request.'
+                : 'Could not accept booking: $message',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAcceptingBooking = false);
+      }
+    }
   }
 
   Future<void> _declineBooking() async {
@@ -334,15 +395,25 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
   }
 
   Future<void> _completeTrip() async {
+    if (ref.read(driverBookingControllerProvider).isLoading) return;
     final booking = ref.read(driverCurrentBookingProvider);
 
     if (booking == null) {
       return;
     }
 
-    await ref
-        .read(driverBookingControllerProvider.notifier)
-        .completeTrip(booking);
+    final controller = ref.read(driverBookingControllerProvider.notifier);
+    if (booking.status == BookingStatus.passengerOnBoard) {
+      await controller.confirmDropOff(booking);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Drop-off confirmed. Confirm cash next.')),
+        );
+      }
+      return;
+    }
+    if (booking.status != BookingStatus.paymentConfirmation) return;
+    await controller.completeTrip(booking);
 
     if (!mounted) {
       return;
@@ -389,6 +460,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
     final hasIncomingBooking =
         incomingBooking != null && !offerCooldown.isActive;
+    final canRespondToOffer = hasIncomingBooking && !_isAcceptingBooking;
 
     // A stale driver profile can briefly point at a legacy, pending, or
     // terminal booking. It is not an active trip and must not make the idle
@@ -396,7 +468,8 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     final activeBooking = switch (currentBooking?.status) {
       BookingStatus.driverAssigned ||
       BookingStatus.driverArriving ||
-      BookingStatus.passengerOnBoard
+      BookingStatus.passengerOnBoard ||
+      BookingStatus.paymentConfirmation
           when _hasUsableTripAddresses(currentBooking) =>
         currentBooking,
       _ => null,
@@ -441,8 +514,8 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
                 estimatedFare:
                     '₱${incomingBooking.estimatedFare.toStringAsFixed(2)}',
                 distance: '${incomingBooking.distanceMeters} m',
-                onAccept: _acceptBooking,
-                onDecline: _declineBooking,
+                onAccept: canRespondToOffer ? _acceptBooking : null,
+                onDecline: canRespondToOffer ? _declineBooking : null,
               ),
             ),
 
@@ -483,9 +556,9 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
               onOnlineChanged: _toggleOnline,
 
-              onAcceptBooking: hasIncomingBooking ? _acceptBooking : null,
+              onAcceptBooking: canRespondToOffer ? _acceptBooking : null,
 
-              onDeclineBooking: hasIncomingBooking ? _declineBooking : null,
+              onDeclineBooking: canRespondToOffer ? _declineBooking : null,
 
               onNavigate: hasCurrentBooking ? _navigateToPickup : null,
 

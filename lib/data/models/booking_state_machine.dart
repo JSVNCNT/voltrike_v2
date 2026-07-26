@@ -18,7 +18,8 @@ class BookingStateMachine {
       BookingStatus.passengerOnBoard,
       BookingStatus.cancelled,
     },
-    BookingStatus.passengerOnBoard: {BookingStatus.completed},
+    BookingStatus.passengerOnBoard: {BookingStatus.paymentConfirmation},
+    BookingStatus.paymentConfirmation: {BookingStatus.completed},
     BookingStatus.completed: {},
     BookingStatus.cancelled: {},
   };

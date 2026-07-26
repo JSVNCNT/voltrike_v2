@@ -25,6 +25,7 @@ dependencies:
   firebase_messaging: ^16.0.0
   cloud_functions: ^6.0.0
   flutter_local_notifications: ^21.0.0
+  audioplayers: ^6.1.0
 
   # ===========================================================================
   # State Management
@@ -37,6 +38,7 @@ dependencies:
   # ===========================================================================
 
   go_router: ^16.0.0
+  url_launcher: ^6.3.2
 
   # ===========================================================================
   # Google Maps
@@ -120,6 +122,7 @@ flutter:
     - assets/icons/
     - assets/images/
     - assets/regionJson/
+    - assets/ringtones/
 
   fonts:
     - family: Poppins

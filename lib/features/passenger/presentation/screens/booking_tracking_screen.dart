@@ -4,10 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../../app/routes.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/auth_repository.dart';
-import '../../../../data/repositories/booking_repository.dart';
+import '../../../../data/repositories/chat_repository.dart';
 import '../../../../data/repositories/report_repository.dart';
 import '../../../../data/repositories/safety_repository.dart';
 
@@ -24,7 +25,11 @@ import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
 import '../../../ride/tracking/models/ride_participant_role.dart';
 import '../../../ride/tracking/services/ride_marker_factory.dart';
-import 'trip_receipt_screen.dart';
+import '../../../ride/tracking/services/route_refresh_policy.dart';
+import '../../../ride/tracking/services/ride_stage_presentation_service.dart';
+import '../../../ride/chat/ride_chat_alert_listener.dart';
+import '../../../ride/routing/booking_route_coordinator.dart';
+import '../../../ride/routing/booking_route_resolver.dart';
 
 class BookingTrackingScreen extends ConsumerStatefulWidget {
   const BookingTrackingScreen({super.key, required this.bookingId});
@@ -55,16 +60,17 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   //==========================================================================
 
   List<LatLng> _routePoints = [];
-  String? _loadedRouteKey;
-  String? _loadingRouteKey;
+  final RouteRefreshPolicy _routeRefreshPolicy = RouteRefreshPolicy();
   String? _eta;
   String? _remainingDistance;
+  String? _routeWarning;
 
   //==========================================================================
   // Navigation
   //==========================================================================
 
-  bool _hasNavigatedToReceipt = false;
+  ProviderSubscription<AsyncValue<Booking?>>? _bookingSubscription;
+  BookingStatus? _lastRoutedStatus;
 
   //==========================================================================
   // Helpers
@@ -72,35 +78,12 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
   bool _tripStarted(Booking booking) {
     return booking.status == BookingStatus.passengerOnBoard ||
+        booking.status == BookingStatus.paymentConfirmation ||
         booking.status == BookingStatus.completed;
   }
 
   LatLng _routeDestination(Booking booking) {
     return _tripStarted(booking) ? booking.destination : booking.pickup;
-  }
-
-  void _navigateToReceipt(Booking booking) {
-    if (_hasNavigatedToReceipt) {
-      return;
-    }
-
-    if (booking.status != BookingStatus.completed) {
-      return;
-    }
-
-    _hasNavigatedToReceipt = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => TripReceiptScreen(bookingId: booking.bookingId),
-        ),
-      );
-    });
   }
 
   //==========================================================================
@@ -111,6 +94,28 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   void initState() {
     super.initState();
     _loadDriverMarker();
+    _bookingSubscription = ref.listenManual<AsyncValue<Booking?>>(
+      bookingListenerProvider(widget.bookingId),
+      (_, next) => next.whenData(_handleBookingRoute),
+    );
+  }
+
+  void _handleBookingRoute(Booking? booking) {
+    if (booking == null || _lastRoutedStatus == booking.status) return;
+    _lastRoutedStatus = booking.status;
+    if (booking.status != BookingStatus.completed &&
+        booking.status != BookingStatus.cancelled &&
+        booking.status != BookingStatus.pending) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      BookingRouteCoordinator.open(
+        context,
+        role: BookingParticipantRole.passenger,
+        booking: booking,
+      );
+    });
   }
 
   Future<void> _loadDriverMarker() async {
@@ -124,6 +129,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
   @override
   void dispose() {
+    _bookingSubscription?.close();
     _mapController?.dispose();
     super.dispose();
   }
@@ -137,14 +143,14 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     required LatLng driverLocation,
   }) async {
     final destination = _routeDestination(booking);
-    final routeKey =
-        '${booking.status.name}:${destination.latitude}:${destination.longitude}';
-    if ((_loadedRouteKey == routeKey && _routePoints.isNotEmpty) ||
-        _loadingRouteKey == routeKey) {
+    if (!_routeRefreshPolicy.shouldRefresh(
+      origin: driverLocation,
+      destination: destination,
+      hasRoute: _routePoints.isNotEmpty,
+    )) {
       return;
     }
-
-    _loadingRouteKey = routeKey;
+    _routeRefreshPolicy.begin();
 
     Map<String, dynamic>? route;
     try {
@@ -152,11 +158,23 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
         origin: driverLocation,
         destination: destination,
       );
-    } finally {
-      _loadingRouteKey = null;
+    } catch (_) {
+      _routeRefreshPolicy.fail();
+      if (mounted) {
+        setState(() {
+          _routeWarning = 'Live route is temporarily unavailable.';
+        });
+      }
+      return;
     }
 
     if (!mounted || route == null) {
+      _routeRefreshPolicy.fail();
+      if (mounted) {
+        setState(() {
+          _routeWarning = 'Waiting for an updated driver route.';
+        });
+      }
       return;
     }
     final resolvedRoute = route;
@@ -167,11 +185,15 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
     setState(() {
       _routePoints = points;
-      _loadedRouteKey = routeKey;
       _eta = _navigation.duration(resolvedRoute);
       _remainingDistance =
           '${_navigation.distanceKm(resolvedRoute).toStringAsFixed(1)} km away';
+      _routeWarning = null;
     });
+    _routeRefreshPolicy.succeed(
+      origin: driverLocation,
+      destination: destination,
+    );
   }
 
   Future<void> _cancelBooking(Booking booking) async {
@@ -192,12 +214,90 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
             ),
             reasonDetail: result.comment,
           );
+      if (mounted) {
+        context.go(AppRoutes.passengerHome);
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not cancel booking: $error')),
       );
     }
+  }
+
+  void _openCall(Booking booking) {
+    context.push(AppRoutes.bookingVoiceCall, extra: booking.bookingId);
+  }
+
+  void _openChat(Booking booking) {
+    context.push(
+      AppRoutes.bookingChat,
+      extra: {
+        'bookingId': booking.bookingId,
+        'members': [booking.passengerId, booking.driverId!],
+      },
+    );
+  }
+
+  Widget _passengerNavigation([Booking? activeBooking]) {
+    return NavigationBar(
+      selectedIndex: 0,
+      onDestinationSelected: (index) {
+        const routes = [
+          AppRoutes.passengerHome,
+          AppRoutes.passengerDashboard,
+          AppRoutes.passengerTripHistory,
+          AppRoutes.passengerProfile,
+        ];
+        if (index == 0 && activeBooking != null) {
+          context.go(AppRoutes.driverTracking, extra: activeBooking.bookingId);
+          return;
+        }
+        context.go(routes[index]);
+      },
+      destinations: const [
+        NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
+        NavigationDestination(
+          icon: Icon(Icons.dashboard_outlined),
+          label: 'Dashboard',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.receipt_long_outlined),
+          label: 'Trips',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.person_outline),
+          label: 'Profile',
+        ),
+      ],
+    );
+  }
+
+  Widget _activeRideActions(Booking booking) {
+    final stage = RideStagePresentationService.resolve(
+      role: RideParticipantRole.passenger,
+      status: booking.status,
+    );
+    final userId = AuthRepository().currentUser?.uid;
+    return StreamBuilder<int>(
+      stream: userId == null
+          ? Stream<int>.value(0)
+          : ChatRepository().unreadCount(
+              bookingId: booking.bookingId,
+              userId: userId,
+            ),
+      builder: (context, snapshot) => Material(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: RideActionsCard(
+          onCall: stage.allowContact ? () => _openCall(booking) : null,
+          onMessage: stage.allowContact ? () => _openChat(booking) : null,
+          onCancel: stage.allowCancel ? () => _cancelBooking(booking) : null,
+          onReport: stage.allowReport ? () => _reportDriver(booking) : null,
+          onSos: stage.allowSos ? () => _triggerSos(booking) : null,
+          messageBadge: snapshot.data ?? 0,
+        ),
+      ),
+    );
   }
 
   Future<void> _reportDriver(Booking booking) async {
@@ -251,24 +351,6 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not record SOS: $error')));
-    }
-  }
-
-  Future<void> _confirmCashPaid(Booking booking) async {
-    try {
-      await BookingRepository().confirmCashPayment(
-        bookingId: booking.bookingId,
-        received: false,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cash payment marked as paid.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not confirm payment: $error')),
-      );
     }
   }
 
@@ -362,6 +444,101 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     };
   }
 
+  Widget _trackingSheet({
+    required Booking booking,
+    required ScrollController scrollController,
+  }) {
+    return Material(
+      elevation: 10,
+      color: Theme.of(context).scaffoldBackgroundColor,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              children: [
+          Center(
+            child: Container(
+              width: 42,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TripStatusCard(
+            status: booking.status,
+            role: RideParticipantRole.passenger,
+            eta: _eta,
+            distance: _remainingDistance,
+          ),
+          if (_routeWarning != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _routeWarning!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 10),
+          DriverInformationCard(
+            driverName: booking.driverName ?? 'VolTrike driver',
+            vehicleNumber: booking.vehicleNumber ?? 'Not available',
+            plateNumber: booking.plateNumber ?? 'Not available',
+            todaName: booking.todaName ?? 'Not available',
+            photoUrl: booking.driverPhotoUrl,
+            rating: booking.driverRating,
+          ),
+          const SizedBox(height: 10),
+          _activeRideActions(booking),
+          const SizedBox(height: 10),
+          TripInformationCard(
+            pickup: booking.pickupAddress,
+            destination: booking.destinationAddress,
+            distance:
+                '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
+            duration: _eta ?? '--',
+            fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
+          ),
+              ],
+            ),
+          ),
+          if (RideStagePresentationService.resolve(
+            role: RideParticipantRole.passenger,
+            status: booking.status,
+          ).allowContact)
+            SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openCall(booking),
+                      icon: const Icon(Icons.call_outlined),
+                      label: const Text('Call'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => _openChat(booking),
+                      icon: const Icon(Icons.message_outlined),
+                      label: const Text('Message'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookingAsync = ref.watch(bookingListenerProvider(widget.bookingId));
@@ -372,7 +549,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
       error: (error, stackTrace) => Scaffold(
         appBar: AppBar(title: const Text('Booking')),
-        body: Center(child: Text(error.toString())),
+        body: Center(child: Text(DomainErrorMapper.message(error))),
       ),
 
       data: (booking) {
@@ -402,8 +579,6 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
             ),
           );
         }
-
-        _navigateToReceipt(booking);
 
         if (booking.driverId == null) {
           final cancelled = booking.status == BookingStatus.cancelled;
@@ -452,7 +627,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
           error: (error, stackTrace) => Scaffold(
             appBar: AppBar(title: const Text('Booking')),
-            body: Center(child: Text(error.toString())),
+            body: Center(child: Text(DomainErrorMapper.message(error))),
           ),
 
           data: (driverLocation) {
@@ -462,157 +637,95 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
             return Scaffold(
               appBar: AppBar(title: const Text('Track Ride')),
-
-              body: Column(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: GoogleMap(
-                      onMapCreated: _onMapCreated,
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                      initialCameraPosition: CameraPosition(
-                        target: booking.pickup,
-                        zoom: 15,
+              bottomNavigationBar: _passengerNavigation(booking),
+              body: RideChatAlertListener(
+                bookingId: booking.bookingId,
+                onOpenChat: () => _openChat(booking),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: GoogleMap(
+                        onMapCreated: _onMapCreated,
+                        myLocationEnabled: true,
+                        myLocationButtonEnabled: true,
+                        zoomControlsEnabled: false,
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.sizeOf(context).height * 0.18,
+                        ),
+                        initialCameraPosition: CameraPosition(
+                          target: booking.pickup,
+                          zoom: 15,
+                        ),
+                        markers: _buildMarkers(
+                          booking: booking,
+                          driverLocation: driverLocation,
+                        ),
+                        polylines: _buildPolylines(),
                       ),
-                      markers: _buildMarkers(
-                        booking: booking,
-                        driverLocation: driverLocation,
-                      ),
-                      polylines: _buildPolylines(),
                     ),
-                  ),
 
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: TripStatusCard(
-                      status: booking.status,
-                      role: RideParticipantRole.passenger,
-                      eta: _eta,
-                      distance: _remainingDistance,
-                    ),
-                  ),
-
-                  Expanded(
-                    flex: 6,
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        child: Column(
-                          children: [
-                            DriverInformationCard(
-                              driverName:
-                                  booking.driverName ?? 'VolTrike driver',
-                              vehicleNumber:
-                                  booking.vehicleNumber ?? 'Not available',
-                              plateNumber:
-                                  booking.plateNumber ?? 'Not available',
-                              todaName: booking.todaName ?? 'Not available',
-                              photoUrl: booking.driverPhotoUrl,
-                              rating: booking.driverRating,
-                            ),
-
-                            const SizedBox(height: 16),
-
-                            if (booking.status ==
-                                    BookingStatus.driverAssigned ||
-                                booking.status == BookingStatus.driverArriving)
-                              RideActionsCard(
-                                onCancel: () => _cancelBooking(booking),
-                                onSos: () => _triggerSos(booking),
-                              ),
-
-                            if (booking.status ==
-                                BookingStatus.driverArriving) ...[
-                              const SizedBox(height: 8),
-                              StreamBuilder<String?>(
-                                stream: BookingRepository().watchPickupPin(
-                                  passengerId: booking.passengerId,
-                                  bookingId: booking.bookingId,
-                                ),
-                                builder: (context, snapshot) => Card(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.primaryContainer,
-                                  child: ListTile(
-                                    leading: const Icon(Icons.pin_outlined),
-                                    title: const Text('Pickup PIN'),
-                                    subtitle: const Text(
-                                      'Tell this PIN only to your assigned driver.',
-                                    ),
-                                    trailing: Text(
-                                      snapshot.data ?? '••••',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .headlineSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 4,
-                                          ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-
-                            if (booking.status ==
-                                BookingStatus.passengerOnBoard)
-                              RideActionsCard(
-                                onCall: () => context.push(
-                                  AppRoutes.bookingVoiceCall,
-                                  extra: booking.bookingId,
-                                ),
-                                onMessage: () => context.push(
-                                  AppRoutes.bookingChat,
-                                  extra: {
-                                    'bookingId': booking.bookingId,
-                                    'members': [
-                                      booking.passengerId,
-                                      booking.driverId!,
-                                    ],
-                                  },
-                                ),
-                                onReport: () => _reportDriver(booking),
-                                onSos: () => _triggerSos(booking),
-                              ),
-
-                            if (booking.status ==
-                                BookingStatus.passengerOnBoard) ...[
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.icon(
-                                  onPressed: booking.passengerPaidAt == null
-                                      ? () => _confirmCashPaid(booking)
-                                      : null,
-                                  icon: const Icon(Icons.payments_outlined),
-                                  label: Text(
-                                    booking.passengerPaidAt == null
-                                        ? 'Confirm cash paid · '
-                                              '₱${booking.amountDue.toStringAsFixed(2)}'
-                                        : 'Cash payment confirmed',
-                                  ),
-                                ),
-                              ),
-                            ],
-
-                            const SizedBox(height: 16),
-
-                            TripInformationCard(
-                              pickup: booking.pickupAddress,
-                              destination: booking.destinationAddress,
-                              distance:
-                                  '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-                              duration: _eta ?? '--',
-                              fare:
-                                  '₱${booking.estimatedFare.toStringAsFixed(2)}',
-                            ),
-                          ],
+                    if (booking.bookingId.isEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: TripStatusCard(
+                          status: booking.status,
+                          role: RideParticipantRole.passenger,
+                          eta: _eta,
+                          distance: _remainingDistance,
                         ),
                       ),
+
+                      Expanded(
+                        flex: 6,
+                        child: SingleChildScrollView(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            child: Column(
+                              children: [
+                                DriverInformationCard(
+                                  driverName:
+                                      booking.driverName ?? 'VolTrike driver',
+                                  vehicleNumber:
+                                      booking.vehicleNumber ?? 'Not available',
+                                  plateNumber:
+                                      booking.plateNumber ?? 'Not available',
+                                  todaName: booking.todaName ?? 'Not available',
+                                  photoUrl: booking.driverPhotoUrl,
+                                  rating: booking.driverRating,
+                                ),
+
+                                const SizedBox(height: 16),
+
+                                const SizedBox(height: 16),
+
+                                TripInformationCard(
+                                  pickup: booking.pickupAddress,
+                                  destination: booking.destinationAddress,
+                                  distance:
+                                      '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                                  duration: _eta ?? '--',
+                                  fare:
+                                      '₱${booking.estimatedFare.toStringAsFixed(2)}',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    DraggableScrollableSheet(
+                      initialChildSize: 0.48,
+                      minChildSize: 0.16,
+                      maxChildSize: 0.88,
+                      snap: true,
+                      snapSizes: const [0.16, 0.48, 0.88],
+                      builder: (context, scrollController) => _trackingSheet(
+                        booking: booking,
+                        scrollController: scrollController,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },

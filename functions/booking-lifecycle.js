@@ -1,12 +1,11 @@
 'use strict';
 
-const crypto = require('node:crypto');
-
 const BOOKING_STATUS = Object.freeze({
   pending: 'pending',
   driverAssigned: 'driverAssigned',
   driverArriving: 'driverArriving',
   passengerOnBoard: 'passengerOnBoard',
+  paymentConfirmation: 'paymentConfirmation',
   completed: 'completed',
   cancelled: 'cancelled',
 });
@@ -25,6 +24,9 @@ const TRANSITIONS = Object.freeze({
     BOOKING_STATUS.cancelled,
   ]),
   [BOOKING_STATUS.passengerOnBoard]: new Set([
+    BOOKING_STATUS.paymentConfirmation,
+  ]),
+  [BOOKING_STATUS.paymentConfirmation]: new Set([
     BOOKING_STATUS.completed,
   ]),
   [BOOKING_STATUS.completed]: new Set(),
@@ -48,17 +50,6 @@ function validOperationId(value) {
 function validBookingId(value) {
   return typeof value === 'string' &&
     /^[A-Za-z0-9_-]{8,128}$/.test(value);
-}
-
-function pickupPinHash(bookingId, pin) {
-  return crypto
-    .createHash('sha256')
-    .update(`${bookingId}:${pin}`)
-    .digest('hex');
-}
-
-function randomPickupPin() {
-  return String(crypto.randomInt(0, 10000)).padStart(4, '0');
 }
 
 function normalizeCoordinate(value, name) {
@@ -88,15 +79,29 @@ function distanceMeters(pointA, pointB) {
     Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
+function nextRatingAggregate(currentAverage, currentCount, newRating) {
+  const average = Number(currentAverage);
+  const count = Number(currentCount);
+  const rating = Number(newRating);
+  if (!Number.isFinite(average) || !Number.isInteger(count) || count < 0 ||
+      !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new TypeError('Rating aggregate values are invalid.');
+  }
+  const nextCount = count + 1;
+  const nextAverage = Math.round(
+    ((average * count + rating) / nextCount) * 100,
+  ) / 100;
+  return { rating: nextAverage, ratingCount: nextCount };
+}
+
 module.exports = {
   BOOKING_STATUS,
   TRANSITIONS,
   activeStatus,
   canTransition,
   distanceMeters,
+  nextRatingAggregate,
   normalizeCoordinate,
-  pickupPinHash,
-  randomPickupPin,
   validBookingId,
   validOperationId,
 };

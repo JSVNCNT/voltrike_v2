@@ -94,6 +94,9 @@ class AppRoutes {
   static const String rateDriver =
       '/passenger/rate-driver';
 
+  static const String passengerReceipt =
+      '/passenger/trip-receipt';
+
   //==========================================================================
 // Driver
 //==========================================================================
@@ -104,6 +107,9 @@ static const String driverHome =
 
 static const driverBookingTracking =
 '/driver/booking-tracking';
+
+static const String driverReceipt =
+    '/driver/trip-receipt';
 
 static const String driverDashboard =
     '/driver/dashboard';
@@ -174,6 +180,8 @@ static const String termsAndConditions =
   static const String bookingChat = '/ride/chat';
 
   static const String bookingVoiceCall = '/ride/voice-call';
+
+  static const String incomingBookingCall = '/ride/incoming-call';
 
   //==========================================================================
   // Future

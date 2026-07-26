@@ -1,15 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../app/routes.dart';
+import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../../data/models/booking.dart';
+import '../../../../data/models/driver_rating.dart';
 import '../../../../data/repositories/booking_repository.dart';
+import '../../../../data/repositories/auth_repository.dart';
+import '../../../../data/repositories/driver_rating_repository.dart';
+import '../../controllers/passenger_booking_flow_controller.dart';
+import '../../providers/booking_provider.dart';
+import '../../providers/booking_session_provider.dart';
 import '../../providers/booking_listener_provider.dart';
-import 'rating_screen.dart';
 
 class TripReceiptScreen extends ConsumerWidget {
-  const TripReceiptScreen({super.key, required this.bookingId});
+  const TripReceiptScreen({
+    super.key,
+    required this.bookingId,
+    this.driverView = false,
+    this.completionFlow = false,
+  });
 
   final String bookingId;
+  final bool driverView;
+  final bool completionFlow;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -20,19 +35,29 @@ class TripReceiptScreen extends ConsumerWidget {
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (error, _) => Scaffold(
         appBar: AppBar(title: const Text('Trip Receipt')),
-        body: Center(child: Text(error.toString())),
+        body: Center(child: Text(DomainErrorMapper.message(error))),
       ),
       data: (booking) => booking == null
           ? const Scaffold(body: Center(child: Text('Receipt not found.')))
-          : _ReceiptBody(booking: booking),
+          : _ReceiptBody(
+              booking: booking,
+              driverView: driverView,
+              completionFlow: completionFlow,
+            ),
     );
   }
 }
 
-class _ReceiptBody extends StatelessWidget {
-  const _ReceiptBody({required this.booking});
+class _ReceiptBody extends ConsumerWidget {
+  const _ReceiptBody({
+    required this.booking,
+    required this.driverView,
+    required this.completionFlow,
+  });
 
   final Booking booking;
+  final bool driverView;
+  final bool completionFlow;
 
   Future<void> _disputeSettlement(BuildContext context) async {
     final controller = TextEditingController();
@@ -80,11 +105,14 @@ class _ReceiptBody extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final completedAt = booking.completedAt ?? booking.updatedAt;
+    final currentUser = AuthRepository().currentUser;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Trip Receipt')),
+      appBar: AppBar(
+        title: Text(driverView ? 'Trip Earnings' : 'Trip Receipt'),
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -114,8 +142,10 @@ class _ReceiptBody extends StatelessWidget {
                       ),
                       const Divider(),
                       _ReceiptRow(
-                        'Driver',
-                        booking.driverName ?? 'VolTrike driver',
+                        driverView ? 'Passenger' : 'Driver',
+                        driverView
+                            ? (booking.passengerName ?? 'VolTrike passenger')
+                            : (booking.driverName ?? 'VolTrike driver'),
                       ),
                       const Divider(),
                       _ReceiptRow(
@@ -147,28 +177,64 @@ class _ReceiptBody extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: booking.driverId == null
-                    ? null
-                    : () => Navigator.of(context).pushReplacement(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              RatingScreen(bookingId: booking.bookingId),
+              if (!driverView) ...[
+                FutureBuilder<DriverRating?>(
+                  future: currentUser == null
+                      ? Future.value(null)
+                      : DriverRatingRepository().getRatingForBooking(
+                          bookingId: booking.bookingId,
+                          passengerId: currentUser.uid,
                         ),
-                      ),
-                icon: const Icon(Icons.star_outline),
-                label: const Text('Rate driver'),
-              ),
-              const SizedBox(height: 12),
+                  builder: (context, snapshot) => snapshot.data != null
+                      ? ListTile(
+                          leading: const Icon(Icons.star, color: Colors.amber),
+                          title: Text(
+                            'Your driver rating: ${snapshot.data!.rating} ★',
+                          ),
+                          subtitle: snapshot.data!.comment.isEmpty
+                              ? null
+                              : Text(snapshot.data!.comment),
+                        )
+                      : FilledButton.icon(
+                          onPressed: booking.driverId == null
+                              ? null
+                              : () => context.go(
+                                  AppRoutes.rateDriver,
+                                  extra: booking.bookingId,
+                                ),
+                          icon: const Icon(Icons.star_outline),
+                          label: const Text('Rate driver'),
+                        ),
+                ),
+                const SizedBox(height: 12),
+              ],
               OutlinedButton.icon(
                 onPressed: () => _disputeSettlement(context),
                 icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text('Request settlement review'),
+                label: Text(
+                  driverView
+                      ? 'Request earnings review'
+                      : 'Request settlement review',
+                ),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
-                onPressed: () =>
-                    Navigator.of(context).popUntil((route) => route.isFirst),
+                onPressed: () async {
+                  if (driverView) {
+                    await BookingRepository().acknowledgeDriverReceipt(
+                      bookingId: booking.bookingId,
+                    );
+                    if (!context.mounted) return;
+                  }
+                  if (!driverView && completionFlow) {
+                    ref.read(bookingSessionProvider.notifier).reset();
+                    ref.read(bookingProvider.notifier).reset();
+                    ref.read(passengerBookingFlowProvider.notifier).clear();
+                  }
+                  context.go(
+                    driverView ? AppRoutes.driverHome : AppRoutes.passengerHome,
+                  );
+                },
                 child: const Text('Return home'),
               ),
             ],

@@ -14,13 +14,16 @@ class RideMarkerFactory {
   }
 
   static Future<BitmapDescriptor> _buildDriverMarker() async {
-    const size = 112.0;
-    const padding = 18.0;
+    // Google Maps renders marker bitmaps in screen pixels. Keep this asset
+    // deliberately compact so it does not grow into a large map obstruction
+    // on high-density Android displays.
+    const size = 48.0;
+    const padding = 8.0;
     final data = await rootBundle.load('assets/images/appLogo.png');
     final codec = await ui.instantiateImageCodec(
       data.buffer.asUint8List(),
-      targetWidth: 72,
-      targetHeight: 72,
+      targetWidth: 32,
+      targetHeight: 32,
     );
     final frame = await codec.getNextFrame();
     final recorder = ui.PictureRecorder();
@@ -29,28 +32,28 @@ class RideMarkerFactory {
 
     canvas.drawCircle(
       center,
-      52,
+      23,
       ui.Paint()..color = const ui.Color(0x33000000),
     );
     canvas.drawCircle(
       center,
-      48,
+      21,
       ui.Paint()..color = const ui.Color(0xFF008B8B),
     );
     canvas.drawCircle(
       center,
-      44,
+      19,
       ui.Paint()..color = const ui.Color(0xFFFFFFFF),
     );
     canvas.drawCircle(
       center,
-      40,
+      17,
       ui.Paint()..color = const ui.Color(0xFF008B8B),
     );
 
     canvas.save();
     canvas.clipPath(
-      ui.Path()..addOval(const ui.Rect.fromLTWH(padding, padding, 76, 76)),
+      ui.Path()..addOval(const ui.Rect.fromLTWH(padding, padding, 32, 32)),
     );
     canvas.drawImageRect(
       frame.image,
@@ -60,12 +63,12 @@ class RideMarkerFactory {
         frame.image.width.toDouble(),
         frame.image.height.toDouble(),
       ),
-      const ui.Rect.fromLTWH(padding, padding, 76, 76),
+      const ui.Rect.fromLTWH(padding, padding, 32, 32),
       ui.Paint()..filterQuality = ui.FilterQuality.high,
     );
     canvas.restore();
 
-    final image = await recorder.endRecording().toImage(112, 112);
+    final image = await recorder.endRecording().toImage(48, 48);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     if (bytes == null) {
       throw StateError('Could not create driver marker bitmap.');

@@ -47,10 +47,6 @@ service cloud.firestore {
         request.resource.data.isActive == resource.data.isActive;
       allow delete: if false;
       match /devices/{token} { allow read, write: if signedIn() && request.auth.uid == uid; }
-      match /bookingSecrets/{bookingId} {
-        allow read: if signedIn() && request.auth.uid == uid;
-        allow write: if false;
-      }
       match /emergencyContacts/{contactId} {
         allow read, delete: if signedIn() && request.auth.uid == uid;
         allow create, update: if signedIn() && request.auth.uid == uid &&
@@ -70,6 +66,13 @@ service cloud.firestore {
     }
     match /bookingOperations/{operationId} {
       allow read, write: if false;
+    }
+    match /bookingCalls/{bookingId} {
+      allow read: if signedIn() && request.auth.uid in [
+        resource.data.callerId,
+        resource.data.recipientId
+      ];
+      allow write: if false;
     }
     match /auditLogs/{auditId} {
       allow read: if developerAdmin();

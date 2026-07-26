@@ -1,5 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/errors/domain_error_mapper.dart';
 
 class ReportRepository {
   ReportRepository({FirebaseFunctions? functions})
@@ -19,11 +20,15 @@ class ReportRepository {
     // Reporter identity, reported account, and TODA scope are derived from the
     // authenticated booking on the backend. The legacy ID arguments remain in
     // the signature so existing screens do not break during migration.
-    await _functions.httpsCallable('createRideReport').call({
-      'reportId': _uuid.v4(),
-      'bookingId': bookingId,
-      'category': category,
-      'details': details,
-    });
+    try {
+      await _functions.httpsCallable('createRideReport').call({
+        'reportId': _uuid.v4(),
+        'bookingId': bookingId,
+        'category': category,
+        'details': details,
+      });
+    } catch (error) {
+      throw DomainErrorMapper.exception(error);
+    }
   }
 }

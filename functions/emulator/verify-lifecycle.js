@@ -159,7 +159,6 @@ async function main() {
     distanceMeters: 1,
     estimatedFare: 1,
   });
-  assert.match(created.pickupPin, /^\d{4}$/);
   assert.ok(created.distanceMeters > 1);
   assert.ok(created.estimatedFare >= 20);
 
@@ -269,43 +268,48 @@ async function main() {
   );
   assert.equal(shared.driverName, 'Dario Driver');
 
-  await callable('confirmBookingPickup', driverToken, {
-    bookingId,
-    operationId: operation('pickup-main', 1),
-    pin: created.pickupPin,
-  });
   await callable('transitionBookingLifecycle', driverToken, {
     bookingId,
     operationId: operation('start-main', 1),
     action: 'start',
   });
-  await callable('confirmCashPayment', passengerToken, {
+  await callable('transitionBookingLifecycle', driverToken, {
     bookingId,
-    operationId: operation('paid-main', 1),
-    confirmation: 'paid',
+    operationId: operation('dropoff-main', 1),
+    action: 'dropOff',
   });
-  const settlement = await callable(
-    'confirmCashPayment',
-    driverToken,
-    {
-      bookingId,
-      operationId: operation('received-main', 1),
-      confirmation: 'received',
-    },
-  );
-  assert.equal(settlement.settled, true);
-  assert.match(settlement.receiptNumber, /^VT-/);
 
   await callable('transitionBookingLifecycle', driverToken, {
     bookingId,
     operationId: operation('complete-main', 1),
     action: 'complete',
   });
-  await callable('submitDriverRating', passengerToken, {
+  const driverBeforeRating =
+    (await db.doc('drivers/driver-test-001').get()).data();
+  const ratingResult = await callable('submitDriverRating', passengerToken, {
     bookingId,
     rating: 5,
     comment: 'Local emulator lifecycle.',
   });
+  const repeatedRating = await callable('submitDriverRating', passengerToken, {
+    bookingId,
+    rating: 5,
+    comment: 'Repeated local emulator lifecycle.',
+  });
+  assert.equal(ratingResult.idempotent, false);
+  assert.equal(repeatedRating.idempotent, true);
+  const savedRating = (await db.doc(
+    `ratings/${bookingId}_passenger-test-001`,
+  ).get()).data();
+  assert.equal(savedRating.rating, 5);
+  assert.equal(savedRating.comment, 'Local emulator lifecycle.');
+  assert.equal(savedRating.todaId, 'test-toda-bacolod');
+  const driverAfterRating =
+    (await db.doc('drivers/driver-test-001').get()).data();
+  assert.equal(
+    driverAfterRating.ratingCount,
+    Number(driverBeforeRating.ratingCount || 0) + 1,
+  );
   await callable('createRideReport', passengerToken, {
     bookingId,
     reportId: 'report-test-main-001',
@@ -316,6 +320,7 @@ async function main() {
   booking = (await db.doc(`bookings/${bookingId}`).get()).data();
   assert.equal(booking.status, 'completed');
   assert.equal(booking.settlementStatus, 'settled');
+  assert.match(booking.receiptNumber, /^VT-/);
   const driver = (await db.doc('drivers/driver-test-001').get()).data();
   assert.equal(driver.currentBookingId, null);
   assert.equal(driver.isAvailable, true);
@@ -377,6 +382,27 @@ async function main() {
   );
   assert.ok(
     todaBookings.items.every(
+      (item) => item.todaId === 'test-toda-bacolod',
+    ),
+  );
+  const developerRatings = await callable(
+    'adminListRatings',
+    developerToken,
+    { pageSize: 20 },
+  );
+  assert.ok(
+    developerRatings.items.some((item) => item.bookingId === bookingId),
+  );
+  const todaRatings = await callable(
+    'adminListRatings',
+    todaAdminToken,
+    { pageSize: 20 },
+  );
+  assert.ok(
+    todaRatings.items.some((item) => item.bookingId === bookingId),
+  );
+  assert.ok(
+    todaRatings.items.every(
       (item) => item.todaId === 'test-toda-bacolod',
     ),
   );

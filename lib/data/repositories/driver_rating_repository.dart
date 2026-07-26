@@ -63,11 +63,27 @@ class DriverRatingRepository {
     required String bookingId,
     required String passengerId,
   }) async {
+    return await getRatingForBooking(
+          bookingId: bookingId,
+          passengerId: passengerId,
+        ) !=
+        null;
+  }
+
+  Future<DriverRating?> getRatingForBooking({
+    required String bookingId,
+    required String passengerId,
+  }) async {
     final snapshot = await _firestoreService.firestore
         .collection(_collection)
-        .doc('${bookingId}_$passengerId')
+        .where('passengerId', isEqualTo: passengerId)
         .get();
-    return snapshot.exists;
+    for (final document in snapshot.docs) {
+      if (document.data()['bookingId'] == bookingId) {
+        return DriverRating.fromFirestore(document);
+      }
+    }
+    return null;
   }
 
   //==========================================================================
@@ -78,11 +94,14 @@ class DriverRatingRepository {
     return _firestoreService.firestore
         .collection(_collection)
         .where('driverId', isEqualTo: driverId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(
-          (snapshot) => snapshot.docs.map(DriverRating.fromFirestore).toList(),
-        );
+        .map((snapshot) {
+          final ratings = snapshot.docs
+              .map(DriverRating.fromFirestore)
+              .toList();
+          ratings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return ratings;
+        });
   }
 
   //==========================================================================
@@ -93,11 +112,14 @@ class DriverRatingRepository {
     return _firestoreService.firestore
         .collection(_collection)
         .where('passengerId', isEqualTo: passengerId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(
-          (snapshot) => snapshot.docs.map(DriverRating.fromFirestore).toList(),
-        );
+        .map((snapshot) {
+          final ratings = snapshot.docs
+              .map(DriverRating.fromFirestore)
+              .toList();
+          ratings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return ratings;
+        });
   }
 
   //==========================================================================

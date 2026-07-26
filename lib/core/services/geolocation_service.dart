@@ -1,4 +1,5 @@
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter/foundation.dart';
 
 /// Service for accessing the device's GPS location.
 ///
@@ -41,9 +42,7 @@ class GeolocationService {
     final enabled = await isLocationEnabled();
 
     if (!enabled) {
-      throw Exception(
-        'Location services are disabled.',
-      );
+      throw Exception('Location services are disabled.');
     }
 
     var permission = await checkPermission();
@@ -53,13 +52,10 @@ class GeolocationService {
     }
 
     if (permission == LocationPermission.denied) {
-      throw Exception(
-        'Location permission denied.',
-      );
+      throw Exception('Location permission denied.');
     }
 
-    if (permission ==
-        LocationPermission.deniedForever) {
+    if (permission == LocationPermission.deniedForever) {
       throw Exception(
         'Location permission permanently denied. '
         'Please enable it in device settings.',
@@ -72,19 +68,29 @@ class GeolocationService {
     await ensurePermission();
 
     return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-      ),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
   }
 
   /// Continuously listens for location updates.
   static Stream<Position> getPositionStream() {
+    final settings = defaultTargetPlatform == TargetPlatform.android
+        ? AndroidSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 0,
+            intervalDuration: const Duration(seconds: 5),
+            foregroundNotificationConfig: const ForegroundNotificationConfig(
+              notificationTitle: 'VolTrike ride location active',
+              notificationText: 'Sharing driver location for the active ride.',
+              enableWakeLock: true,
+            ),
+          )
+        : const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 0,
+          );
     return Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.best,
-        distanceFilter: 10,
-      ),
+      locationSettings: settings,
     );
   }
 

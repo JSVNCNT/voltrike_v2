@@ -11,7 +11,7 @@ final driverLocationAuthRepositoryProvider =
 final driverLocationControllerProvider =
     StateNotifierProvider<
         DriverLocationController,
-        AsyncValue<void>>(
+        DriverLocationState>(
   (ref) {
     return DriverLocationController(
       authRepository: ref.read(

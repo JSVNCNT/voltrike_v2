@@ -12,6 +12,9 @@ class AppConfig {
   static const String packageName = 'com.example.voltrike_v2';
 
   static const String version = '1.0.0';
+  static const int clientProtocolVersion = 3;
+  static const int bookingSchemaVersion = 2;
+  static const int expectedFunctionsProtocolVersion = 3;
 
   static const bool isProduction = false;
 

@@ -52,6 +52,11 @@ class DriverInformationCard extends StatelessWidget {
               driverName,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 8),
+            const Chip(
+              avatar: Icon(Icons.verified_outlined, size: 18),
+              label: Text('Registered VolTrike driver'),
+            ),
 
             if (rating != null) ...[
               const SizedBox(height: 8),

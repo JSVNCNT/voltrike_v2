@@ -81,6 +81,15 @@ class DriverRepository {
     return Driver.fromMap(data);
   }
 
+  Future<String?> getPendingReceiptBookingId(String uid) async {
+    final snapshot = await _firestoreService.getDocument(
+      FirestoreConstants.drivers,
+      uid,
+    );
+    final value = snapshot.data()?['pendingReceiptBookingId'];
+    return value is String && value.isNotEmpty ? value : null;
+  }
+
   //==========================================================================
   // Driver Stream
   //==========================================================================
