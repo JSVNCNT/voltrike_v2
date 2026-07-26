@@ -4,7 +4,9 @@
   "engines": {"node": "22"},
   "main": "index.js",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "emulator:seed": "node emulator/seed.js",
+    "emulator:verify": "node emulator/verify-lifecycle.js"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0",

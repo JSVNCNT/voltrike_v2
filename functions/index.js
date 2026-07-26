@@ -5,6 +5,12 @@ const { logger } = require('firebase-functions');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const {
+  FieldPath,
+  FieldValue,
+  Timestamp,
+} = require('firebase-admin/firestore');
+const { ServerValue } = require('firebase-admin/database');
+const {
   BOOKING_STATUS,
   distanceMeters,
   normalizeCoordinate,
@@ -22,7 +28,20 @@ const {
   fareSnapshot,
 } = require('./fare-policy');
 
-admin.initializeApp();
+const functionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+const runtimeProjectId =
+  process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
+if (functionsEmulator && runtimeProjectId !== 'demo-voltrike') {
+  throw new Error(
+    `Refusing local Functions against non-demo project: ${runtimeProjectId}`,
+  );
+}
+admin.initializeApp(functionsEmulator ? {
+  projectId: runtimeProjectId,
+  databaseURL:
+    'https://demo-voltrike-default-rtdb.firebaseio.com',
+  storageBucket: 'demo-voltrike.appspot.com',
+} : undefined);
 const db = admin.firestore();
 const realtime = admin.database();
 const liveKitApiKey = defineSecret('LIVEKIT_API_KEY');
@@ -60,7 +79,7 @@ function getPsgcData() {
 }
 
 function timestamp() {
-  return admin.firestore.FieldValue.serverTimestamp();
+  return FieldValue.serverTimestamp();
 }
 
 async function getAdminProfile(uid) {
@@ -156,7 +175,10 @@ function parseCoordinate(value, name) {
 }
 
 function snapshotDateMillis(value) {
-  if (value instanceof admin.firestore.Timestamp) return value.toMillis();
+  if (value != null && typeof value.toMillis === 'function') {
+    const millis = value.toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'string') {
     const parsed = Date.parse(value);
@@ -166,6 +188,21 @@ function snapshotDateMillis(value) {
 }
 
 async function trustedRoute(pickup, destination) {
+  // The demo project deliberately has no live Google credentials. Keep
+  // lifecycle tests deterministic and isolated while production continues to
+  // require the trusted Routes API.
+  if (process.env.FUNCTIONS_EMULATOR === 'true' &&
+      process.env.VOLTRIKE_USE_REAL_ROUTES_IN_EMULATOR !== 'true') {
+    const straightLineMeters = distanceMeters(pickup, destination);
+    const routeDistanceMeters = Math.max(
+      1,
+      Math.round(straightLineMeters * 1.2),
+    );
+    return {
+      distanceMeters: routeDistanceMeters,
+      duration: `${Math.max(60, Math.round(routeDistanceMeters / 6))}s`,
+    };
+  }
   const response = await fetch(
     'https://routes.googleapis.com/directions/v2:computeRoutes',
     {
@@ -300,7 +337,10 @@ async function rankedDispatchDrivers(booking) {
       toda.exists && toda.data().isActive === true &&
       vehicle.exists &&
       vehicle.data().isVerified === true &&
-      (licenseExpiry == null || licenseExpiry >= now);
+      typeof driver.data().licenseNumber === 'string' &&
+      driver.data().licenseNumber.trim().length > 0 &&
+      licenseExpiry != null &&
+      licenseExpiry >= now;
   });
   eligible.sort((a, b) => a.distanceMeters - b.distanceMeters);
   return eligible;
@@ -317,7 +357,7 @@ async function dispatchNextOfferBatch(bookingId) {
     const nextDispatchAt = snapshotDateMillis(current.nextDispatchAt);
     if (nextDispatchAt != null && nextDispatchAt > Date.now()) return null;
     transaction.update(bookingRef, {
-      nextDispatchAt: admin.firestore.Timestamp.fromMillis(
+      nextDispatchAt: Timestamp.fromMillis(
         Date.now() + offerDurationMs,
       ),
       dispatchLeaseAt: timestamp(),
@@ -340,7 +380,7 @@ async function dispatchNextOfferBatch(bookingId) {
       { merge: true },
     );
   });
-  const expiresAt = admin.firestore.Timestamp.fromMillis(
+  const expiresAt = Timestamp.fromMillis(
     Date.now() + offerDurationMs,
   );
   candidates.forEach(({ driver, distanceMeters: proximity }) => {
@@ -358,13 +398,13 @@ async function dispatchNextOfferBatch(bookingId) {
   const bookingUpdate = {
     offerRound: Number(booking.offerRound || 0) + 1,
     lastOfferAt: timestamp(),
-    nextDispatchAt: admin.firestore.Timestamp.fromMillis(
+    nextDispatchAt: Timestamp.fromMillis(
       Date.now() + offerDurationMs,
     ),
     updatedAt: timestamp(),
   };
   if (candidates.length > 0) {
-    bookingUpdate.offeredDriverIds = admin.firestore.FieldValue.arrayUnion(
+    bookingUpdate.offeredDriverIds = FieldValue.arrayUnion(
       ...candidates.map(({ driver }) => driver.id),
     );
   }
@@ -1088,12 +1128,12 @@ exports.adminListDrivers = onCall(
     const pageSize = adminPageSize(request.data?.pageSize);
     const search = adminString(request.data?.search);
     let query = db.collection('drivers')
-      .orderBy(admin.firestore.FieldPath.documentId())
+      .orderBy(FieldPath.documentId())
       .limit(pageSize + 1);
     if (actor.role === 'toda_admin') {
       query = db.collection('drivers')
         .where('todaId', '==', actor.todaId)
-        .orderBy(admin.firestore.FieldPath.documentId())
+        .orderBy(FieldPath.documentId())
         .limit(pageSize + 1);
     }
     const cursor = request.data?.cursor;
@@ -1161,12 +1201,12 @@ exports.adminListReports = onCall(
     const pageSize = adminPageSize(request.data?.pageSize);
     const search = adminString(request.data?.search);
     let query = db.collection('reports')
-      .orderBy(admin.firestore.FieldPath.documentId())
+      .orderBy(FieldPath.documentId())
       .limit(pageSize + 1);
     if (actor.role === 'toda_admin') {
       query = db.collection('reports')
         .where('todaId', '==', actor.todaId)
-        .orderBy(admin.firestore.FieldPath.documentId())
+        .orderBy(FieldPath.documentId())
         .limit(pageSize + 1);
     }
     const cursor = request.data?.cursor;
@@ -1221,12 +1261,12 @@ exports.adminListBookings = onCall(
     const pageSize = adminPageSize(request.data?.pageSize);
     const search = adminString(request.data?.search);
     let query = db.collection('bookings')
-      .orderBy(admin.firestore.FieldPath.documentId())
+      .orderBy(FieldPath.documentId())
       .limit(pageSize + 1);
     if (actor.role === 'toda_admin') {
       query = db.collection('bookings')
         .where('todaId', '==', actor.todaId)
-        .orderBy(admin.firestore.FieldPath.documentId())
+        .orderBy(FieldPath.documentId())
         .limit(pageSize + 1);
     }
     const cursor = request.data?.cursor;
@@ -1293,12 +1333,12 @@ exports.adminListSafetyIncidents = onCall(
     const actor = await requireAdmin(request);
     const pageSize = adminPageSize(request.data?.pageSize);
     let query = db.collection('safetyIncidents')
-      .orderBy(admin.firestore.FieldPath.documentId())
+      .orderBy(FieldPath.documentId())
       .limit(pageSize);
     if (actor.role === 'toda_admin') {
       query = db.collection('safetyIncidents')
         .where('todaId', '==', actor.todaId)
-        .orderBy(admin.firestore.FieldPath.documentId())
+        .orderBy(FieldPath.documentId())
         .limit(pageSize);
     }
     const snapshot = await query.get();
@@ -1386,10 +1426,14 @@ exports.setDriverOnlineStatus = onCall(
         );
       }
       const licenseExpiry = snapshotDateMillis(driverData.licenseExpiry);
-      if (isOnline && licenseExpiry != null && licenseExpiry < Date.now()) {
+      if (isOnline &&
+          (typeof driverData.licenseNumber !== 'string' ||
+            driverData.licenseNumber.trim().length === 0 ||
+            licenseExpiry == null ||
+            licenseExpiry < Date.now())) {
         throw new HttpsError(
           'failed-precondition',
-          'Your driver license has expired.',
+          'A current driver license is required before going online.',
         );
       }
 
@@ -1419,7 +1463,7 @@ exports.setDriverOnlineStatus = onCall(
         realtime.ref(`driver_locations/${uid}`).remove(),
         realtime.ref(`driver_presence/${uid}`).set({
           online: false,
-          updatedAt: admin.database.ServerValue.TIMESTAMP,
+          updatedAt: ServerValue.TIMESTAMP,
         }),
       ]);
     }
@@ -1716,8 +1760,14 @@ exports.acceptBookingLifecycle = onCall(
         throw new HttpsError('failed-precondition', 'The assigned TODA is not active.');
       }
       const licenseExpiry = snapshotDateMillis(driver.data().licenseExpiry);
-      if (licenseExpiry != null && licenseExpiry < Date.now()) {
-        throw new HttpsError('failed-precondition', 'The driver license has expired.');
+      if (typeof driver.data().licenseNumber !== 'string' ||
+          driver.data().licenseNumber.trim().length === 0 ||
+          licenseExpiry == null ||
+          licenseExpiry < Date.now()) {
+        throw new HttpsError(
+          'failed-precondition',
+          'A current driver license is required.',
+        );
       }
 
       const profile = user.data();
@@ -1776,7 +1826,7 @@ exports.acceptBookingLifecycle = onCall(
       .ref(`driver_tracking_access/${result.passengerId}/${uid}`)
       .set({
         bookingId,
-        grantedAt: admin.database.ServerValue.TIMESTAMP,
+        grantedAt: ServerValue.TIMESTAMP,
       });
     await expireBookingOffers(bookingId, 'closed');
     return {
@@ -2114,8 +2164,8 @@ exports.transitionBookingLifecycle = onCall(
           updatedAt: timestamp(),
         };
         if (action === 'complete') {
-          driverUpdate.completedTrips = admin.firestore.FieldValue.increment(1);
-          driverUpdate.totalEarnings = admin.firestore.FieldValue.increment(
+          driverUpdate.completedTrips = FieldValue.increment(1);
+          driverUpdate.totalEarnings = FieldValue.increment(
             Number(data.amountDue ?? data.estimatedFare ?? 0),
           );
         }
@@ -2123,7 +2173,7 @@ exports.transitionBookingLifecycle = onCall(
       }
       if (action === 'complete' && passenger?.exists) {
         transaction.update(passengerRef, {
-          totalTrips: admin.firestore.FieldValue.increment(1),
+          totalTrips: FieldValue.increment(1),
           updatedAt: timestamp(),
         });
       }
