@@ -17,6 +17,7 @@ class DriverInformationCard extends StatelessWidget {
     required this.vehicleNumber,
     required this.plateNumber,
     required this.todaName,
+    this.photoUrl,
     this.rating,
   });
 
@@ -24,6 +25,7 @@ class DriverInformationCard extends StatelessWidget {
   final String vehicleNumber;
   final String plateNumber;
   final String todaName;
+  final String? photoUrl;
   final double? rating;
 
   @override
@@ -34,39 +36,33 @@ class DriverInformationCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const CircleAvatar(
+            CircleAvatar(
               radius: 32,
-              child: Icon(
-                Icons.person,
-                size: 32,
-              ),
+              backgroundImage: photoUrl?.trim().isNotEmpty == true
+                  ? NetworkImage(photoUrl!)
+                  : null,
+              child: photoUrl?.trim().isNotEmpty == true
+                  ? null
+                  : const Icon(Icons.person, size: 32),
             ),
 
             const SizedBox(height: 12),
 
             Text(
               driverName,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
             if (rating != null) ...[
               const SizedBox(height: 8),
 
-              StarRating(
-                rating: rating!,
-                size: 22,
-              ),
+              StarRating(rating: rating!, size: 22),
 
               const SizedBox(height: 4),
 
               Text(
                 '${rating!.toStringAsFixed(1)} / 5.0',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
 
@@ -75,9 +71,7 @@ class DriverInformationCard extends StatelessWidget {
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.electric_rickshaw,
-              ),
+              leading: const Icon(Icons.electric_rickshaw),
               title: const Text('Vehicle'),
               subtitle: Text(vehicleNumber),
             ),
@@ -85,9 +79,7 @@ class DriverInformationCard extends StatelessWidget {
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.confirmation_number,
-              ),
+              leading: const Icon(Icons.confirmation_number),
               title: const Text('Plate Number'),
               subtitle: Text(plateNumber),
             ),
@@ -95,9 +87,7 @@ class DriverInformationCard extends StatelessWidget {
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.location_city,
-              ),
+              leading: const Icon(Icons.location_city),
               title: const Text('TODA'),
               subtitle: Text(todaName),
             ),

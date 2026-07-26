@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../data/models/place_prediction.dart';
@@ -9,154 +9,178 @@ import '../config/api_keys.dart';
 class PlacesService {
   PlacesService._();
 
-  static const String _baseUrl =
-      'https://places.googleapis.com/v1';
+  static const String _baseUrl = 'https://places.googleapis.com/v1';
+  static const double searchRadiusMeters = 10000;
+  static const Duration _timeout = Duration(seconds: 10);
+  static final Map<String, Map<String, dynamic>> _detailsCache = {};
 
   static Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': ApiKeys.googleMapsApiKey,
-      };
-
-  //==========================================================================
-  // Search Places
-  //==========================================================================
+    'Content-Type': 'application/json',
+    'X-Goog-Api-Key': ApiKeys.googleMapsApiKey,
+  };
 
   static Future<List<PlacePrediction>> searchPlaces(
     String query, {
-    double? latitude,
-    double? longitude,
+    required double latitude,
+    required double longitude,
+    String? sessionToken,
   }) {
     return autocomplete(
       query,
       latitude: latitude,
       longitude: longitude,
+      sessionToken: sessionToken,
     );
   }
 
-  //==========================================================================
-  // Autocomplete
-  //==========================================================================
-
+  /// Returns only places within 10 km of the supplied live GPS/search origin.
+  ///
+  /// Google returns distanceMeters when `origin` is supplied. If an individual
+  /// prediction omits it, details are resolved once and cached so the strict
+  /// radius remains enforceable rather than relying on a soft location bias.
   static Future<List<PlacePrediction>> autocomplete(
     String query, {
-    double? latitude,
-    double? longitude,
+    required double latitude,
+    required double longitude,
+    String? sessionToken,
   }) async {
-    if (query.trim().isEmpty) {
-      return [];
-    }
+    if (query.trim().isEmpty) return [];
 
     final body = <String, dynamic>{
-      'input': query,
-
-      // Restrict results to the Philippines
+      'input': query.trim(),
       'includedRegionCodes': ['ph'],
+      'origin': {'latitude': latitude, 'longitude': longitude},
+      'locationRestriction': {
+        'circle': {
+          'center': {'latitude': latitude, 'longitude': longitude},
+          'radius': searchRadiusMeters,
+        },
+      },
+      if (sessionToken != null && sessionToken.isNotEmpty)
+        'sessionToken': sessionToken,
     };
 
-    // Prefer nearby places if current location is available
-    if (latitude != null && longitude != null) {
-      body['locationBias'] = {
-        'circle': {
-          'center': {
-            'latitude': latitude,
-            'longitude': longitude,
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/places:autocomplete'),
+          headers: {
+            ..._headers,
+            'X-Goog-FieldMask':
+                'suggestions.placePrediction.placeId,'
+                'suggestions.placePrediction.text,'
+                'suggestions.placePrediction.structuredFormat,'
+                'suggestions.placePrediction.distanceMeters',
           },
-          'radius': 10000.0, // 10 km
-        },
-      };
-    }
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
 
-    final response = await http.post(
-      Uri.parse(
-        '$_baseUrl/places:autocomplete',
-      ),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
+    if (response.statusCode != 200) return [];
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final suggestions = decoded['suggestions'] as List? ?? const [];
+    final predictions = <PlacePrediction>[];
 
-    debugPrint('==========================');
-    debugPrint('Places Autocomplete');
-    debugPrint('Query: $query');
-    debugPrint('Latitude: $latitude');
-    debugPrint('Longitude: $longitude');
-    debugPrint('Request Body: ${jsonEncode(body)}');
-    debugPrint('Status: ${response.statusCode}');
-    debugPrint('Response: ${response.body}');
-    debugPrint('==========================');
+    for (final item in suggestions) {
+      if (item is! Map) continue;
+      final raw = item['placePrediction'];
+      if (raw is! Map) continue;
+      final place = Map<String, dynamic>.from(raw);
+      final placeId = place['placeId'] as String?;
+      if (placeId == null || placeId.isEmpty) continue;
+      final structured = place['structuredFormat'] as Map? ?? const {};
+      final mainText = structured['mainText'] as Map? ?? const {};
+      final secondaryText = structured['secondaryText'] as Map? ?? const {};
+      final fullText = place['text'] as Map? ?? const {};
+      var distance = (place['distanceMeters'] as num?)?.round();
 
-    if (response.statusCode != 200) {
-      return [];
-    }
+      if (distance == null) {
+        final details = await getPlaceDetails(placeId);
+        final detailLatitude = (details?['latitude'] as num?)?.toDouble();
+        final detailLongitude = (details?['longitude'] as num?)?.toDouble();
+        if (detailLatitude != null && detailLongitude != null) {
+          distance = proximityMeters(
+            latitude,
+            longitude,
+            detailLatitude,
+            detailLongitude,
+          ).round();
+        }
+      }
+      if (distance == null || !isWithinSearchRadius(distance)) continue;
 
-    final json =
-        jsonDecode(response.body)
-            as Map<String, dynamic>;
-
-    final suggestions =
-        json['suggestions'] as List? ?? [];
-
-    return suggestions
-        .map<PlacePrediction>((item) {
-      final place =
-          item['placePrediction']
-              as Map<String, dynamic>;
-
-      return PlacePrediction(
-        placeId:
-            place['placeId'] as String,
-        title:
-            place['text']['text']
-                as String,
-        subtitle:
-            place['text']
-                ['secondaryText'] as String?,
+      predictions.add(
+        PlacePrediction(
+          placeId: placeId,
+          title: (mainText['text'] ?? fullText['text'] ?? 'Place').toString(),
+          subtitle: secondaryText['text']?.toString(),
+          distanceMeters: distance,
+        ),
       );
-    }).toList();
+    }
+
+    predictions.sort(
+      (a, b) => (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0),
+    );
+    return predictions;
   }
 
-  //==========================================================================
-  // Place Details
-  //==========================================================================
+  static Future<Map<String, dynamic>?> getPlaceDetails(String placeId) async {
+    final cached = _detailsCache[placeId];
+    if (cached != null) return Map<String, dynamic>.from(cached);
 
-  static Future<Map<String, dynamic>?>
-      getPlaceDetails(
-    String placeId,
-  ) async {
-    final response = await http.get(
-      Uri.parse(
-        '$_baseUrl/places/$placeId',
-      ),
-      headers: {
-        ..._headers,
-        'X-Goog-FieldMask':
-            'id,displayName,formattedAddress,location',
-      },
-    );
+    final response = await http
+        .get(
+          Uri.parse('$_baseUrl/places/$placeId'),
+          headers: {
+            ..._headers,
+            'X-Goog-FieldMask': 'id,displayName,formattedAddress,location',
+          },
+        )
+        .timeout(_timeout);
+    if (response.statusCode != 200) return null;
 
-    debugPrint('==========================');
-    debugPrint('Place Details');
-    debugPrint('Status: ${response.statusCode}');
-    debugPrint('Response: ${response.body}');
-    debugPrint('==========================');
-
-    if (response.statusCode != 200) {
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final displayName = decoded['displayName'] as Map? ?? const {};
+    final location = decoded['location'] as Map? ?? const {};
+    final details = <String, dynamic>{
+      'id': decoded['id'],
+      'name': displayName['text']?.toString() ?? 'Selected place',
+      'address': decoded['formattedAddress']?.toString() ?? '',
+      'latitude': (location['latitude'] as num?)?.toDouble(),
+      'longitude': (location['longitude'] as num?)?.toDouble(),
+    };
+    if (details['latitude'] == null || details['longitude'] == null) {
       return null;
     }
-
-    final json =
-        jsonDecode(response.body)
-            as Map<String, dynamic>;
-
-    return {
-      'id': json['id'],
-      'name':
-          json['displayName']['text'],
-      'address':
-          json['formattedAddress'],
-      'latitude':
-          json['location']['latitude'],
-      'longitude':
-          json['location']['longitude'],
-    };
+    _detailsCache[placeId] = details;
+    return Map<String, dynamic>.from(details);
   }
+
+  static bool isWithinSearchRadius(num distanceMeters) {
+    return distanceMeters >= 0 && distanceMeters <= searchRadiusMeters;
+  }
+
+  static double proximityMeters(
+    double latitudeA,
+    double longitudeA,
+    double latitudeB,
+    double longitudeB,
+  ) {
+    const earthRadiusMeters = 6371000.0;
+    final latitudeDelta = _radians(latitudeB - latitudeA);
+    final longitudeDelta = _radians(longitudeB - longitudeA);
+    final startLatitude = _radians(latitudeA);
+    final endLatitude = _radians(latitudeB);
+    final haversine =
+        math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
+        math.cos(startLatitude) *
+            math.cos(endLatitude) *
+            math.sin(longitudeDelta / 2) *
+            math.sin(longitudeDelta / 2);
+    return earthRadiusMeters *
+        2 *
+        math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+  }
+
+  static double _radians(double degrees) => degrees * math.pi / 180;
 }

@@ -53,6 +53,14 @@ export interface Driver {
   crDocumentUrl?: string;
   vehiclePhotoUrl?: string;
   applicant?: DriverApplicant;
+  vehicleId?: string;
+  vehicle?: {
+    id: string;
+    isVerified?: boolean;
+    vehicleNumber?: string;
+    plateNumber?: string;
+    model?: string;
+  } | null;
 }
 
 export interface DriverApplicant {
@@ -96,6 +104,49 @@ export interface FareConfig {
   additionalPassengerFee: number;
   baggageFee: number;
   outsideTodaSurcharge: number;
+}
+
+export interface PageResult<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export interface BookingOperation {
+  bookingId: string;
+  schemaVersion: number;
+  status: string;
+  passengerName: string;
+  driverName?: string | null;
+  driverId?: string | null;
+  plateNumber?: string | null;
+  todaId?: string | null;
+  todaName?: string | null;
+  pickupAddress: string;
+  destinationAddress: string;
+  amountDue: number;
+  paymentMethod: string;
+  settlementStatus: string;
+  adjustmentStatus: string;
+  disputeReason?: string | null;
+  receiptNumber?: string | null;
+  cancellationCode?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface SafetyIncident {
+  id: string;
+  bookingId: string;
+  category: string;
+  reporterRole: string;
+  passengerId: string;
+  driverId?: string | null;
+  todaId?: string | null;
+  bookingStatus: string;
+  status: string;
+  emergencyDispatch: string;
+  requiresManualEmergencyContact: boolean;
+  createdAt?: string | null;
 }
 
 export interface ZoneRequest {

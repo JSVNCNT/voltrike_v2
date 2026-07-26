@@ -3,10 +3,17 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function developerAdmin() {
-      return signedIn() && request.auth.token.adminRole == 'developer_admin';
+      return signedIn() &&
+        request.auth.token.adminRole == 'developer_admin' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'developer_admin' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
     function todaAdmin() {
-      return signedIn() && request.auth.token.adminRole == 'toda_admin';
+      return signedIn() &&
+        request.auth.token.adminRole == 'toda_admin' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'toda_admin' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.todaId == request.auth.token.todaId &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
     function adminTodaId() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.todaId;
@@ -37,6 +44,33 @@ service cloud.firestore {
         request.resource.data.isActive == resource.data.isActive;
       allow delete: if false;
       match /devices/{token} { allow read, write: if signedIn() && request.auth.uid == uid; }
+      match /bookingSecrets/{bookingId} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
+      match /emergencyContacts/{contactId} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid &&
+          request.resource.data.name is string &&
+          request.resource.data.name.size() > 0 &&
+          request.resource.data.name.size() <= 100 &&
+          request.resource.data.phoneNumber is string &&
+          request.resource.data.phoneNumber.size() >= 7 &&
+          request.resource.data.phoneNumber.size() <= 30 &&
+          request.resource.data.relationship is string &&
+          request.resource.data.relationship.size() <= 50;
+      }
+    }
+    match /activePassengerBookings/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+    match /bookingOperations/{operationId} {
+      allow read, write: if false;
+    }
+    match /auditLogs/{auditId} {
+      allow read: if developerAdmin();
+      allow write: if false;
     }
     // Passenger profile data is kept separate from the public user identity.
     // The passenger may maintain their own profile; admins can audit it.
@@ -52,8 +86,9 @@ service cloud.firestore {
       allow write: if false;
     }
     match /drivers/{driverId} {
-      // Driver onboarding, profile updates, online state, and the booking
-      // transaction all operate on the authenticated driver's own document.
+      // Driver onboarding and safe profile updates operate on the
+      // authenticated driver's own document. Online, eligibility, and active
+      // booking state are backend-authoritative.
       allow create: if signedIn() && request.auth.uid == driverId &&
         request.resource.data.uid == driverId &&
         request.resource.data.driverStatus == 'pending' &&
@@ -65,12 +100,11 @@ service cloud.firestore {
         developerAdmin() || todaAdminFor(resource.data.todaId));
       allow update: if signedIn() && request.auth.uid == driverId &&
         request.resource.data.uid == resource.data.uid &&
-        request.resource.data.driverStatus == resource.data.driverStatus &&
-        request.resource.data.approvedAt == resource.data.approvedAt &&
-        request.resource.data.approvedBy == resource.data.approvedBy &&
-        request.resource.data.rating == resource.data.rating &&
-        request.resource.data.completedTrips == resource.data.completedTrips &&
-        request.resource.data.totalEarnings == resource.data.totalEarnings;
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'licenseNumber', 'licenseExpiry', 'profilePhotoUrl',
+          'driverLicenseFrontUrl', 'driverLicenseBackUrl', 'governmentIdUrl',
+          'orDocumentUrl', 'crDocumentUrl', 'vehiclePhotoUrl'
+        ]);
       allow delete: if false;
     }
     match /vehicles/{vehicleId} {
@@ -120,7 +154,14 @@ service cloud.firestore {
     }
     match /chat/{bookingId} {
       allow read: if bookingMember(bookingId);
-      allow create: if bookingMember(bookingId) && request.resource.data.bookingId == bookingId;
+      allow create: if bookingMember(bookingId) &&
+        request.resource.data.bookingId == bookingId &&
+        request.resource.data.members is list &&
+        request.resource.data.members.size() == 2 &&
+        request.resource.data.members.hasAll([
+          get(/databases/$(database)/documents/bookings/$(bookingId)).data.passengerId,
+          get(/databases/$(database)/documents/bookings/$(bookingId)).data.driverId
+        ]);
       allow update: if bookingMember(bookingId) &&
         request.resource.data.members == resource.data.members &&
         request.resource.data.bookingId == resource.data.bookingId &&
@@ -140,64 +181,38 @@ service cloud.firestore {
       }
     }
     match /reports/{reportId} {
-      allow create: if bookingMember(request.resource.data.bookingId) &&
-        request.resource.data.reporterId == request.auth.uid &&
-        request.resource.data.reportedUserId in [
-          get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.passengerId,
-          get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.driverId
-        ] && request.resource.data.reportedUserId != request.auth.uid;
+      // Participant identity and TODA scope are derived by createRideReport.
+      allow create: if false;
       allow read: if signedIn() && (resource.data.reporterId == request.auth.uid || developerAdmin() ||
         todaAdminFor(resource.data.todaId));
       allow update, delete: if false;
     }
+    match /safetyIncidents/{incidentId} {
+      allow read: if signedIn() && (
+        resource.data.passengerId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid ||
+        developerAdmin() || todaAdminFor(resource.data.todaId)
+      );
+      allow write: if false;
+    }
+    match /settlements/{bookingId} {
+      allow read: if bookingMember(bookingId) || developerAdmin() ||
+        todaAdminFor(resource.data.todaId);
+      allow write: if false;
+    }
     match /ratings/{ratingId} {
-      allow create: if signedIn() &&
-        request.resource.data.passengerId == request.auth.uid &&
-        request.resource.data.ratingId == ratingId &&
-        ratingId == request.resource.data.bookingId + '_' + request.auth.uid &&
-        request.resource.data.passengerId == get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.passengerId &&
-        request.resource.data.driverId == get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.driverId &&
-        get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.status == 'completed' &&
-        request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
-        !exists(/databases/$(database)/documents/ratings/$(ratingId));
+      allow create: if false;
       allow read: if signedIn() &&
         (resource.data.passengerId == request.auth.uid || resource.data.driverId == request.auth.uid);
       allow update, delete: if false;
     }
     match /bookings/{bookingId} {
-      allow create: if signedIn() &&
-        request.resource.data.passengerId == request.auth.uid &&
-        request.resource.data.driverId == null &&
-        request.resource.data.status == 'pending';
+      // Durable booking mutations are server-authoritative Cloud Function
+      // transactions. Mobile clients retain member/offer read access only.
+      allow create: if false;
       allow read: if (signedIn() && (resource.data.passengerId == request.auth.uid ||
         resource.data.driverId == request.auth.uid)) || offeredDriver(bookingId);
-      // An offered driver can only claim an unassigned pending booking. The
-      // transaction also updates that driver's own availability document.
-      allow update: if offeredDriver(bookingId) &&
-        resource.data.status == 'pending' && resource.data.driverId == null &&
-        request.resource.data.status == 'driverAssigned' &&
-        request.resource.data.driverId == request.auth.uid &&
-        request.resource.data.passengerId == resource.data.passengerId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'driverId', 'driverName', 'driverPhotoUrl', 'driverRating',
-          'vehicleNumber', 'plateNumber', 'todaName', 'status', 'updatedAt'
-        ]);
-      // A passenger may cancel only before boarding and cannot edit ride data.
-      allow update: if signedIn() && request.auth.uid == resource.data.passengerId &&
-        resource.data.status in ['pending', 'driverAssigned', 'driverArriving'] &&
-        request.resource.data.status == 'cancelled' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'updatedAt'
-        ]);
-      // The assigned driver exclusively controls the active ride lifecycle.
-      allow update: if signedIn() && request.auth.uid == resource.data.driverId && (
-        (resource.data.status == 'driverAssigned' && request.resource.data.status == 'driverArriving') ||
-        (resource.data.status == 'driverArriving' && request.resource.data.status == 'passengerOnBoard') ||
-        (resource.data.status == 'passengerOnBoard' && request.resource.data.status == 'completed') ||
-        (resource.data.status in ['driverAssigned', 'driverArriving'] && request.resource.data.status == 'cancelled')
-      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'status', 'updatedAt', 'completedAt'
-      ]);
+      allow update: if false;
       allow delete: if false;
     }
     match /{document=**} { allow read, write: if false; }

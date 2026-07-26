@@ -17,6 +17,7 @@ class BookingRequestCard extends StatelessWidget {
     required this.destinationAddress,
     required this.estimatedFare,
     required this.distance,
+    this.passengerPhotoUrl,
     this.onAccept,
     this.onDecline,
   });
@@ -26,6 +27,7 @@ class BookingRequestCard extends StatelessWidget {
   final String destinationAddress;
   final String estimatedFare;
   final String distance;
+  final String? passengerPhotoUrl;
 
   final VoidCallback? onAccept;
   final VoidCallback? onDecline;
@@ -36,120 +38,76 @@ class BookingRequestCard extends StatelessWidget {
       elevation: 3,
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(
-          16,
-        ),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const CircleAvatar(
-                  child: Icon(
-                    Icons.person,
-                  ),
+                CircleAvatar(
+                  backgroundImage: passengerPhotoUrl?.trim().isNotEmpty == true
+                      ? NetworkImage(passengerPhotoUrl!)
+                      : null,
+                  child: passengerPhotoUrl?.trim().isNotEmpty == true
+                      ? null
+                      : const Icon(Icons.person),
                 ),
-                const SizedBox(
-                  width: 12,
-                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     passengerName,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
               ],
             ),
 
-            const SizedBox(
-              height: 20,
-            ),
+            const SizedBox(height: 20),
 
-            const Text(
-              'Pickup',
-              style: TextStyle(
-                fontWeight:
-                    FontWeight.bold,
-              ),
-            ),
+            const Text('Pickup', style: TextStyle(fontWeight: FontWeight.bold)),
 
-            Text(
-              pickupAddress,
-            ),
+            Text(pickupAddress),
 
-            const SizedBox(
-              height: 12,
-            ),
+            const SizedBox(height: 12),
 
             const Text(
               'Destination',
-              style: TextStyle(
-                fontWeight:
-                    FontWeight.bold,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
 
-            Text(
-              destinationAddress,
-            ),
+            Text(destinationAddress),
 
-            const SizedBox(
-              height: 20,
-            ),
+            const SizedBox(height: 20),
 
             Row(
               children: [
                 Expanded(
                   child: Text(
                     estimatedFare,
-                    style:
-                        const TextStyle(
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
-                Expanded(
-                  child: Text(
-                    distance,
-                    textAlign:
-                        TextAlign.end,
-                  ),
-                ),
+                Expanded(child: Text(distance, textAlign: TextAlign.end)),
               ],
             ),
 
-            const SizedBox(
-              height: 20,
-            ),
+            const SizedBox(height: 20),
 
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed:
-                        onDecline,
-                    child: const Text(
-                      'Decline',
-                    ),
+                    onPressed: onDecline,
+                    child: const Text('Decline'),
                   ),
                 ),
 
-                const SizedBox(
-                  width: 12,
-                ),
+                const SizedBox(width: 12),
 
                 Expanded(
-                  child:
-                      ElevatedButton(
-                    onPressed:
-                        onAccept,
-                    child: const Text(
-                      'Accept',
-                    ),
+                  child: ElevatedButton(
+                    onPressed: onAccept,
+                    child: const Text('Accept'),
                   ),
                 ),
               ],

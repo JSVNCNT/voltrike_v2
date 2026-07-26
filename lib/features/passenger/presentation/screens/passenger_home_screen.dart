@@ -37,17 +37,14 @@ import 'booking_tracking_screen.dart';
 /// Book Ride
 /// ===========================================================================
 class PassengerHomeScreen extends ConsumerStatefulWidget {
-  const PassengerHomeScreen({
-    super.key,
-  });
+  const PassengerHomeScreen({super.key});
 
   @override
   ConsumerState<PassengerHomeScreen> createState() =>
       _PassengerHomeScreenState();
 }
 
-class _PassengerHomeScreenState
-    extends ConsumerState<PassengerHomeScreen> {
+class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
   ProviderSubscription<AsyncValue<Booking?>>? _activeBookingSubscription;
   String? _restoredBookingId;
   FareConfiguration get _fareConfiguration =>
@@ -86,9 +83,9 @@ class _PassengerHomeScreenState
           screen = BookingTrackingScreen(bookingId: booking.bookingId);
       }
 
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => screen),
-      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => screen));
     });
   }
 
@@ -97,12 +94,10 @@ class _PassengerHomeScreenState
   //==========================================================================
 
   Future<void> _selectPickup() async {
-    final PlacePrediction? prediction =
-        await Navigator.push<PlacePrediction>(
+    final PlacePrediction? prediction = await Navigator.push<PlacePrediction>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            const DestinationSearchScreen(
+        builder: (_) => const DestinationSearchScreen(
           title: 'Choose Pickup',
           hintText: 'Search pickup location',
         ),
@@ -113,26 +108,21 @@ class _PassengerHomeScreenState
       return;
     }
 
-    final details =
-        await PlacesService.getPlaceDetails(
-      prediction.placeId,
-    );
+    final details = await PlacesService.getPlaceDetails(prediction.placeId);
 
     if (!mounted || details == null) {
       return;
     }
 
     ref
-        .read(
-          bookingSessionProvider.notifier,
-        )
+        .read(bookingSessionProvider.notifier)
         .updatePickup(
           pickup: LatLng(
             details['latitude'] as double,
             details['longitude'] as double,
           ),
-          pickupName:
-              details['name'] as String,
+          pickupName: details['name'] as String,
+          pickupAddress: details['address'] as String,
         );
   }
 
@@ -141,15 +131,21 @@ class _PassengerHomeScreenState
   //==========================================================================
 
   Future<void> _selectDestination() async {
-    final PlacePrediction? prediction =
-        await Navigator.push<PlacePrediction>(
+    final booking = ref.read(bookingSessionProvider);
+    if (booking.pickup == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a pickup location first.')),
+      );
+      return;
+    }
+
+    final PlacePrediction? prediction = await Navigator.push<PlacePrediction>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            const DestinationSearchScreen(
+        builder: (_) => DestinationSearchScreen(
           title: 'Choose Destination',
-          hintText:
-              'Search destination',
+          hintText: 'Search destination',
+          searchOrigin: booking.pickup,
         ),
       ),
     );
@@ -158,85 +154,51 @@ class _PassengerHomeScreenState
       return;
     }
 
-    final details =
-        await PlacesService.getPlaceDetails(
-      prediction.placeId,
-    );
+    final details = await PlacesService.getPlaceDetails(prediction.placeId);
 
     if (!mounted || details == null) {
       return;
     }
 
-    final booking =
-        ref.read(
-      bookingSessionProvider,
-    );
-
-    //----------------------------------------------------------------------
-    // Pickup must be selected first.
-    //----------------------------------------------------------------------
-
-    if (booking.pickup == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please select a pickup location first.',
-          ),
-        ),
-      );
-
-      return;
-    }
-
     await _calculateRoute(
       pickup: booking.pickup!,
-      pickupName:
-          booking.pickupName ??
-              'Pickup',
+      pickupName: booking.pickupName ?? 'Pickup',
+      pickupAddress: booking.pickupAddress ?? booking.pickupName ?? 'Pickup',
       destination: LatLng(
         details['latitude'] as double,
         details['longitude'] as double,
       ),
-      destinationName:
-          details['name'] as String,
+      destinationName: details['name'] as String,
+      destinationAddress: details['address'] as String,
     );
   }
 
-    //==========================================================================
+  //==========================================================================
   // Calculate Route
   //==========================================================================
 
   Future<void> _calculateRoute({
     required LatLng pickup,
     required String pickupName,
+    required String pickupAddress,
     required LatLng destination,
     required String destinationName,
+    required String destinationAddress,
   }) async {
     ref
-        .read(
-          bookingProvider.notifier,
-        )
-        .update(
-          PassengerBookingState.estimatingFare,
-        );
+        .read(bookingProvider.notifier)
+        .update(PassengerBookingState.estimatingFare);
 
-    final result =
-        await RoutesService.computeRoute(
+    final result = await RoutesService.computeRoute(
       origin: pickup,
       destination: destination,
     );
 
     if (!mounted || result == null) {
-      ref
-          .read(
-            bookingProvider.notifier,
-          )
-          .reset();
+      ref.read(bookingProvider.notifier).reset();
 
       if (mounted) {
-        final restriction =
-            RouteRestrictionService.instance.lastConflict;
+        final restriction = RouteRestrictionService.instance.lastConflict;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -251,67 +213,44 @@ class _PassengerHomeScreenState
       return;
     }
 
-    final routePoints =
-        PolylineService.decodePolyline(
-      result.encodedPolyline,
-    );
+    final routePoints = PolylineService.decodePolyline(result.encodedPolyline);
 
-    final booking =
-        ref.read(
-      bookingSessionProvider,
-    );
+    final booking = ref.read(bookingSessionProvider);
 
-    final fare =
-        FareService.calculateFare(
+    final fare = FareService.calculateFare(
       config: _fareConfiguration,
       distanceMeters: result.distanceMeters,
-      passengerCount:
-          booking.additionalPassengers + 1,
-      baggageCount:
-          booking.baggageCount,
-      isOutsideToda:
-          booking.isOutsideToda,
+      passengerCount: booking.additionalPassengers + 1,
+      baggageCount: booking.baggageCount,
+      isOutsideToda: booking.isOutsideToda,
     );
 
     ref
-        .read(
-          bookingSessionProvider.notifier,
-        )
+        .read(bookingSessionProvider.notifier)
         .update(
           booking.copyWith(
             pickup: pickup,
             pickupName: pickupName,
+            pickupAddress: pickupAddress,
             destination: destination,
-            destinationName:
-                destinationName,
+            destinationName: destinationName,
+            destinationAddress: destinationAddress,
             routePoints: routePoints,
-            distanceMeters:
-                result.distanceMeters,
-            duration:
-                '${result.durationMinutes} mins',
+            distanceMeters: result.distanceMeters,
+            duration: '${result.durationMinutes} mins',
 
-            baseFare:
-                fare.baseFare,
-            distanceFare:
-                fare.distanceFare,
-            additionalPassengerFee:
-                fare.additionalPassengerFee,
-            baggageFee:
-                fare.baggageFee,
-            boundarySurcharge:
-                fare.boundarySurcharge,
-            estimatedFare:
-                fare.totalFare,
+            baseFare: fare.baseFare,
+            distanceFare: fare.distanceFare,
+            additionalPassengerFee: fare.additionalPassengerFee,
+            baggageFee: fare.baggageFee,
+            boundarySurcharge: fare.boundarySurcharge,
+            estimatedFare: fare.totalFare,
 
             hasRoute: true,
           ),
         );
 
-    ref
-        .read(
-          bookingProvider.notifier,
-        )
-        .reset();
+    ref.read(bookingProvider.notifier).reset();
   }
 
   //==========================================================================
@@ -319,46 +258,30 @@ class _PassengerHomeScreenState
   //==========================================================================
 
   void _recalculateFare() {
-    final session =
-        ref.read(
-      bookingSessionProvider,
-    );
+    final session = ref.read(bookingSessionProvider);
 
     if (!session.hasRoute) {
       return;
     }
 
-    final fare =
-        FareService.calculateFare(
+    final fare = FareService.calculateFare(
       config: _fareConfiguration,
-      distanceMeters:
-          session.distanceMeters,
-      passengerCount:
-          session.additionalPassengers + 1,
-      baggageCount:
-          session.baggageCount,
-      isOutsideToda:
-          session.isOutsideToda,
+      distanceMeters: session.distanceMeters,
+      passengerCount: session.additionalPassengers + 1,
+      baggageCount: session.baggageCount,
+      isOutsideToda: session.isOutsideToda,
     );
 
     ref
-        .read(
-          bookingSessionProvider.notifier,
-        )
+        .read(bookingSessionProvider.notifier)
         .update(
           session.copyWith(
-            baseFare:
-                fare.baseFare,
-            distanceFare:
-                fare.distanceFare,
-            additionalPassengerFee:
-                fare.additionalPassengerFee,
-            baggageFee:
-                fare.baggageFee,
-            boundarySurcharge:
-                fare.boundarySurcharge,
-            estimatedFare:
-                fare.totalFare,
+            baseFare: fare.baseFare,
+            distanceFare: fare.distanceFare,
+            additionalPassengerFee: fare.additionalPassengerFee,
+            baggageFee: fare.baggageFee,
+            boundarySurcharge: fare.boundarySurcharge,
+            estimatedFare: fare.totalFare,
           ),
         );
   }
@@ -368,20 +291,13 @@ class _PassengerHomeScreenState
   //==========================================================================
 
   void _increasePassengers() {
-    final session =
-        ref.read(
-      bookingSessionProvider,
-    );
+    final session = ref.read(bookingSessionProvider);
 
     ref
-        .read(
-          bookingSessionProvider.notifier,
-        )
+        .read(bookingSessionProvider.notifier)
         .update(
           session.copyWith(
-            additionalPassengers:
-                session.additionalPassengers +
-                    1,
+            additionalPassengers: session.additionalPassengers + 1,
           ),
         );
 
@@ -389,25 +305,17 @@ class _PassengerHomeScreenState
   }
 
   void _decreasePassengers() {
-    final session =
-        ref.read(
-      bookingSessionProvider,
-    );
+    final session = ref.read(bookingSessionProvider);
 
-    if (session.additionalPassengers ==
-        0) {
+    if (session.additionalPassengers == 0) {
       return;
     }
 
     ref
-        .read(
-          bookingSessionProvider.notifier,
-        )
+        .read(bookingSessionProvider.notifier)
         .update(
           session.copyWith(
-            additionalPassengers:
-                session.additionalPassengers -
-                    1,
+            additionalPassengers: session.additionalPassengers - 1,
           ),
         );
 
@@ -419,68 +327,41 @@ class _PassengerHomeScreenState
   //==========================================================================
 
   void _increaseBaggage() {
-    final session =
-        ref.read(
-      bookingSessionProvider,
-    );
+    final session = ref.read(bookingSessionProvider);
 
     ref
-        .read(
-          bookingSessionProvider.notifier,
-        )
-        .update(
-          session.copyWith(
-            baggageCount:
-                session.baggageCount + 1,
-          ),
-        );
+        .read(bookingSessionProvider.notifier)
+        .update(session.copyWith(baggageCount: session.baggageCount + 1));
 
     _recalculateFare();
   }
 
   void _decreaseBaggage() {
-    final session =
-        ref.read(
-      bookingSessionProvider,
-    );
+    final session = ref.read(bookingSessionProvider);
 
     if (session.baggageCount == 0) {
       return;
     }
 
     ref
-        .read(
-          bookingSessionProvider.notifier,
-        )
-        .update(
-          session.copyWith(
-            baggageCount:
-                session.baggageCount - 1,
-          ),
-        );
+        .read(bookingSessionProvider.notifier)
+        .update(session.copyWith(baggageCount: session.baggageCount - 1));
 
     _recalculateFare();
   }
 
-   //==========================================================================
+  //==========================================================================
   // Build
   //==========================================================================
 
   @override
   Widget build(BuildContext context) {
-    final session = ref.watch(
-      bookingSessionProvider,
-    );
+    final session = ref.watch(bookingSessionProvider);
 
-    final bookingState = ref.watch(
-      bookingProvider,
-    );
+    final bookingState = ref.watch(bookingProvider);
 
     return Scaffold(
-      appBar: const AppAppBar(
-        title: 'VolTrike',
-        showNotifications: true,
-      ),
+      appBar: const AppAppBar(title: 'VolTrike', showNotifications: true),
       body: Stack(
         children: [
           Positioned.fill(
@@ -495,80 +376,52 @@ class _PassengerHomeScreenState
             initialChildSize: 0.42,
             minChildSize: 0.18,
             maxChildSize: 0.85,
-            builder: (
-              context,
-              scrollController,
-            ) {
+            builder: (context, scrollController) {
               return HomeBottomSheet(
-                scrollController:
-                    scrollController,
+                scrollController: scrollController,
 
-                pickup:
-                    session.pickupName ??
-                        'Select pickup',
+                pickup: session.pickupName ?? 'Select pickup',
 
-                destination:
-                    session.destinationName ??
-                        'Where are you going?',
+                destination: session.destinationName ?? 'Where are you going?',
 
                 onPickupTap:
-                    bookingState ==
-                            PassengerBookingState
-                                .searchingDriver
-                        ? null
-                        : _selectPickup,
+                    bookingState == PassengerBookingState.searchingDriver
+                    ? null
+                    : _selectPickup,
 
                 onDestinationTap:
-                    bookingState ==
-                            PassengerBookingState
-                                .searchingDriver
-                        ? null
-                        : _selectDestination,
+                    bookingState == PassengerBookingState.searchingDriver
+                    ? null
+                    : _selectDestination,
 
-                estimatedFare:
-                    '₱${session.estimatedFare.toStringAsFixed(2)}',
+                estimatedFare: '₱${session.estimatedFare.toStringAsFixed(2)}',
 
-                distance:
-                    session.distanceMeters == 0
-                        ? '--'
-                        : '${(session.distanceMeters / 1000).toStringAsFixed(2)} km',
+                distance: session.distanceMeters == 0
+                    ? '--'
+                    : '${(session.distanceMeters / 1000).toStringAsFixed(2)} km',
 
-                eta:
-                    session.duration.isEmpty
-                        ? '--'
-                        : session.duration,
+                eta: session.duration.isEmpty ? '--' : session.duration,
 
-                additionalPassengers:
-                    session.additionalPassengers,
+                additionalPassengers: session.additionalPassengers,
 
-                baggageCount:
-                    session.baggageCount,
+                baggageCount: session.baggageCount,
 
-                baggageFee:
-                    '₱${session.baggageFee.toStringAsFixed(2)}',
+                baggageFee: '₱${session.baggageFee.toStringAsFixed(2)}',
 
                 boundarySurcharge:
                     '₱${session.boundarySurcharge.toStringAsFixed(2)}',
 
-                hasRoute:
-                    session.hasRoute,
+                hasRoute: session.hasRoute,
 
-                onIncreasePassengers:
-                    _increasePassengers,
+                onIncreasePassengers: _increasePassengers,
 
-                onDecreasePassengers:
-                    _decreasePassengers,
+                onDecreasePassengers: _decreasePassengers,
 
-                onIncreaseBaggage:
-                    _increaseBaggage,
+                onIncreaseBaggage: _increaseBaggage,
 
-                onDecreaseBaggage:
-                    _decreaseBaggage,
+                onDecreaseBaggage: _decreaseBaggage,
 
-                onBookRide:
-                    session.hasRoute
-                        ? _bookRide
-                        : null,
+                onBookRide: session.hasRoute ? _bookRide : null,
               );
             },
           ),
@@ -582,9 +435,7 @@ class _PassengerHomeScreenState
   //==========================================================================
 
   Future<void> _bookRide() async {
-    final session = ref.read(
-      bookingSessionProvider,
-    );
+    final session = ref.read(bookingSessionProvider);
 
     if (!session.hasRoute ||
         session.pickup == null ||
@@ -593,46 +444,32 @@ class _PassengerHomeScreenState
     }
 
     try {
-      final bookingId =
-          await ref
-              .read(
-                bookingControllerProvider
-                    .notifier,
-              )
-              .createBooking(
-                session: session,
-                pickupLatitude:
-                    session.pickup!.latitude,
-                pickupLongitude:
-                    session.pickup!.longitude,
-                pickupAddress:
-                    session.pickupName ??
-                        'Pickup',
-                destinationAddress:
-                    session.destinationName ??
-                        'Destination',
-              );
+      final bookingId = await ref
+          .read(bookingControllerProvider.notifier)
+          .createBooking(
+            session: session,
+            pickupLatitude: session.pickup!.latitude,
+            pickupLongitude: session.pickup!.longitude,
+            pickupAddress:
+                session.pickupAddress ?? session.pickupName ?? 'Pickup',
+            destinationAddress:
+                session.destinationAddress ??
+                session.destinationName ??
+                'Destination',
+          );
 
       if (!mounted) {
         return;
       }
 
       ref
-          .read(
-            bookingProvider.notifier,
-          )
-          .update(
-            PassengerBookingState
-                .searchingDriver,
-          );
+          .read(bookingProvider.notifier)
+          .update(PassengerBookingState.searchingDriver);
 
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              SearchingDriverScreen(
-            bookingId: bookingId,
-          ),
+          builder: (_) => SearchingDriverScreen(bookingId: bookingId),
         ),
       );
     } catch (e) {
@@ -640,14 +477,9 @@ class _PassengerHomeScreenState
         return;
       }
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-            'Booking failed: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Booking failed: $e')));
     }
   }
 

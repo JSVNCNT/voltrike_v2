@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:voltrike_v2/data/models/place_prediction.dart';
 import 'package:voltrike_v2/features/passenger/providers/places_search_provider.dart';
@@ -17,10 +19,12 @@ class DestinationSearchScreen extends ConsumerStatefulWidget {
     super.key,
     this.title = 'Choose Destination',
     this.hintText = 'Search destination',
+    this.searchOrigin,
   });
 
   final String title;
   final String hintText;
+  final LatLng? searchOrigin;
 
   @override
   ConsumerState<DestinationSearchScreen> createState() =>
@@ -30,13 +34,14 @@ class DestinationSearchScreen extends ConsumerStatefulWidget {
 class _DestinationSearchScreenState
     extends ConsumerState<DestinationSearchScreen> {
   late final TextEditingController _searchController;
+  late final String _sessionToken;
 
   @override
   void initState() {
     super.initState();
 
-    _searchController = TextEditingController()
-      ..addListener(_onSearchChanged);
+    _sessionToken = const Uuid().v4();
+    _searchController = TextEditingController()..addListener(_onSearchChanged);
   }
 
   void _onSearchChanged() {
@@ -45,7 +50,11 @@ class _DestinationSearchScreenState
 
     ref
         .read(placesSearchProvider.notifier)
-        .search(_searchController.text);
+        .search(
+          _searchController.text,
+          origin: widget.searchOrigin,
+          sessionToken: _sessionToken,
+        );
   }
 
   @override
@@ -59,119 +68,72 @@ class _DestinationSearchScreenState
 
   @override
   Widget build(BuildContext context) {
-    final searchState =
-        ref.watch(placesSearchProvider);
+    final searchState = ref.watch(placesSearchProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-      ),
+      appBar: AppBar(title: Text(widget.title)),
       body: Column(
         children: [
           Padding(
-            padding:
-                const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: TextField(
               controller: _searchController,
               autofocus: true,
-              textInputAction:
-                  TextInputAction.search,
+              textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: widget.hintText,
-                prefixIcon:
-                    const Icon(Icons.search),
-                suffixIcon:
-                    _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(
-                              Icons.clear,
-                            ),
-                            onPressed: () {
-                              _searchController.clear();
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
 
-                              ref
-                                  .read(
-                                    placesSearchProvider
-                                        .notifier,
-                                  )
-                                  .search('');
-                            },
-                          ),
-                border:
-                    const OutlineInputBorder(),
+                          ref.read(placesSearchProvider.notifier).search('');
+                        },
+                      ),
+                border: const OutlineInputBorder(),
               ),
             ),
           ),
           Expanded(
             child: searchState.when(
-              loading: () =>
-                  const Center(
-                child:
-                    CircularProgressIndicator(),
-              ),
-              error: (error, _) =>
-                  Center(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => Center(
                 child: Padding(
-                  padding:
-                      const EdgeInsets.all(24),
-                  child: Text(
-                    error.toString(),
-                    textAlign:
-                        TextAlign.center,
-                  ),
+                  padding: const EdgeInsets.all(24),
+                  child: Text(error.toString(), textAlign: TextAlign.center),
                 ),
               ),
-              data: (
-                List<PlacePrediction>
-                    predictions,
-              ) {
-                if (_searchController.text
-                    .trim()
-                    .isEmpty) {
-                  return Center(
-                    child: Text(
-                      widget.hintText,
-                    ),
-                  );
+              data: (List<PlacePrediction> predictions) {
+                if (_searchController.text.trim().isEmpty) {
+                  return Center(child: Text(widget.hintText));
                 }
 
                 if (predictions.isEmpty) {
                   return const Center(
-                    child: Text(
-                      'No places found.',
-                    ),
+                    child: Text('No matching places found within 10 km.'),
                   );
                 }
 
                 return ListView.separated(
-                  itemCount:
-                      predictions.length,
-                  separatorBuilder:
-                      (_, _) =>
-                          const Divider(
-                    height: 1,
-                  ),
-                  itemBuilder:
-                      (context, index) {
-                    final prediction =
-                        predictions[index];
+                  itemCount: predictions.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final prediction = predictions[index];
 
                     return PlaceTile(
-                      title:
-                          prediction.title,
-                      subtitle:
-                          prediction.subtitle ??
-                              '',
+                      title: prediction.title,
+                      subtitle: prediction.subtitle ?? '',
+                      distanceMeters: prediction.distanceMeters,
+                      isRecommended: index == 0,
                       onTap: () {
                         if (!mounted) {
                           return;
                         }
 
-                        Navigator.of(context)
-                            .pop(
-                          prediction,
-                        );
+                        Navigator.of(context).pop(prediction);
                       },
                     );
                   },

@@ -6,7 +6,9 @@ import 'package:voltrike_v2/features/driver/providers/driver_location_provider.d
 
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../../data/repositories/booking_repository.dart';
 import '../../../../data/repositories/report_repository.dart';
+import '../../../../data/repositories/safety_repository.dart';
 import '../../../../app/routes.dart';
 
 import '../../providers/driver_current_booking_provider.dart';
@@ -26,10 +28,7 @@ import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../../ride/tracking/widgets/ride_primary_button.dart';
 
 class DriverBookingTrackingScreen extends ConsumerStatefulWidget {
-  const DriverBookingTrackingScreen({
-    super.key,
-    this.bookingId,
-  });
+  const DriverBookingTrackingScreen({super.key, this.bookingId});
 
   final String? bookingId;
 
@@ -68,50 +67,33 @@ class _DriverBookingTrackingScreenState
     super.dispose();
   }
 
-    //==========================================================================
+  //==========================================================================
   // Helpers
   //==========================================================================
 
-  bool _tripStarted(
-    Booking booking,
-  ) {
-    return booking.status ==
-            BookingStatus.passengerOnBoard ||
-        booking.status ==
-            BookingStatus.completed;
+  bool _tripStarted(Booking booking) {
+    return booking.status == BookingStatus.passengerOnBoard ||
+        booking.status == BookingStatus.completed;
   }
 
-  LatLng _routeDestination(
-    Booking booking,
-  ) {
-    return _tripStarted(booking)
-        ? booking.destination
-        : booking.pickup;
+  LatLng _routeDestination(Booking booking) {
+    return _tripStarted(booking) ? booking.destination : booking.pickup;
   }
 
   //==========================================================================
   // Google Map
   //==========================================================================
 
-  void _onMapCreated(
-    GoogleMapController controller,
-  ) {
+  void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
   }
 
-  Future<void> _moveCamera(
-    LatLng target,
-  ) async {
+  Future<void> _moveCamera(LatLng target) async {
     if (_mapController == null) {
       return;
     }
 
-    await _mapController!.animateCamera(
-      CameraUpdate.newLatLngZoom(
-        target,
-        16,
-      ),
-    );
+    await _mapController!.animateCamera(CameraUpdate.newLatLngZoom(target, 16));
   }
 
   Future<void> _followDriver({
@@ -121,24 +103,18 @@ class _DriverBookingTrackingScreenState
     await ref
         .read(driverNavigationControllerProvider.notifier)
         .checkCurrentPosition(driverLocation);
-    await _moveCamera(
-      driverLocation,
-    );
+    await _moveCamera(driverLocation);
 
     final destination = _routeDestination(booking);
-    final routeKey = '${booking.status.name}:${destination.latitude}:${destination.longitude}';
+    final routeKey =
+        '${booking.status.name}:${destination.latitude}:${destination.longitude}';
     if (_loadedRouteKey == routeKey || _loadingRouteKey == routeKey) return;
     _loadingRouteKey = routeKey;
 
     try {
       await ref
-          .read(
-            driverNavigationControllerProvider.notifier,
-          )
-          .loadRoute(
-            origin: driverLocation,
-            destination: destination,
-          );
+          .read(driverNavigationControllerProvider.notifier)
+          .loadRoute(origin: driverLocation, destination: destination);
       _loadedRouteKey = routeKey;
     } finally {
       _loadingRouteKey = null;
@@ -153,6 +129,9 @@ class _DriverBookingTrackingScreenState
           await controller.arrived(booking);
           break;
         case BookingStatus.driverArriving:
+          final pin = await _requestPickupPin();
+          if (pin == null) return;
+          await controller.confirmPickup(booking: booking, pin: pin);
           await controller.startTrip(booking);
           break;
         case BookingStatus.passengerOnBoard:
@@ -165,9 +144,83 @@ class _DriverBookingTrackingScreenState
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not update trip: $error')),
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not update trip: $error')));
+    }
+  }
+
+  Future<String?> _requestPickupPin() async {
+    final controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Passenger pickup PIN'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            decoration: const InputDecoration(
+              labelText: '4-digit PIN',
+              helperText: 'Ask the passenger for the PIN shown in their app.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final pin = controller.text.trim();
+                if (RegExp(r'^\d{4}$').hasMatch(pin)) {
+                  Navigator.pop(context, pin);
+                }
+              },
+              child: const Text('Confirm pickup'),
+            ),
+          ],
+        ),
       );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _markNoShow(Booking booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Passenger did not arrive?'),
+        content: const Text(
+          'Use this only after reaching the pickup and waiting for the '
+          'passenger. The booking will be cancelled as a passenger no-show.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep waiting'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Mark no-show'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref
+          .read(driverBookingControllerProvider.notifier)
+          .markPassengerNoShow(booking);
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not mark no-show: $error')));
     }
   }
 
@@ -179,283 +232,330 @@ class _DriverBookingTrackingScreenState
     if (result == null || !mounted) return;
 
     try {
-      await ref.read(driverBookingControllerProvider.notifier).cancelTrip(booking);
+      await ref
+          .read(driverBookingControllerProvider.notifier)
+          .cancelTrip(
+            booking,
+            reasonCode: result.reason.toLowerCase().replaceAll(
+              RegExp(r'[^a-z0-9]+'),
+              '_',
+            ),
+            reasonDetail: result.comment,
+          );
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not cancel trip: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not cancel trip: $error')));
     }
   }
 
   Future<void> _reportPassenger(Booking booking) async {
     final user = AuthRepository().currentUser;
     if (user == null) return;
-    await showDialog<void>(context: context, builder: (_) => ReportRideDialog(onSubmit: (category, details) => ReportRepository().create(bookingId: booking.bookingId, reporterId: user.uid, reportedUserId: booking.passengerId, category: category, details: details)));
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ReportRideDialog(
+        onSubmit: (category, details) => ReportRepository().create(
+          bookingId: booking.bookingId,
+          reporterId: user.uid,
+          reportedUserId: booking.passengerId,
+          category: category,
+          details: details,
+        ),
+      ),
+    );
   }
+
+  Future<void> _triggerSos(Booking booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Record an SOS incident?'),
+        content: const Text(
+          'VolTrike will save this ride and location snapshot for authorized '
+          'admins. This development feature does not contact emergency '
+          'services, so contact them directly if immediate help is needed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Record SOS'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await SafetyRepository().triggerSos(booking.bookingId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('SOS incident recorded for review.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not record SOS: $error')));
+    }
+  }
+
+  Future<void> _confirmCashReceived(Booking booking) async {
+    try {
+      await BookingRepository().confirmCashPayment(
+        bookingId: booking.bookingId,
+        received: true,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cash receipt confirmed.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not confirm cash receipt: $error')),
+      );
+    }
+  }
+
+  //==========================================================================
+  // Build
+  //==========================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final booking = ref.watch(driverCurrentBookingProvider);
+
+    if (booking == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Current Trip')),
+        body: const Center(child: Text('No active booking.')),
+      );
+    }
 
     //==========================================================================
-// Build
-//==========================================================================
+    // Providers
+    //==========================================================================
 
-@override
-Widget build(
-  BuildContext context,
-) {
-  final booking = ref.watch(
-    driverCurrentBookingProvider,
-  );
+    final navigation = ref.watch(driverNavigationControllerProvider);
 
-  if (booking == null) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Current Trip',
-        ),
-      ),
-      body: const Center(
-        child: Text(
-          'No active booking.',
-        ),
-      ),
-    );
-  }
+    final driverLocation = ref.watch(driverLocationProvider);
 
-  //==========================================================================
-  // Providers
-  //==========================================================================
+    final primaryAction =
+        booking.status == BookingStatus.driverAssigned ||
+            booking.status == BookingStatus.driverArriving ||
+            booking.status == BookingStatus.passengerOnBoard
+        ? RideActionService.driverPrimaryAction(booking.status)
+        : RidePrimaryAction.none;
 
-  final navigation = ref.watch(
-    driverNavigationControllerProvider,
-  );
+    //==========================================================================
+    // Follow Driver
+    //==========================================================================
 
-  final driverLocation = ref.watch(
-    driverLocationProvider,
-  );
-
-  final primaryAction = booking.status == BookingStatus.driverAssigned ||
-          booking.status == BookingStatus.driverArriving ||
-          booking.status == BookingStatus.passengerOnBoard
-      ? RideActionService.driverPrimaryAction(booking.status)
-      : RidePrimaryAction.none;
-
-  //==========================================================================
-  // Follow Driver
-  //==========================================================================
-
-  if (driverLocation != null) {
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) {
+    if (driverLocation != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
 
-        _followDriver(
-          booking: booking,
-          driverLocation: driverLocation,
-        );
-      },
-    );
-  }
+        _followDriver(booking: booking, driverLocation: driverLocation);
+      });
+    }
 
-  //==========================================================================
-  // UI
-  //==========================================================================
+    //==========================================================================
+    // UI
+    //==========================================================================
 
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text(
-        'Current Trip',
-      ),
-    ),
-    body: Column(
-      children: [
-        Expanded(
-          child: GoogleMap(
-            onMapCreated: _onMapCreated,
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            initialCameraPosition: CameraPosition(
-              target: booking.pickup,
-              zoom: 15,
-            ),
-            markers: {
-              if (driverLocation != null)
+    return Scaffold(
+      appBar: AppBar(title: const Text('Current Trip')),
+      body: Column(
+        children: [
+          Expanded(
+            child: GoogleMap(
+              onMapCreated: _onMapCreated,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              initialCameraPosition: CameraPosition(
+                target: booking.pickup,
+                zoom: 15,
+              ),
+              markers: {
+                if (driverLocation != null)
+                  Marker(
+                    markerId: const MarkerId('driver'),
+                    position: driverLocation,
+                    infoWindow: const InfoWindow(title: 'Driver'),
+                  ),
                 Marker(
-                  markerId: const MarkerId(
-                    'driver',
+                  markerId: const MarkerId('pickup'),
+                  position: booking.pickup,
+                  infoWindow: const InfoWindow(title: 'Pickup'),
+                ),
+                Marker(
+                  markerId: const MarkerId('destination'),
+                  position: booking.destination,
+                  infoWindow: const InfoWindow(title: 'Destination'),
+                ),
+              },
+              polylines: {
+                if (navigation.routePoints.isNotEmpty)
+                  Polyline(
+                    polylineId: const PolylineId('route'),
+                    points: navigation.routePoints,
+                    width: 5,
                   ),
-                  position: driverLocation,
-                  infoWindow: const InfoWindow(
-                    title: 'Driver',
-                  ),
-                ),
-              Marker(
-                markerId: const MarkerId(
-                  'pickup',
-                ),
-                position: booking.pickup,
-                infoWindow: const InfoWindow(
-                  title: 'Pickup',
-                ),
-              ),
-              Marker(
-                markerId: const MarkerId(
-                  'destination',
-                ),
-                position: booking.destination,
-                infoWindow: const InfoWindow(
-                  title: 'Destination',
-                ),
-              ),
-            },
-            polylines: {
-              if (navigation.routePoints.isNotEmpty)
-                Polyline(
-                  polylineId: const PolylineId(
-                    'route',
-                  ),
-                  points: navigation.routePoints,
-                  width: 5,
-                ),
-            },
-          ),
-        ),
-
-        Padding(
-          padding: const EdgeInsets.all(
-            16,
-          ),
-          child: Column(
-            children: [
-              if (navigation.restrictionWarning?.isNotEmpty == true) ...[
-                Material(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text(navigation.restrictionWarning!)),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-              TripStatusCard(
-                status: booking.status,
-                role: RideParticipantRole.driver,
-                eta: navigation.eta,
-                distance: navigation.distance,
-              ),
-              if (navigation.instruction?.isNotEmpty == true) ...[
-                const SizedBox(height: 10),
-                Card(
-                  color: Colors.teal.shade50,
-                  child: ListTile(
-                    leading: const Icon(Icons.navigation, color: Colors.teal),
-                    title: Text(navigation.instruction!),
-                    subtitle: navigation.nextInstruction == null
-                        ? null
-                        : Text('Next: ${navigation.nextInstruction}'),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              0,
-              16,
-              16,
+              },
             ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                PassengerInformationCard(
-                  passengerName: booking.passengerName ?? 'Passenger',
-                  photoUrl: booking.passengerPhotoUrl,
-                ),
-
-                const SizedBox(
-                  height: 16,
-                ),
-
-                if (booking.status == BookingStatus.driverAssigned &&
-                    driverLocation != null)
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _followDriver(
-                        booking: booking,
-                        driverLocation: driverLocation,
+                if (navigation.restrictionWarning?.isNotEmpty == true) ...[
+                  Material(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.red,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(navigation.restrictionWarning!)),
+                        ],
                       ),
-                      icon: const Icon(Icons.navigation_outlined),
-                      label: const Text('Navigate to Pickup'),
                     ),
                   ),
-
-                if (booking.status == BookingStatus.driverAssigned ||
-                    booking.status == BookingStatus.driverArriving) ...[
-                  const SizedBox(height: 8),
-                  RideActionsCard(
-                    onCancel: () => _cancelRide(booking),
-                  ),
+                  const SizedBox(height: 10),
                 ],
-
-                if (booking.status == BookingStatus.passengerOnBoard) ...[
-                  const SizedBox(height: 8),
-                  RideActionsCard(
-                    onCall: () => context.push(
-                      AppRoutes.bookingVoiceCall,
-                      extra: booking.bookingId,
-                    ),
-                    onMessage: () => context.push(
-                      AppRoutes.bookingChat,
-                      extra: {
-                        'bookingId': booking.bookingId,
-                        'members': [booking.passengerId, booking.driverId!],
-                      },
-                    ),
-                    onReport: () => _reportPassenger(booking),
-                  ),
-                ],
-
-                if (primaryAction != RidePrimaryAction.none) ...[
-                  const SizedBox(height: 8),
-                  RidePrimaryButton(
-                    action: primaryAction,
-                    onPressed: () => _advanceRide(booking),
-                  ),
-                ],
-
-                const SizedBox(
-                  height: 16,
+                TripStatusCard(
+                  status: booking.status,
+                  role: RideParticipantRole.driver,
+                  eta: navigation.eta,
+                  distance: navigation.distance,
                 ),
-
-                TripInformationCard(
-                  pickup: booking.pickupAddress,
-                  destination:
-                      booking.destinationAddress,
-                  distance:
-                      '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-                  duration:
-                      navigation.duration ?? '--',
-                  fare:
-                      '₱${booking.estimatedFare.toStringAsFixed(2)}',
-                ),
+                if (navigation.instruction?.isNotEmpty == true) ...[
+                  const SizedBox(height: 10),
+                  Card(
+                    color: Colors.teal.shade50,
+                    child: ListTile(
+                      leading: const Icon(Icons.navigation, color: Colors.teal),
+                      title: Text(navigation.instruction!),
+                      subtitle: navigation.nextInstruction == null
+                          ? null
+                          : Text('Next: ${navigation.nextInstruction}'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-        ),
-      ],
-    ),
-  );
-}
+
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: [
+                  PassengerInformationCard(
+                    passengerName: booking.passengerName ?? 'Passenger',
+                    photoUrl: booking.passengerPhotoUrl,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  if (booking.status == BookingStatus.driverAssigned &&
+                      driverLocation != null)
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _followDriver(
+                          booking: booking,
+                          driverLocation: driverLocation,
+                        ),
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: const Text('Navigate to Pickup'),
+                      ),
+                    ),
+
+                  if (booking.status == BookingStatus.driverAssigned ||
+                      booking.status == BookingStatus.driverArriving) ...[
+                    const SizedBox(height: 8),
+                    RideActionsCard(
+                      onCancel: () => _cancelRide(booking),
+                      onSos: () => _triggerSos(booking),
+                      onNoShow: booking.status == BookingStatus.driverArriving
+                          ? () => _markNoShow(booking)
+                          : null,
+                    ),
+                  ],
+
+                  if (booking.status == BookingStatus.passengerOnBoard) ...[
+                    const SizedBox(height: 8),
+                    RideActionsCard(
+                      onCall: () => context.push(
+                        AppRoutes.bookingVoiceCall,
+                        extra: booking.bookingId,
+                      ),
+                      onMessage: () => context.push(
+                        AppRoutes.bookingChat,
+                        extra: {
+                          'bookingId': booking.bookingId,
+                          'members': [booking.passengerId, booking.driverId!],
+                        },
+                      ),
+                      onReport: () => _reportPassenger(booking),
+                      onSos: () => _triggerSos(booking),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: booking.driverReceivedAt == null
+                            ? () => _confirmCashReceived(booking)
+                            : null,
+                        icon: const Icon(Icons.payments_outlined),
+                        label: Text(
+                          booking.driverReceivedAt == null
+                              ? 'Confirm cash received · '
+                                    '₱${booking.amountDue.toStringAsFixed(2)}'
+                              : 'Cash receipt confirmed',
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  if (primaryAction != RidePrimaryAction.none) ...[
+                    const SizedBox(height: 8),
+                    RidePrimaryButton(
+                      action: primaryAction,
+                      onPressed: () => _advanceRide(booking),
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+
+                  TripInformationCard(
+                    pickup: booking.pickupAddress,
+                    destination: booking.destinationAddress,
+                    distance:
+                        '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                    duration: navigation.duration ?? '--',
+                    fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

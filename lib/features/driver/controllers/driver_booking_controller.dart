@@ -21,8 +21,7 @@ import '../services/driver_current_booking_listener.dart';
 /// • Trip Lifecycle
 /// • Coordinate Active Booking State
 /// ===========================================================================
-class DriverBookingController
-    extends StateNotifier<AsyncValue<void>> {
+class DriverBookingController extends StateNotifier<AsyncValue<void>> {
   DriverBookingController({
     required BookingRepository bookingRepository,
     required DriverRepository driverRepository,
@@ -32,15 +31,15 @@ class DriverBookingController
     required AuthRepository authRepository,
     required DriverCurrentBookingListener currentBookingListener,
     required Ref ref,
-  })  : _bookingRepository = bookingRepository,
-        _driverRepository = driverRepository,
-        _userRepository = userRepository,
-        _vehicleRepository = vehicleRepository,
-        _todaRepository = todaRepository,
-        _authRepository = authRepository,
-        _currentBookingListener = currentBookingListener,
-        _ref = ref,
-        super(const AsyncData(null));
+  }) : _bookingRepository = bookingRepository,
+       _driverRepository = driverRepository,
+       _userRepository = userRepository,
+       _vehicleRepository = vehicleRepository,
+       _todaRepository = todaRepository,
+       _authRepository = authRepository,
+       _currentBookingListener = currentBookingListener,
+       _ref = ref,
+       super(const AsyncData(null));
 
   //==========================================================================
   // Dependencies
@@ -54,349 +53,300 @@ class DriverBookingController
   final AuthRepository _authRepository;
 
   /// Keeps the active booking synchronized with Firestore.
-  final DriverCurrentBookingListener
-      _currentBookingListener;
+  final DriverCurrentBookingListener _currentBookingListener;
 
   /// Access to Riverpod providers.
   final Ref _ref;
 
- //==========================================================================
-// Driver Availability
-//==========================================================================
+  //==========================================================================
+  // Driver Availability
+  //==========================================================================
 
-Future<void> goOnline() async {
-  state = const AsyncLoading();
+  Future<void> goOnline() async {
+    state = const AsyncLoading();
 
-  try {
-    final firebaseUser = _authRepository.currentUser;
+    try {
+      final firebaseUser = _authRepository.currentUser;
 
-    if (firebaseUser == null) {
-      throw Exception('No authenticated driver.');
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
+      }
+
+      final driver = await _driverRepository.getDriver(firebaseUser.uid);
+      if (driver == null || !driver.isApproved) {
+        throw StateError(
+          'Your driver account must be approved before going online.',
+        );
+      }
+
+      await _driverRepository.goOnline(firebaseUser.uid);
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
     }
+  }
+
+  Future<void> goOffline() async {
+    state = const AsyncLoading();
+
+    try {
+      if (_ref.read(driverCurrentBookingProvider) != null) {
+        throw StateError(
+          'Complete or cancel the active trip before going offline.',
+        );
+      }
+
+      final firebaseUser = _authRepository.currentUser;
+
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
+      }
+
+      await _driverRepository.goOffline(firebaseUser.uid);
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
+    }
+  }
+
+  //==========================================================================
+  // Booking Actions
+  //==========================================================================
+
+  Future<void> acceptBooking(Booking booking) async {
+    state = const AsyncLoading();
+
+    try {
+      final firebaseUser = _authRepository.currentUser;
+
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
+      }
+
+      final driver = await _driverRepository.getDriver(firebaseUser.uid);
+
+      if (driver == null) {
+        throw Exception('Driver record not found.');
+      }
+
+      final appUser = await _userRepository.getUser(firebaseUser.uid);
+
+      if (appUser == null) {
+        throw Exception('User record not found.');
+      }
+
+      final vehicle = await _vehicleRepository.getVehicle(driver.vehicleId);
+
+      if (vehicle == null) {
+        throw Exception('Vehicle not found.');
+      }
+
+      final toda = await _todaRepository.getToda(driver.todaId);
+
+      if (toda == null) {
+        throw Exception('TODA not found.');
+      }
+
+      await _bookingRepository.acceptBookingTransaction(
+        bookingId: booking.bookingId,
+        driverId: firebaseUser.uid,
+        driverName: appUser.fullName,
+        driverPhotoUrl: appUser.profileImage,
+        driverRating: driver.rating,
+        vehicleNumber: vehicle.vehicleNumber,
+        plateNumber: vehicle.plateNumber,
+        todaName: toda.name,
+      );
+
+      // Start listening to the active booking.
+      _currentBookingListener.startListening(booking.bookingId);
+
+      // Remove pending booking.
+      _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
+    }
+  }
+
+  Future<void> declineBooking(Booking booking) async {
+    state = const AsyncLoading();
+
+    try {
+      // Declining is driver-local. Never rewrite a shared pending booking,
+      // which could race with another driver's acceptance transaction.
+      _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
+    }
+  }
+
+  /// Restores the driver's durable active booking after app restart.
+  Future<void> restoreCurrentBooking() async {
+    final firebaseUser = _authRepository.currentUser;
+    if (firebaseUser == null) return;
 
     final driver = await _driverRepository.getDriver(firebaseUser.uid);
-    if (driver == null || !driver.isApproved) {
-      throw StateError('Your driver account must be approved before going online.');
-    }
+    final bookingId = driver?.currentBookingId;
+    if (bookingId == null || bookingId.isEmpty) return;
 
-    await _driverRepository.goOnline(
-      firebaseUser.uid,
-    );
-
-    await _driverRepository.setAvailable(
-      uid: firebaseUser.uid,
-      available: true,
-    );
-
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-    rethrow;
+    _currentBookingListener.startListening(bookingId);
   }
-}
 
-Future<void> goOffline() async {
-  state = const AsyncLoading();
+  //==========================================================================
+  // Trip Lifecycle
+  //==========================================================================
 
-  try {
-    if (_ref.read(driverCurrentBookingProvider) != null) {
-      throw StateError('Complete or cancel the active trip before going offline.');
-    }
+  Future<void> arrived(Booking booking) async {
+    state = const AsyncLoading();
 
-    final firebaseUser = _authRepository.currentUser;
-
-    if (firebaseUser == null) {
-      throw Exception('No authenticated driver.');
-    }
-
-    await _driverRepository.goOffline(
-      firebaseUser.uid,
-    );
-
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-    rethrow;
-  }
-}
-
-//==========================================================================
-// Booking Actions
-//==========================================================================
-
-Future<void> acceptBooking(
-  Booking booking,
-) async {
-  state = const AsyncLoading();
-
-  try {
-    final firebaseUser = _authRepository.currentUser;
-
-    if (firebaseUser == null) {
-      throw Exception('No authenticated driver.');
-    }
-
-    final driver = await _driverRepository.getDriver(
-      firebaseUser.uid,
-    );
-
-    if (driver == null) {
-      throw Exception('Driver record not found.');
-    }
-
-    final appUser = await _userRepository.getUser(
-      firebaseUser.uid,
-    );
-
-    if (appUser == null) {
-      throw Exception('User record not found.');
-    }
-
-    final vehicle =
-        await _vehicleRepository.getVehicle(
-      driver.vehicleId,
-    );
-
-    if (vehicle == null) {
-      throw Exception('Vehicle not found.');
-    }
-
-    final toda = await _todaRepository.getToda(
-      driver.todaId,
-    );
-
-    if (toda == null) {
-      throw Exception('TODA not found.');
-    }
-
-    await _bookingRepository.acceptBookingTransaction(
-      bookingId: booking.bookingId,
-      driverId: firebaseUser.uid,
-      driverName: appUser.fullName,
-      driverPhotoUrl: appUser.profileImage,
-      driverRating: driver.rating,
-      vehicleNumber: vehicle.vehicleNumber,
-      plateNumber: vehicle.plateNumber,
-      todaName: toda.name,
-    );
-
-    // Start listening to the active booking.
-    _currentBookingListener.startListening(
-      booking.bookingId,
-    );
-
-    // Remove pending booking.
-    _ref
-        .read(
-          driverIncomingBookingProvider.notifier,
-        )
-        .clearBooking();
-
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-    rethrow;
-  }
-}
-
-Future<void> declineBooking(
-  Booking booking,
-) async {
-  state = const AsyncLoading();
-
-  try {
-    // Declining is driver-local. Never rewrite a shared pending booking,
-    // which could race with another driver's acceptance transaction.
-    _ref
-        .read(
-          driverIncomingBookingProvider.notifier,
-        )
-        .clearBooking();
-
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-    rethrow;
-  }
-}
-
-/// Restores the driver's durable active booking after app restart.
-Future<void> restoreCurrentBooking() async {
-  final firebaseUser = _authRepository.currentUser;
-  if (firebaseUser == null) return;
-
-  final driver = await _driverRepository.getDriver(firebaseUser.uid);
-  final bookingId = driver?.currentBookingId;
-  if (bookingId == null || bookingId.isEmpty) return;
-
-  _currentBookingListener.startListening(bookingId);
-}
-
-//==========================================================================
-// Trip Lifecycle
-//==========================================================================
-
-Future<void> arrived(
-  Booking booking,
-) async {
-  state = const AsyncLoading();
-
-  try {
-    await _bookingRepository.transitionStatus(
-      bookingId: booking.bookingId,
-      allowedCurrentStatuses: const {BookingStatus.driverAssigned},
-      nextStatus: BookingStatus.driverArriving,
-    );
-
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-    rethrow;
-  }
-}
-
-Future<void> startTrip(
-  Booking booking,
-) async {
-  state = const AsyncLoading();
-
-  try {
-    await _bookingRepository.transitionStatus(
-      bookingId: booking.bookingId,
-      allowedCurrentStatuses: const {BookingStatus.driverArriving},
-      nextStatus: BookingStatus.passengerOnBoard,
-    );
-
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-    rethrow;
-  }
-}
-
-Future<void> completeTrip(
-  Booking booking,
-) async {
-  state = const AsyncLoading();
-
-  try {
-    final firebaseUser =
-        _authRepository.currentUser;
-
-    if (firebaseUser == null) {
-      throw Exception(
-        'No authenticated driver.',
+    try {
+      await _bookingRepository.transitionStatus(
+        bookingId: booking.bookingId,
+        allowedCurrentStatuses: const {BookingStatus.driverAssigned},
+        nextStatus: BookingStatus.driverArriving,
       );
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
     }
-
-    // Complete booking.
-    await _bookingRepository.transitionStatus(
-      bookingId: booking.bookingId,
-      allowedCurrentStatuses: const {BookingStatus.passengerOnBoard},
-      nextStatus: BookingStatus.completed,
-    );
-
-    // Remove booking from driver.
-    await _driverRepository.clearBooking(
-      firebaseUser.uid,
-    );
-
-    // Stop listening to the booking.
-    await _currentBookingListener.stopListening();
-
-    // Clear active booking state.
-    _ref
-        .read(
-          driverCurrentBookingProvider.notifier,
-        )
-        .clearBooking();
-
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-    rethrow;
   }
-}
 
-//==========================================================================
-// Cancel Trip
-//==========================================================================
+  Future<void> startTrip(Booking booking) async {
+    state = const AsyncLoading();
 
-Future<void> cancelTrip(
-  Booking booking,
-) async {
-  state = const AsyncLoading();
-
-  try {
-    final firebaseUser =
-        _authRepository.currentUser;
-
-    if (firebaseUser == null) {
-      throw Exception(
-        'No authenticated driver.',
+    try {
+      await _bookingRepository.transitionStatus(
+        bookingId: booking.bookingId,
+        allowedCurrentStatuses: const {BookingStatus.driverArriving},
+        nextStatus: BookingStatus.passengerOnBoard,
       );
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
     }
+  }
 
-    // Cancel booking.
-    await _bookingRepository.cancelBooking(
-      booking.bookingId,
-      allowedCurrentStatuses: const {
-        BookingStatus.driverAssigned,
-        BookingStatus.driverArriving,
-      },
-    );
+  Future<void> confirmPickup({
+    required Booking booking,
+    required String pin,
+  }) async {
+    state = const AsyncLoading();
+    try {
+      await _bookingRepository.confirmPickup(
+        bookingId: booking.bookingId,
+        pin: pin,
+      );
+      state = const AsyncData(null);
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
 
-    // Remove booking from driver.
-    await _driverRepository.clearBooking(
-      firebaseUser.uid,
-    );
+  Future<void> markPassengerNoShow(Booking booking) async {
+    state = const AsyncLoading();
+    try {
+      await _bookingRepository.markNoShow(bookingId: booking.bookingId);
+      await _currentBookingListener.stopListening();
+      _ref.read(driverCurrentBookingProvider.notifier).clearBooking();
+      state = const AsyncData(null);
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+      rethrow;
+    }
+  }
 
-    // Stop listening to the booking.
-    await _currentBookingListener.stopListening();
+  Future<void> completeTrip(Booking booking) async {
+    state = const AsyncLoading();
 
-    // Clear active booking state.
-    _ref
-        .read(
-          driverCurrentBookingProvider.notifier,
-        )
-        .clearBooking();
+    try {
+      final firebaseUser = _authRepository.currentUser;
 
-    state = const AsyncData(null);
-  } catch (e, stackTrace) {
-    state = AsyncError(
-      e,
-      stackTrace,
-    );
-
-           rethrow;
-          }
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
       }
+
+      // Complete booking.
+      await _bookingRepository.transitionStatus(
+        bookingId: booking.bookingId,
+        allowedCurrentStatuses: const {BookingStatus.passengerOnBoard},
+        nextStatus: BookingStatus.completed,
+      );
+
+      // Stop listening to the booking.
+      await _currentBookingListener.stopListening();
+
+      // Clear active booking state.
+      _ref.read(driverCurrentBookingProvider.notifier).clearBooking();
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
     }
+  }
+
+  //==========================================================================
+  // Cancel Trip
+  //==========================================================================
+
+  Future<void> cancelTrip(
+    Booking booking, {
+    String reasonCode = 'cancelled_by_driver',
+    String? reasonDetail,
+  }) async {
+    state = const AsyncLoading();
+
+    try {
+      final firebaseUser = _authRepository.currentUser;
+
+      if (firebaseUser == null) {
+        throw Exception('No authenticated driver.');
+      }
+
+      // Cancel booking.
+      await _bookingRepository.cancelBooking(
+        booking.bookingId,
+        allowedCurrentStatuses: const {
+          BookingStatus.driverAssigned,
+          BookingStatus.driverArriving,
+        },
+        reasonCode: reasonCode,
+        reasonDetail: reasonDetail,
+      );
+
+      // Stop listening to the booking.
+      await _currentBookingListener.stopListening();
+
+      // Clear active booking state.
+      _ref.read(driverCurrentBookingProvider.notifier).clearBooking();
+
+      state = const AsyncData(null);
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+
+      rethrow;
+    }
+  }
+}

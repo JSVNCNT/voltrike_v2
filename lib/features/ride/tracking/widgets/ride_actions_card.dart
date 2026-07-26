@@ -16,12 +16,16 @@ class RideActionsCard extends StatelessWidget {
     this.onMessage,
     this.onReport,
     this.onCancel,
+    this.onSos,
+    this.onNoShow,
   });
 
   final VoidCallback? onCall;
   final VoidCallback? onMessage;
   final VoidCallback? onReport;
   final VoidCallback? onCancel;
+  final VoidCallback? onSos;
+  final VoidCallback? onNoShow;
 
   @override
   Widget build(BuildContext context) {
@@ -43,12 +47,26 @@ class RideActionsCard extends StatelessWidget {
           foregroundColor: theme.colorScheme.error,
           onPressed: onReport!,
         ),
+      if (onSos != null)
+        _ActionButton(
+          icon: Icons.sos,
+          label: 'SOS',
+          foregroundColor: theme.colorScheme.error,
+          onPressed: onSos!,
+        ),
       if (onCancel != null)
         _ActionButton(
           icon: Icons.cancel_outlined,
           label: 'Cancel',
           foregroundColor: theme.colorScheme.error,
           onPressed: onCancel!,
+        ),
+      if (onNoShow != null)
+        _ActionButton(
+          icon: Icons.person_off_outlined,
+          label: 'No-show',
+          foregroundColor: theme.colorScheme.error,
+          onPressed: onNoShow!,
         ),
     ];
 
@@ -57,16 +75,11 @@ class RideActionsCard extends StatelessWidget {
     return Card(
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: [
-            for (final action in actions) action,
-          ],
+          children: [for (final action in actions) action],
         ),
       ),
     );

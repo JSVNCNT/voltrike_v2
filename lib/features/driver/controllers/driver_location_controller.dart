@@ -30,12 +30,10 @@ import '../../../data/repositories/auth_repository.dart';
 ///      ↓
 /// Stop GPS
 /// ===========================================================================
-class DriverLocationController
-    extends StateNotifier<AsyncValue<void>> {
-  DriverLocationController({
-    required AuthRepository authRepository,
-  })  : _authRepository = authRepository,
-        super(const AsyncData(null));
+class DriverLocationController extends StateNotifier<AsyncValue<void>> {
+  DriverLocationController({required AuthRepository authRepository})
+    : _authRepository = authRepository,
+      super(const AsyncData(null));
 
   final AuthRepository _authRepository;
   final FirebaseDatabase _database = FirebaseDatabase.instance;
@@ -43,8 +41,7 @@ class DriverLocationController
   StreamSubscription<Position>? _subscription;
   DateTime? _lastDatabaseWrite;
 
-  bool get isTracking =>
-      _subscription != null;
+  bool get isTracking => _subscription != null;
 
   //==========================================================================
   // Start Tracking
@@ -58,63 +55,60 @@ class DriverLocationController
     state = const AsyncLoading();
 
     try {
-      final driver =
-          _authRepository.currentUser;
+      final driver = _authRepository.currentUser;
 
       if (driver == null) {
-        throw Exception(
-          'No authenticated driver.',
-        );
+        throw Exception('No authenticated driver.');
       }
 
       final locationRef = _database.ref('driver_locations/${driver.uid}');
       final presenceRef = _database.ref('driver_presence/${driver.uid}');
 
+      await LocationService.instance.ensurePermission();
+
+      await LocationService.instance.startTracking();
+
+      await locationRef.onDisconnect().remove();
+      await presenceRef.onDisconnect().set({
+        'online': false,
+        'updatedAt': ServerValue.timestamp,
+      });
       await presenceRef.set({
         'online': true,
         'updatedAt': ServerValue.timestamp,
       });
 
-      await LocationService.instance
-          .ensurePermission();
-
-      await LocationService.instance
-          .startTracking();
-
       NavigationService.instance.bindLiveLocation(
         LocationService.instance.locationStream,
       );
 
-      _subscription = LocationService
-          .instance
-          .locationStream
-          .listen(
-        (position) async {
-          final now = DateTime.now();
-          if (_lastDatabaseWrite != null &&
-              now.difference(_lastDatabaseWrite!) < const Duration(seconds: 10)) {
-            return;
-          }
-          _lastDatabaseWrite = now;
-          await locationRef.set({
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-            'bearing': position.heading,
-            'speed': position.speed,
-            'accuracy': position.accuracy,
-            'timestamp': ServerValue.timestamp,
-            'online': true,
-            'updatedAt': ServerValue.timestamp,
-          });
-        },
-      );
+      _subscription = LocationService.instance.locationStream.listen((
+        position,
+      ) async {
+        if (position.accuracy < 0 || position.accuracy > 100) {
+          return;
+        }
+        final now = DateTime.now();
+        if (_lastDatabaseWrite != null &&
+            now.difference(_lastDatabaseWrite!) < const Duration(seconds: 10)) {
+          return;
+        }
+        _lastDatabaseWrite = now;
+        await locationRef.set({
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'bearing': position.heading,
+          'speed': position.speed,
+          'accuracy': position.accuracy,
+          'timestamp': ServerValue.timestamp,
+          'online': true,
+          'updatedAt': ServerValue.timestamp,
+        });
+      });
 
       state = const AsyncData(null);
     } catch (e, stackTrace) {
-      state = AsyncError(
-        e,
-        stackTrace,
-      );
+      state = AsyncError(e, stackTrace);
 
       rethrow;
     }
@@ -131,27 +125,28 @@ class DriverLocationController
       await _subscription?.cancel();
       _subscription = null;
 
-      await LocationService.instance
-          .stopTracking();
+      await LocationService.instance.stopTracking();
 
       final driver = _authRepository.currentUser;
       if (driver != null) {
-        await _database.ref('driver_locations/${driver.uid}').update({
-          'online': false,
-          'updatedAt': ServerValue.timestamp,
-        });
+        await _database.ref('driver_locations/${driver.uid}').remove();
         await _database.ref('driver_presence/${driver.uid}').set({
           'online': false,
           'updatedAt': ServerValue.timestamp,
         });
+        await _database
+            .ref('driver_locations/${driver.uid}')
+            .onDisconnect()
+            .cancel();
+        await _database
+            .ref('driver_presence/${driver.uid}')
+            .onDisconnect()
+            .cancel();
       }
 
       state = const AsyncData(null);
     } catch (e, stackTrace) {
-      state = AsyncError(
-        e,
-        stackTrace,
-      );
+      state = AsyncError(e, stackTrace);
 
       rethrow;
     }
@@ -165,8 +160,7 @@ class DriverLocationController
   void dispose() {
     _subscription?.cancel();
 
-    LocationService.instance
-        .stopTracking();
+    LocationService.instance.stopTracking();
 
     super.dispose();
   }

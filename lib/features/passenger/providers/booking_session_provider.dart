@@ -17,8 +17,10 @@ class BookingSession {
   const BookingSession({
     this.pickup,
     this.pickupName,
+    this.pickupAddress,
     this.destination,
     this.destinationName,
+    this.destinationAddress,
     this.routePoints = const [],
     this.distanceMeters = 0,
     this.duration = '',
@@ -45,11 +47,17 @@ class BookingSession {
   /// Pickup place name.
   final String? pickupName;
 
+  /// Readable formatted pickup address returned by Places.
+  final String? pickupAddress;
+
   /// Destination location.
   final LatLng? destination;
 
   /// Destination place name.
   final String? destinationName;
+
+  /// Readable formatted destination address returned by Places.
+  final String? destinationAddress;
 
   /// Decoded Google Routes polyline.
   final List<LatLng> routePoints;
@@ -93,8 +101,10 @@ class BookingSession {
   BookingSession copyWith({
     LatLng? pickup,
     String? pickupName,
+    String? pickupAddress,
     LatLng? destination,
     String? destinationName,
+    String? destinationAddress,
     List<LatLng>? routePoints,
     int? distanceMeters,
     String? duration,
@@ -114,35 +124,25 @@ class BookingSession {
     return BookingSession(
       pickup: pickup ?? this.pickup,
       pickupName: pickupName ?? this.pickupName,
+      pickupAddress: pickupAddress ?? this.pickupAddress,
       destination: destination ?? this.destination,
-      destinationName:
-          destinationName ?? this.destinationName,
+      destinationName: destinationName ?? this.destinationName,
+      destinationAddress: destinationAddress ?? this.destinationAddress,
       routePoints: routePoints ?? this.routePoints,
-      distanceMeters:
-          distanceMeters ?? this.distanceMeters,
+      distanceMeters: distanceMeters ?? this.distanceMeters,
       duration: duration ?? this.duration,
 
       baseFare: baseFare ?? this.baseFare,
-      distanceFare:
-          distanceFare ?? this.distanceFare,
+      distanceFare: distanceFare ?? this.distanceFare,
       additionalPassengerFee:
-          additionalPassengerFee ??
-              this.additionalPassengerFee,
-      baggageFee:
-          baggageFee ?? this.baggageFee,
-      boundarySurcharge:
-          boundarySurcharge ??
-              this.boundarySurcharge,
-      estimatedFare:
-          estimatedFare ?? this.estimatedFare,
+          additionalPassengerFee ?? this.additionalPassengerFee,
+      baggageFee: baggageFee ?? this.baggageFee,
+      boundarySurcharge: boundarySurcharge ?? this.boundarySurcharge,
+      estimatedFare: estimatedFare ?? this.estimatedFare,
 
-      additionalPassengers:
-          additionalPassengers ??
-              this.additionalPassengers,
-      baggageCount:
-          baggageCount ?? this.baggageCount,
-      isOutsideToda:
-          isOutsideToda ?? this.isOutsideToda,
+      additionalPassengers: additionalPassengers ?? this.additionalPassengers,
+      baggageCount: baggageCount ?? this.baggageCount,
+      isOutsideToda: isOutsideToda ?? this.isOutsideToda,
       hasRoute: hasRoute ?? this.hasRoute,
     );
   }
@@ -153,15 +153,11 @@ class BookingSession {
 /// ===========================================================================
 /// Booking Session Notifier
 /// ===========================================================================
-class BookingSessionNotifier
-    extends StateNotifier<BookingSession> {
-  BookingSessionNotifier()
-      : super(const BookingSession());
+class BookingSessionNotifier extends StateNotifier<BookingSession> {
+  BookingSessionNotifier() : super(const BookingSession());
 
   /// Replace the current session.
-  void update(
-    BookingSession session,
-  ) {
+  void update(BookingSession session) {
     state = session;
   }
 
@@ -169,10 +165,12 @@ class BookingSessionNotifier
   void updatePickup({
     required LatLng pickup,
     required String pickupName,
+    required String pickupAddress,
   }) {
     state = state.copyWith(
       pickup: pickup,
       pickupName: pickupName,
+      pickupAddress: pickupAddress,
     );
   }
 
@@ -180,10 +178,12 @@ class BookingSessionNotifier
   void updateDestination({
     required LatLng destination,
     required String destinationName,
+    required String destinationAddress,
   }) {
     state = state.copyWith(
       destination: destination,
       destinationName: destinationName,
+      destinationAddress: destinationAddress,
     );
   }
 
@@ -207,11 +207,9 @@ class BookingSessionNotifier
 
       baseFare: baseFare,
       distanceFare: distanceFare,
-      additionalPassengerFee:
-          additionalPassengerFee,
+      additionalPassengerFee: additionalPassengerFee,
       baggageFee: baggageFee,
-      boundarySurcharge:
-          boundarySurcharge,
+      boundarySurcharge: boundarySurcharge,
       estimatedFare: estimatedFare,
 
       hasRoute: true,
@@ -228,8 +226,6 @@ class BookingSessionNotifier
 /// Booking Session Provider
 /// ===========================================================================
 final bookingSessionProvider =
-    StateNotifierProvider<
-        BookingSessionNotifier,
-        BookingSession>(
-  (ref) => BookingSessionNotifier(),
-);
+    StateNotifierProvider<BookingSessionNotifier, BookingSession>(
+      (ref) => BookingSessionNotifier(),
+    );

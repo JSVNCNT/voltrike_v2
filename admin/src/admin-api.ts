@@ -3,24 +3,13 @@ import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from '
 import { db, functions } from './firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
-import type { Driver, FareConfig, Report, RouteRestriction, Toda, ZoneRequest } from './types';
+import type { BookingOperation, Driver, FareConfig, PageResult, Report, RouteRestriction, SafetyIncident, Toda, ZoneRequest } from './types';
 
 async function call<T>(name: string, data: Record<string, unknown>): Promise<T> {
   return (await httpsCallable<Record<string, unknown>, T>(functions, name)(data)).data;
 }
 
 const mapDocument = <T>(id: string, value: unknown) => ({ id, ...(value as object) }) as T;
-
-async function profileForAdminReview(uid: string) {
-  try {
-    const profile = await getDoc(doc(db, 'users', uid));
-    return profile.exists() ? profile.data() : undefined;
-  } catch {
-    // TODA admins are deliberately not allowed to read unrelated passenger
-    // profiles. The report remains usable without exposing that identity.
-    return undefined;
-  }
-}
 
 export const adminApi = {
   bootstrap: (code: string) => call<{ role: string }>('bootstrapDeveloperAdmin', { code }),
@@ -33,8 +22,10 @@ export const adminApi = {
   attachTodaRegistrationDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('attachTodaRegistrationDocuments', { todaId, documents }),
   updateFare: (fare: FareConfig) => call<{ updated: boolean }>('adminUpdateFare', { fare }),
   setDriverStatus: (uid: string, status: string) => call<{ updated: boolean }>('adminSetDriverStatus', { uid, status }),
+  setVehicleVerification: (driverId: string, isVerified: boolean) => call<{ updated: boolean }>('adminSetVehicleVerification', { driverId, isVerified }),
   setUserStatus: (uid: string, isActive: boolean) => call<{ updated: boolean }>('adminSetUserStatus', { uid, isActive }),
   resolveReport: (reportId: string, status: string, action: string) => call<{ updated: boolean }>('adminResolveReport', { reportId, status, action }),
+  resolveSettlementDispute: (bookingId: string, resolution: string) => call<{ updated: boolean }>('adminResolveSettlementDispute', { bookingId, resolution }),
   submitZone: (todaId: string, polygon: [number, number][], notes: string, areas?: [number, number][][]) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes, areas }),
   reviewZone: (zoneRequestId: string, status: string) => call<{ updated: boolean }>('adminReviewZoneRequest', { zoneRequestId, status }),
   updateZone: (zoneRequestId: string, polygon: [number, number][], notes: string, areas?: [number, number][][]) => call<{ updated: boolean }>('adminUpdateZoneRequest', { zoneRequestId, polygon, notes, areas }),
@@ -54,32 +45,34 @@ export const adminApi = {
       }
     }));
   },
-  async drivers(todaId?: string): Promise<Driver[]> {
-    const source = collection(db, 'drivers');
-    const snapshot = await getDocs(todaId ? query(source, where('todaId', '==', todaId), limit(200)) : query(source, limit(200)));
-    const drivers = snapshot.docs.map((entry) => mapDocument<Driver>(entry.id, entry.data()));
-    // Driver operational data and account identity are intentionally stored in
-    // separate documents. Join them only for authorized admin review.
-    return Promise.all(drivers.map(async (driver) => {
-      const profile = await profileForAdminReview(driver.uid);
-      return {
-        ...driver,
-        applicant: profile,
-      };
-    }));
+  driverPage: (cursor?: string | null, search = '') =>
+    call<PageResult<Driver>>('adminListDrivers', {
+      cursor: cursor || '',
+      search,
+      pageSize: 25,
+    }),
+  async drivers(_todaId?: string): Promise<Driver[]> {
+    return (await adminApi.driverPage()).items;
   },
-  async reports(todaId?: string): Promise<Report[]> {
-    const source = collection(db, 'reports');
-    const snapshot = await getDocs(todaId ? query(source, where('todaId', '==', todaId), limit(200)) : query(source, limit(200)));
-    const reports = snapshot.docs.map((entry) => mapDocument<Report>(entry.id, entry.data()));
-    return Promise.all(reports.map(async (report) => {
-      const [reporter, reportedUser] = await Promise.all([
-        profileForAdminReview(report.reporterId),
-        profileForAdminReview(report.reportedUserId),
-      ]);
-      return { ...report, reporter, reportedUser };
-    }));
+  reportPage: (cursor?: string | null, search = '') =>
+    call<PageResult<Report>>('adminListReports', {
+      cursor: cursor || '',
+      search,
+      pageSize: 25,
+    }),
+  async reports(_todaId?: string): Promise<Report[]> {
+    return (await adminApi.reportPage()).items;
   },
+  bookingPage: (cursor?: string | null, search = '') =>
+    call<PageResult<BookingOperation>>('adminListBookings', {
+      cursor: cursor || '',
+      search,
+      pageSize: 25,
+    }),
+  safetyIncidents: () =>
+    call<PageResult<SafetyIncident>>('adminListSafetyIncidents', {
+      pageSize: 100,
+    }),
   async zones(todaId?: string): Promise<ZoneRequest[]> {
     const source = collection(db, 'zoneRequests');
     const snapshot = await getDocs(todaId ? query(source, where('todaId', '==', todaId), limit(100)) : query(source, limit(100)));

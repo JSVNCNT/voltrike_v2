@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/booking.dart';
 import '../models/driver_booking_offer.dart';
@@ -22,185 +24,136 @@ import '../models/driver_booking_offer.dart';
 class BookingRepository {
   BookingRepository({
     FirebaseFirestore? firestore,
-  }) : _firestore =
-            firestore ??
-            FirebaseFirestore.instance;
+    FirebaseFunctions? functions,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions =
+           functions ??
+           FirebaseFunctions.instanceFor(region: 'asia-southeast1');
 
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
+  final Uuid _uuid = const Uuid();
 
-  CollectionReference<Map<String, dynamic>>
-      get _collection =>
-          _firestore.collection(
-            'bookings',
-          );
+  CollectionReference<Map<String, dynamic>> get _collection =>
+      _firestore.collection('bookings');
 
   //==========================================================================
   // Create Booking
   //==========================================================================
 
-  Future<void> createBooking(
-    Booking booking,
-  ) async {
-    await _collection
-        .doc(
-          booking.bookingId,
-        )
-        .set(
-          booking.toFirestore(),
-        );
+  Future<void> createBooking(Booking booking) async {
+    await _functions.httpsCallable('createBookingLifecycle').call({
+      'bookingId': booking.bookingId,
+      'operationId': _uuid.v4(),
+      'pickup': {
+        'latitude': booking.pickup.latitude,
+        'longitude': booking.pickup.longitude,
+      },
+      'destination': {
+        'latitude': booking.destination.latitude,
+        'longitude': booking.destination.longitude,
+      },
+      'pickupAddress': booking.pickupAddress,
+      'destinationAddress': booking.destinationAddress,
+      'distanceMeters': booking.distanceMeters,
+      'estimatedFare': booking.estimatedFare,
+      'additionalPassengers': booking.additionalPassengers,
+      'baggageCount': booking.baggageCount,
+      'isOutsideToda': booking.isOutsideToda,
+    });
   }
 
   //==========================================================================
   // Get Booking
   //==========================================================================
 
-  Future<Booking?> getBooking(
-    String bookingId,
-  ) async {
-    final doc =
-        await _collection
-            .doc(
-              bookingId,
-            )
-            .get();
+  Future<Booking?> getBooking(String bookingId) async {
+    final doc = await _collection.doc(bookingId).get();
 
     if (!doc.exists) {
       return null;
     }
 
-    return Booking.fromFirestore(
-      doc,
-    );
+    return Booking.fromFirestore(doc);
   }
 
   //==========================================================================
   // Watch Booking
   //==========================================================================
 
-  Stream<Booking?> watchBooking(
-    String bookingId,
-  ) {
-    return _collection
-        .doc(
-          bookingId,
-        )
-        .snapshots()
-        .map(
-      (doc) {
-        if (!doc.exists) {
-          return null;
-        }
+  Stream<Booking?> watchBooking(String bookingId) {
+    return _collection.doc(bookingId).snapshots().map((doc) {
+      if (!doc.exists) {
+        return null;
+      }
 
-        return Booking.fromFirestore(
-          doc,
-        );
-      },
-    );
+      return Booking.fromFirestore(doc);
+    });
+  }
+
+  Stream<String?> watchPickupPin({
+    required String passengerId,
+    required String bookingId,
+  }) {
+    return _firestore
+        .collection('users')
+        .doc(passengerId)
+        .collection('bookingSecrets')
+        .doc(bookingId)
+        .snapshots()
+        .map((snapshot) => snapshot.data()?['pickupPin'] as String?);
   }
 
   //==========================================================================
   // Watch Pending Bookings
   //==========================================================================
 
-  Stream<List<Booking>>
-      watchPendingBookings() {
+  Stream<List<Booking>> watchPendingBookings() {
     return _collection
-        .where(
-          'status',
-          isEqualTo:
-              BookingStatus
-                  .pending
-                  .name,
-        )
+        .where('status', isEqualTo: BookingStatus.pending.name)
         .snapshots()
-        .map(
-      (snapshot) {
-        return snapshot.docs
-            .map(
-              Booking.fromFirestore,
-            )
-            .toList();
-      },
-    );
+        .map((snapshot) {
+          return snapshot.docs.map(Booking.fromFirestore).toList();
+        });
   }
 
-   //==========================================================================
+  //==========================================================================
   // Watch Driver Bookings
   //==========================================================================
 
-  Stream<List<Booking>>
-      watchDriverBookings(
-    String driverId,
-  ) {
-    return _collection
-        .where(
-          'driverId',
-          isEqualTo: driverId,
-        )
-        .snapshots()
-        .map(
-      (snapshot) {
-        return snapshot.docs
-            .map(
-              Booking.fromFirestore,
-            )
-            .toList();
-      },
-    );
+  Stream<List<Booking>> watchDriverBookings(String driverId) {
+    return _collection.where('driverId', isEqualTo: driverId).snapshots().map((
+      snapshot,
+    ) {
+      return snapshot.docs.map(Booking.fromFirestore).toList();
+    });
   }
 
   //==========================================================================
   // Watch Passenger Bookings
   //==========================================================================
 
-  Stream<List<Booking>>
-      watchPassengerBookings(
-    String passengerId,
-  ) {
+  Stream<List<Booking>> watchPassengerBookings(String passengerId) {
     return _collection
-        .where(
-          'passengerId',
-          isEqualTo: passengerId,
-        )
+        .where('passengerId', isEqualTo: passengerId)
         .snapshots()
-        .map(
-      (snapshot) {
-        return snapshot.docs
-            .map(
-              Booking.fromFirestore,
-            )
-            .toList();
-      },
-    );
+        .map((snapshot) {
+          return snapshot.docs.map(Booking.fromFirestore).toList();
+        });
   }
 
   //==========================================================================
   // Passenger Trip History
   //==========================================================================
 
-  Stream<List<Booking>>
-      bookingsForPassenger(
-    String passengerId,
-  ) {
+  Stream<List<Booking>> bookingsForPassenger(String passengerId) {
     return _collection
-        .where(
-          'passengerId',
-          isEqualTo: passengerId,
-        )
-        .orderBy(
-          'createdAt',
-          descending: true,
-        )
+        .where('passengerId', isEqualTo: passengerId)
+        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(
-      (snapshot) {
-        return snapshot.docs
-            .map(
-              Booking.fromFirestore,
-            )
-            .toList();
-      },
-    );
+        .map((snapshot) {
+          return snapshot.docs.map(Booking.fromFirestore).toList();
+        });
   }
 
   /// Watches only offers explicitly dispatched to one driver.
@@ -212,18 +165,20 @@ class BookingRepository {
         .where('status', isEqualTo: 'offered')
         .snapshots()
         .asyncMap((snapshot) async {
-      final offers = snapshot.docs
-          .map(DriverBookingOffer.fromFirestore)
-          .where((offer) => !offer.isExpired)
-          .toList();
-      final bookings = await Future.wait(
-        offers.map((offer) => getBooking(offer.bookingId)),
-      );
-      return bookings
-          .whereType<Booking>()
-          .where((booking) => booking.status == BookingStatus.pending)
-          .toList();
-    });
+          final offers =
+              snapshot.docs
+                  .map(DriverBookingOffer.fromFirestore)
+                  .where((offer) => !offer.isExpired)
+                  .toList()
+                ..sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
+          final bookings = await Future.wait(
+            offers.map((offer) => getBooking(offer.bookingId)),
+          );
+          return bookings
+              .whereType<Booking>()
+              .where((booking) => booking.status == BookingStatus.pending)
+              .toList();
+        });
   }
 
   /// Watches the passenger's single active booking, if one exists.
@@ -236,8 +191,7 @@ class BookingRepository {
       final active = bookings.where((booking) {
         return booking.status != BookingStatus.completed &&
             booking.status != BookingStatus.cancelled;
-      }).toList()
-        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      }).toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
       return active.isEmpty ? null : active.first;
     });
@@ -255,45 +209,24 @@ class BookingRepository {
   // Driver Trip History
   //==========================================================================
 
-  Stream<List<Booking>>
-      bookingsForDriver(
-    String driverId,
-  ) {
+  Stream<List<Booking>> bookingsForDriver(String driverId) {
     return _collection
-        .where(
-          'driverId',
-          isEqualTo: driverId,
-        )
-        .orderBy(
-          'createdAt',
-          descending: true,
-        )
+        .where('driverId', isEqualTo: driverId)
+        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(
-      (snapshot) {
-        return snapshot.docs
-            .map(
-              Booking.fromFirestore,
-            )
-            .toList();
-      },
-    );
+        .map((snapshot) {
+          return snapshot.docs.map(Booking.fromFirestore).toList();
+        });
   }
 
   //==========================================================================
   // Update Booking
   //==========================================================================
 
-  Future<void> updateBooking(
-    Booking booking,
-  ) async {
-    await _collection
-        .doc(
-          booking.bookingId,
-        )
-        .update(
-          booking.toFirestore(),
-        );
+  Future<void> updateBooking(Booking booking) async {
+    throw UnsupportedError(
+      'Generic booking updates are disabled. Use an authoritative lifecycle operation.',
+    );
   }
 
   //==========================================================================
@@ -304,18 +237,10 @@ class BookingRepository {
     required String bookingId,
     required BookingStatus status,
   }) async {
-    await _collection
-        .doc(
-          bookingId,
-        )
-        .update({
-      'status': status.name,
-      'updatedAt':
-          FieldValue.serverTimestamp(),
-    });
+    await _transition(bookingId: bookingId, action: _actionForStatus(status));
   }
 
-    //==========================================================================
+  //==========================================================================
   // Assign Driver
   //==========================================================================
 
@@ -325,13 +250,11 @@ class BookingRepository {
     //======================================================================
     // Driver
     //======================================================================
-
     required String driverId,
 
     //======================================================================
     // Driver Snapshot
     //======================================================================
-
     required String driverName,
     required String driverPhotoUrl,
     required double driverRating,
@@ -339,40 +262,7 @@ class BookingRepository {
     required String plateNumber,
     required String todaName,
   }) async {
-    await _collection
-        .doc(
-          bookingId,
-        )
-        .update({
-      //====================================================================
-      // Driver
-      //====================================================================
-
-      'driverId': driverId,
-
-      //====================================================================
-      // Driver Snapshot
-      //====================================================================
-
-      'driverName': driverName,
-      'driverPhotoUrl': driverPhotoUrl,
-      'driverRating': driverRating,
-      'vehicleNumber': vehicleNumber,
-      'plateNumber': plateNumber,
-      'todaName': todaName,
-
-      //====================================================================
-      // Booking Status
-      //====================================================================
-
-      'status':
-          BookingStatus
-              .driverAssigned
-              .name,
-
-      'updatedAt':
-          FieldValue.serverTimestamp(),
-    });
+    await _accept(bookingId);
   }
 
   //==========================================================================
@@ -386,11 +276,14 @@ class BookingRepository {
       BookingStatus.driverAssigned,
       BookingStatus.driverArriving,
     },
+    String reasonCode = 'cancelled_by_user',
+    String? reasonDetail,
   }) {
-    return transitionStatus(
+    return _transition(
       bookingId: bookingId,
-      allowedCurrentStatuses: allowedCurrentStatuses,
-      nextStatus: BookingStatus.cancelled,
+      action: 'cancel',
+      reasonCode: reasonCode,
+      reasonDetail: reasonDetail,
     );
   }
 
@@ -398,14 +291,8 @@ class BookingRepository {
   // Complete Booking
   //==========================================================================
 
-  Future<void> completeBooking(
-    String bookingId,
-  ) async {
-    await _collection.doc(bookingId).update({
-      'status': BookingStatus.completed.name,
-      'completedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+  Future<void> completeBooking(String bookingId) async {
+    await _transition(bookingId: bookingId, action: 'complete');
   }
 
   /// Atomically advances a booking only from an allowed current state.
@@ -414,27 +301,10 @@ class BookingRepository {
     required Set<BookingStatus> allowedCurrentStatuses,
     required BookingStatus nextStatus,
   }) {
-    final bookingRef = _collection.doc(bookingId);
-    return _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(bookingRef);
-      if (!snapshot.exists) {
-        throw StateError('Booking no longer exists.');
-      }
-
-      final value = snapshot.data()?['status'] as String?;
-      final statuses =
-          BookingStatus.values.where((status) => status.name == value);
-      if (statuses.isEmpty || !allowedCurrentStatuses.contains(statuses.first)) {
-        throw StateError('This ride has already changed state.');
-      }
-
-      transaction.update(bookingRef, {
-        'status': nextStatus.name,
-        'updatedAt': FieldValue.serverTimestamp(),
-        if (nextStatus == BookingStatus.completed)
-          'completedAt': FieldValue.serverTimestamp(),
-      });
-    });
+    return _transition(
+      bookingId: bookingId,
+      action: _actionForStatus(nextStatus),
+    );
   }
 
   /// Atomically reserves a pending booking for one available driver.
@@ -451,59 +321,92 @@ class BookingRepository {
     required String plateNumber,
     required String todaName,
   }) {
-    final bookingRef = _collection.doc(bookingId);
-    final driverRef = _firestore.collection('drivers').doc(driverId);
-
-    return _firestore.runTransaction((transaction) async {
-      final bookingSnapshot = await transaction.get(bookingRef);
-      final driverSnapshot = await transaction.get(driverRef);
-
-      if (!bookingSnapshot.exists || !driverSnapshot.exists) {
-        throw StateError('Booking or driver record no longer exists.');
-      }
-
-      final bookingData = bookingSnapshot.data()!;
-      final driverData = driverSnapshot.data()!;
-      if (bookingData['status'] != BookingStatus.pending.name ||
-          bookingData['driverId'] != null) {
-        throw StateError('This booking has already been accepted.');
-      }
-
-      if (driverData['isOnline'] != true ||
-          driverData['isAvailable'] != true ||
-          driverData['currentBookingId'] != null) {
-        throw StateError('You are not available for a new booking.');
-      }
-
-      transaction.update(bookingRef, {
-        'driverId': driverId,
-        'driverName': driverName,
-        'driverPhotoUrl': driverPhotoUrl,
-        'driverRating': driverRating,
-        'vehicleNumber': vehicleNumber,
-        'plateNumber': plateNumber,
-        'todaName': todaName,
-        'status': BookingStatus.driverAssigned.name,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      transaction.update(driverRef, {
-        'currentBookingId': bookingId,
-        'isAvailable': false,
-      });
-    });
+    return _accept(bookingId);
   }
 
   //==========================================================================
   // Delete Booking
   //==========================================================================
 
-  Future<void> deleteBooking(
-    String bookingId,
-  ) async {
-    await _collection
-        .doc(
-          bookingId,
-        )
-        .delete();
+  Future<void> deleteBooking(String bookingId) async {
+    throw UnsupportedError(
+      'Bookings are retained as an immutable audit record.',
+    );
+  }
+
+  Future<void> confirmPickup({
+    required String bookingId,
+    required String pin,
+  }) async {
+    await _functions.httpsCallable('confirmBookingPickup').call({
+      'bookingId': bookingId,
+      'operationId': _uuid.v4(),
+      'pin': pin,
+    });
+  }
+
+  Future<void> markNoShow({required String bookingId}) {
+    return _transition(bookingId: bookingId, action: 'noShow');
+  }
+
+  Future<void> confirmCashPayment({
+    required String bookingId,
+    required bool received,
+  }) async {
+    await _functions.httpsCallable('confirmCashPayment').call<void>({
+      'bookingId': bookingId,
+      'operationId': _uuid.v4(),
+      'confirmation': received ? 'received' : 'paid',
+    });
+  }
+
+  Future<void> disputeSettlement({
+    required String bookingId,
+    required String reason,
+  }) async {
+    await _functions.httpsCallable('submitSettlementDispute').call<void>({
+      'bookingId': bookingId,
+      'reason': reason,
+    });
+  }
+
+  Future<void> _accept(String bookingId) async {
+    await _functions.httpsCallable('acceptBookingLifecycle').call({
+      'bookingId': bookingId,
+      'operationId': _uuid.v4(),
+    });
+  }
+
+  Future<void> _transition({
+    required String bookingId,
+    required String action,
+    String? reasonCode,
+    String? reasonDetail,
+  }) async {
+    await _functions.httpsCallable('transitionBookingLifecycle').call({
+      'bookingId': bookingId,
+      'operationId': _uuid.v4(),
+      'action': action,
+      'reasonCode': ?reasonCode,
+      'reasonDetail': ?reasonDetail,
+    });
+  }
+
+  String _actionForStatus(BookingStatus status) {
+    switch (status) {
+      case BookingStatus.driverArriving:
+        return 'arrived';
+      case BookingStatus.passengerOnBoard:
+        return 'start';
+      case BookingStatus.completed:
+        return 'complete';
+      case BookingStatus.cancelled:
+        return 'cancel';
+      case BookingStatus.pending:
+      case BookingStatus.driverAssigned:
+        throw UnsupportedError(
+          'Status ${status.name} requires a dedicated lifecycle operation.',
+        );
+    }
   }
 }

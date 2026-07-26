@@ -25,7 +25,6 @@ import '../widgets/driver_bottom_sheet.dart';
 import '../widgets/driver_map_view.dart';
 import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 
-
 /// ===========================================================================
 /// Driver Home Screen
 ///
@@ -36,20 +35,14 @@ import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 /// • Navigation
 /// • Trip Lifecycle
 /// ===========================================================================
-class DriverHomeScreen
-    extends ConsumerStatefulWidget {
-  const DriverHomeScreen({
-    super.key,
-  });
+class DriverHomeScreen extends ConsumerStatefulWidget {
+  const DriverHomeScreen({super.key});
 
   @override
-  ConsumerState<DriverHomeScreen>
-      createState() =>
-          _DriverHomeScreenState();
+  ConsumerState<DriverHomeScreen> createState() => _DriverHomeScreenState();
 }
 
-class _DriverHomeScreenState
-    extends ConsumerState<DriverHomeScreen> {
+class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
   Future<void> _cancelTrip() async {
     final booking = ref.read(driverCurrentBookingProvider);
     if (booking == null) return;
@@ -61,18 +54,20 @@ class _DriverHomeScreenState
     if (result == null || !mounted) return;
 
     try {
-      await ref.read(driverBookingControllerProvider.notifier).cancelTrip(booking);
+      await ref
+          .read(driverBookingControllerProvider.notifier)
+          .cancelTrip(booking);
       if (!mounted) return;
       ref.read(driverTripProvider.notifier).waitingBooking();
       setState(() => _routePoints.clear());
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Trip cancelled.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Trip cancelled.')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not cancel trip: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not cancel trip: $error')));
     }
   }
 
@@ -80,18 +75,15 @@ class _DriverHomeScreenState
   // Navigation
   //==========================================================================
 
-  final NavigationService _navigation =
-      NavigationService.instance;
+  final NavigationService _navigation = NavigationService.instance;
 
-  GoogleMapController?
-      _mapController;
+  GoogleMapController? _mapController;
 
   //==========================================================================
   // Route
   //==========================================================================
 
   List<LatLng> _routePoints = [];
-
 
   //==========================================================================
   // Lifecycle
@@ -101,25 +93,16 @@ class _DriverHomeScreenState
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeDriver();
     });
   }
 
-  Future<void>
-      _initializeDriver() async {
-    await ref
-        .read(
-          driverLocationControllerProvider
-              .notifier,
-        )
-        .stopTracking();
+  Future<void> _initializeDriver() async {
+    await ref.read(driverLocationControllerProvider.notifier).stopTracking();
 
     await ref
-        .read(
-          driverBookingControllerProvider.notifier,
-        )
+        .read(driverBookingControllerProvider.notifier)
         .restoreCurrentBooking();
   }
 
@@ -127,48 +110,33 @@ class _DriverHomeScreenState
   // Online / Offline
   //==========================================================================
 
-  Future<void> _toggleOnline(
-    bool online,
-  ) async {
-    final statusNotifier =
-        ref.read(
-      driverStatusProvider.notifier,
+  Future<void> _toggleOnline(bool online) async {
+    final statusNotifier = ref.read(driverStatusProvider.notifier);
+
+    final bookingController = ref.read(
+      driverBookingControllerProvider.notifier,
     );
 
-    final bookingController =
-        ref.read(
-      driverBookingControllerProvider
-          .notifier,
+    final locationController = ref.read(
+      driverLocationControllerProvider.notifier,
     );
 
-    final locationController =
-        ref.read(
-      driverLocationControllerProvider
-          .notifier,
-    );
-
-    final bookingListener =
-        ref.read(
-      driverBookingListenerProvider,
-    );
+    final bookingListener = ref.read(driverBookingListenerProvider);
 
     if (online) {
       await bookingController.goOnline();
 
       statusNotifier.goOnline();
 
-      await locationController
-          .startTracking();
+      await locationController.startTracking();
 
       bookingListener.startListening();
     } else {
       await bookingController.goOffline();
 
-      await bookingListener
-          .stopListening();
+      await bookingListener.stopListening();
 
-      await locationController
-          .stopTracking();
+      await locationController.stopTracking();
 
       statusNotifier.goOffline();
 
@@ -183,319 +151,50 @@ class _DriverHomeScreenState
   //==========================================================================
 
   @override
-void dispose() {
-  _mapController?.dispose();
+  void dispose() {
+    _mapController?.dispose();
 
-  super.dispose();
-}
-
- //==========================================================================
-// Driver Actions
-//==========================================================================
-
-Future<void> _acceptBooking() async {
-  final booking = ref.read(
-    driverIncomingBookingProvider,
-  );
-
-  if (booking == null) {
-    return;
-  }
-
-  await ref
-      .read(
-        driverBookingControllerProvider.notifier,
-      )
-      .acceptBooking(
-        booking,
-      );
-
-  // Remove the pending booking.
-  ref
-      .read(
-        driverIncomingBookingProvider.notifier,
-      )
-      .clearBooking();
-
-  ref
-      .read(
-        driverTripProvider.notifier,
-      )
-      .bookingAccepted();
-
-}
-
-Future<void> _declineBooking() async {
-  final booking = ref.read(
-    driverIncomingBookingProvider,
-  );
-
-  if (booking == null) {
-    return;
-  }
-
-  await ref
-      .read(
-        driverBookingControllerProvider.notifier,
-      )
-      .declineBooking(
-        booking,
-      );
-
-  await ref.read(driverBookingListenerProvider).stopListening();
-  ref.read(driverOfferCooldownProvider.notifier).start();
-
-  ref
-      .read(
-        driverIncomingBookingProvider.notifier,
-      )
-      .clearBooking();
-
-  ref
-      .read(
-        driverTripProvider.notifier,
-      )
-      .waitingBooking();
-
-  if (mounted) {
-    setState(() {
-      _routePoints.clear();
-    });
-  }
-
-  if (!mounted) {
-    return;
-  }
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Booking declined. New offers resume in 30 seconds.'),
-    ),
-  );
-
-  Future<void>.delayed(const Duration(seconds: 30), () {
-    if (!mounted ||
-        ref.read(driverStatusProvider) == DriverStatus.offline) {
-      return;
-    }
-    ref.read(driverBookingListenerProvider).startListening();
-  });
-}
-
-  //==========================================================================
-  // Navigation
-  //==========================================================================
-
-  Future<void> _navigateToPickup() async {
-    final booking = ref.read(
-      driverCurrentBookingProvider,
-    );
-
-    final driverLocation = ref.read(
-      driverLocationProvider,
-    );
-
-    if (booking == null ||
-        driverLocation == null) {
-      return;
-    }
-
-    final route =
-        await _navigation
-            .computeTrafficRoute(
-      origin: driverLocation,
-      destination: booking.pickup,
-    );
-
-    if (route == null) {
-      return;
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _routePoints =
-          _navigation.decodePolyline(
-        _navigation.encodedPolyline(
-          route,
-        ),
-      );
-    });
-
-    ref
-        .read(
-          driverTripProvider.notifier,
-        )
-        .navigatingToPickup();
-  }
-
-  Future<void>
-      _navigateToDestination() async {
-    final booking = ref.read(
-      driverCurrentBookingProvider,
-    );
-
-    final driverLocation = ref.read(
-      driverLocationProvider,
-    );
-
-    if (booking == null ||
-        driverLocation == null) {
-      return;
-    }
-
-    final route =
-        await _navigation
-            .computeTrafficRoute(
-      origin: driverLocation,
-      destination:
-          booking.destination,
-    );
-
-    if (route == null) {
-      return;
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _routePoints =
-          _navigation.decodePolyline(
-        _navigation.encodedPolyline(
-          route,
-        ),
-      );
-    });
-
-    ref
-        .read(
-          driverTripProvider.notifier,
-        )
-        .navigatingToDestination();
+    super.dispose();
   }
 
   //==========================================================================
-  // Trip Lifecycle
+  // Driver Actions
   //==========================================================================
 
-    Future<void> _arrived() async {
-    final booking = ref.read(
-      driverCurrentBookingProvider,
-    );
+  Future<void> _acceptBooking() async {
+    final booking = ref.read(driverIncomingBookingProvider);
 
     if (booking == null) {
       return;
     }
 
     await ref
-        .read(
-          driverBookingControllerProvider
-              .notifier,
-        )
-        .arrived(
-          booking,
-        );
+        .read(driverBookingControllerProvider.notifier)
+        .acceptBooking(booking);
 
-    ref
-        .read(
-          driverTripProvider.notifier,
-        )
-        .arrived();
+    // Remove the pending booking.
+    ref.read(driverIncomingBookingProvider.notifier).clearBooking();
 
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Passenger pickup reached.',
-        ),
-      ),
-    );
+    ref.read(driverTripProvider.notifier).bookingAccepted();
   }
 
-  Future<void> _startTrip() async {
-    final booking = ref.read(
-      driverCurrentBookingProvider,
-    );
+  Future<void> _declineBooking() async {
+    final booking = ref.read(driverIncomingBookingProvider);
 
     if (booking == null) {
       return;
     }
 
     await ref
-        .read(
-          driverBookingControllerProvider
-              .notifier,
-        )
-        .startTrip(
-          booking,
-        );
+        .read(driverBookingControllerProvider.notifier)
+        .declineBooking(booking);
 
-    ref
-        .read(
-          driverTripProvider.notifier,
-        )
-        .passengerOnBoard();
+    await ref.read(driverBookingListenerProvider).stopListening();
+    ref.read(driverOfferCooldownProvider.notifier).start();
 
-    await _navigateToDestination();
+    ref.read(driverIncomingBookingProvider.notifier).clearBooking();
 
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Trip started.',
-        ),
-      ),
-    );
-  }
-
-  Future<void> _completeTrip() async {
-    final booking = ref.read(
-      driverCurrentBookingProvider,
-    );
-
-    if (booking == null) {
-      return;
-    }
-
-    await ref
-        .read(
-          driverBookingControllerProvider
-              .notifier,
-        )
-        .completeTrip(
-          booking,
-        );
-
-        if (!mounted) {
-  return;
-}
-
-context.go(
-  AppRoutes.driverHome,
-);
-
-    ref
-        .read(
-          driverCurrentBookingProvider
-              .notifier,
-        )
-        .clearBooking();
-
-    ref
-        .read(
-          driverTripProvider.notifier,
-        )
-        .completed();
+    ref.read(driverTripProvider.notifier).waitingBooking();
 
     if (mounted) {
       setState(() {
@@ -509,182 +208,279 @@ context.go(
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text(
-          'Trip completed.',
-        ),
+        content: Text('Booking declined. New offers resume in 30 seconds.'),
       ),
     );
+
+    Future<void>.delayed(const Duration(seconds: 30), () {
+      if (!mounted || ref.read(driverStatusProvider) == DriverStatus.offline) {
+        return;
+      }
+      ref.read(driverBookingListenerProvider).startListening();
+    });
   }
 
   //==========================================================================
-// UI
-//==========================================================================
+  // Navigation
+  //==========================================================================
 
-@override
-Widget build(
-  BuildContext context,
-) {
-  final incomingBooking = ref.watch(
-    driverIncomingBookingProvider,
-  );
+  Future<void> _navigateToPickup() async {
+    final booking = ref.read(driverCurrentBookingProvider);
 
-  final currentBooking = ref.watch(
-    driverCurrentBookingProvider,
-  );
+    final driverLocation = ref.read(driverLocationProvider);
 
-  final driverLocation = ref.watch(
-    driverLocationProvider,
-  );
+    if (booking == null || driverLocation == null) {
+      return;
+    }
 
-  final driverStatus = ref.watch(
-    driverStatusProvider,
-  );
+    final route = await _navigation.computeTrafficRoute(
+      origin: driverLocation,
+      destination: booking.pickup,
+    );
 
-  final tripStatus = ref.watch(
-    driverTripProvider,
-  );
+    if (route == null) {
+      return;
+    }
 
-  final offerCooldown = ref.watch(driverOfferCooldownProvider);
+    if (!mounted) {
+      return;
+    }
 
-  final hasIncomingBooking =
-      incomingBooking != null && !offerCooldown.isActive;
+    setState(() {
+      _routePoints = _navigation.decodePolyline(
+        _navigation.encodedPolyline(route),
+      );
+    });
 
-  final hasCurrentBooking =
-      currentBooking != null;
+    ref.read(driverTripProvider.notifier).navigatingToPickup();
+  }
 
-  // Booking shown in the bottom sheet.
-  // Before acceptance -> incoming booking.
-  // After acceptance -> active booking.
-  final displayBooking =
-      currentBooking ?? incomingBooking;
+  Future<void> _navigateToDestination() async {
+    final booking = ref.read(driverCurrentBookingProvider);
 
-  return Scaffold(
-    appBar: const AppAppBar(
-      title: 'Driver',
-      showNotifications: true,
-    ),
-    body: Stack(
-      children: [
-        //------------------------------------------------------------------
-        // Map
-        //------------------------------------------------------------------
+    final driverLocation = ref.read(driverLocationProvider);
 
-        Positioned.fill(
-          child: DriverMapView(
-            driverLocation:
-                driverLocation,
-            pickupLocation:
-                currentBooking?.pickup,
-            destinationLocation:
-                currentBooking?.destination,
-            routePoints:
-                _routePoints,
+    if (booking == null || driverLocation == null) {
+      return;
+    }
+
+    final route = await _navigation.computeTrafficRoute(
+      origin: driverLocation,
+      destination: booking.destination,
+    );
+
+    if (route == null) {
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _routePoints = _navigation.decodePolyline(
+        _navigation.encodedPolyline(route),
+      );
+    });
+
+    ref.read(driverTripProvider.notifier).navigatingToDestination();
+  }
+
+  //==========================================================================
+  // Trip Lifecycle
+  //==========================================================================
+
+  Future<void> _arrived() async {
+    final booking = ref.read(driverCurrentBookingProvider);
+
+    if (booking == null) {
+      return;
+    }
+
+    await ref.read(driverBookingControllerProvider.notifier).arrived(booking);
+
+    ref.read(driverTripProvider.notifier).arrived();
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Passenger pickup reached.')));
+  }
+
+  Future<void> _startTrip() async {
+    final booking = ref.read(driverCurrentBookingProvider);
+
+    if (booking == null) {
+      return;
+    }
+
+    await ref.read(driverBookingControllerProvider.notifier).startTrip(booking);
+
+    ref.read(driverTripProvider.notifier).passengerOnBoard();
+
+    await _navigateToDestination();
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Trip started.')));
+  }
+
+  Future<void> _completeTrip() async {
+    final booking = ref.read(driverCurrentBookingProvider);
+
+    if (booking == null) {
+      return;
+    }
+
+    await ref
+        .read(driverBookingControllerProvider.notifier)
+        .completeTrip(booking);
+
+    if (!mounted) {
+      return;
+    }
+
+    context.go(AppRoutes.driverHome);
+
+    ref.read(driverCurrentBookingProvider.notifier).clearBooking();
+
+    ref.read(driverTripProvider.notifier).completed();
+
+    if (mounted) {
+      setState(() {
+        _routePoints.clear();
+      });
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Trip completed.')));
+  }
+
+  //==========================================================================
+  // UI
+  //==========================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final incomingBooking = ref.watch(driverIncomingBookingProvider);
+
+    final currentBooking = ref.watch(driverCurrentBookingProvider);
+
+    final driverLocation = ref.watch(driverLocationProvider);
+
+    final driverStatus = ref.watch(driverStatusProvider);
+
+    final tripStatus = ref.watch(driverTripProvider);
+
+    final offerCooldown = ref.watch(driverOfferCooldownProvider);
+
+    final hasIncomingBooking =
+        incomingBooking != null && !offerCooldown.isActive;
+
+    final hasCurrentBooking = currentBooking != null;
+
+    // Booking shown in the bottom sheet.
+    // Before acceptance -> incoming booking.
+    // After acceptance -> active booking.
+    final displayBooking = currentBooking ?? incomingBooking;
+
+    return Scaffold(
+      appBar: const AppAppBar(title: 'Driver', showNotifications: true),
+      body: Stack(
+        children: [
+          //------------------------------------------------------------------
+          // Map
+          //------------------------------------------------------------------
+          Positioned.fill(
+            child: DriverMapView(
+              driverLocation: driverLocation,
+              pickupLocation: displayBooking?.pickup,
+              destinationLocation: displayBooking?.destination,
+              routePoints: _routePoints,
+            ),
           ),
-        ),
 
           //------------------------------------------------------------------
           // Incoming Booking Card
           //------------------------------------------------------------------
-
-                    if (hasIncomingBooking &&
-              tripStatus ==
-                  DriverTripStatus.bookingReceived)
+          if (hasIncomingBooking &&
+              tripStatus == DriverTripStatus.bookingReceived)
             Positioned(
               top: 16,
               left: 16,
               right: 16,
               child: BookingRequestCard(
                 passengerName: incomingBooking.passengerName ?? 'Passenger',
-                pickupAddress:
-                    incomingBooking.pickupAddress,
-                destinationAddress:
-                    incomingBooking.destinationAddress,
+                passengerPhotoUrl: incomingBooking.passengerPhotoUrl,
+                pickupAddress: incomingBooking.pickupAddress,
+                destinationAddress: incomingBooking.destinationAddress,
                 estimatedFare:
                     '₱${incomingBooking.estimatedFare.toStringAsFixed(2)}',
-                distance:
-                    '${incomingBooking.distanceMeters} m',
+                distance: '${incomingBooking.distanceMeters} m',
                 onAccept: _acceptBooking,
                 onDecline: _declineBooking,
               ),
             ),
+
           //------------------------------------------------------------------
           // Bottom Sheet
           //------------------------------------------------------------------
-
           Align(
-            alignment:
-                Alignment.bottomCenter,
+            alignment: Alignment.bottomCenter,
             child: DriverBottomSheet(
-              isOnline:
-                  driverStatus !=
-                      DriverStatus.offline,
+              isOnline: driverStatus != DriverStatus.offline,
 
               offerCooldownSeconds: offerCooldown.secondsRemaining,
 
-              passengerName:
-                  hasIncomingBooking
-                      ? (incomingBooking.passengerName ?? 'Passenger')
-                      : (currentBooking?.passengerName ?? 'Passenger'),
+              passengerName: hasIncomingBooking
+                  ? (incomingBooking.passengerName ?? 'Passenger')
+                  : (currentBooking?.passengerName ?? 'Passenger'),
 
-              pickupAddress:
-                  hasIncomingBooking
-                      ? incomingBooking.pickupAddress
-                      : currentBooking?.pickupAddress,
+              pickupAddress: hasIncomingBooking
+                  ? incomingBooking.pickupAddress
+                  : currentBooking?.pickupAddress,
 
-              destinationAddress:
-                  hasIncomingBooking
-                      ? incomingBooking.destinationAddress
-                      : currentBooking?.destinationAddress,
+              destinationAddress: hasIncomingBooking
+                  ? incomingBooking.destinationAddress
+                  : currentBooking?.destinationAddress,
 
-              estimatedFare:
-                  displayBooking == null || offerCooldown.isActive
-                      ? null
-                      : '₱${displayBooking.estimatedFare.toStringAsFixed(2)}',
+              estimatedFare: displayBooking == null || offerCooldown.isActive
+                  ? null
+                  : '₱${displayBooking.estimatedFare.toStringAsFixed(2)}',
 
-              distance:
-                  displayBooking == null || offerCooldown.isActive
-                      ? null
-                      : '${displayBooking.distanceMeters} m',
+              distance: displayBooking == null || offerCooldown.isActive
+                  ? null
+                  : '${displayBooking.distanceMeters} m',
 
               bookingStatus: currentBooking?.status,
 
-              onOnlineChanged:
-                  _toggleOnline,
+              onOnlineChanged: _toggleOnline,
 
-              onAcceptBooking:
-                  hasIncomingBooking
-                      ? _acceptBooking
-                      : null,
+              onAcceptBooking: hasIncomingBooking ? _acceptBooking : null,
 
-              onDeclineBooking:
-                  hasIncomingBooking
-                      ? _declineBooking
-                      : null,
+              onDeclineBooking: hasIncomingBooking ? _declineBooking : null,
 
-              onNavigate:
-                  hasCurrentBooking
-                      ? _navigateToPickup
-                      : null,
+              onNavigate: hasCurrentBooking ? _navigateToPickup : null,
 
-              onArrived:
-                  hasCurrentBooking
-                      ? _arrived
-                      : null,
+              onArrived: hasCurrentBooking ? _arrived : null,
 
-              onStartTrip:
-                  hasCurrentBooking
-                      ? _startTrip
-                      : null,
+              onStartTrip: hasCurrentBooking ? _startTrip : null,
 
-              onCompleteTrip:
-                  hasCurrentBooking
-                      ? _completeTrip
-                      : null,
+              onCompleteTrip: hasCurrentBooking ? _completeTrip : null,
 
-              onCancelTrip:
-                  hasCurrentBooking
-                      ? _cancelTrip
-                      : null,
+              onCancelTrip: hasCurrentBooking ? _cancelTrip : null,
             ),
           ),
         ],

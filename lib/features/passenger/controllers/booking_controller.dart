@@ -16,14 +16,13 @@ import '../providers/booking_session_provider.dart';
 /// Returns the generated booking ID so the passenger app can
 /// immediately begin listening for booking updates.
 /// ===========================================================================
-class BookingController
-    extends StateNotifier<AsyncValue<void>> {
+class BookingController extends StateNotifier<AsyncValue<void>> {
   BookingController({
     required BookingRepository bookingRepository,
     required AuthRepository authRepository,
-  })  : _bookingRepository = bookingRepository,
-        _authRepository = authRepository,
-        super(const AsyncData(null));
+  }) : _bookingRepository = bookingRepository,
+       _authRepository = authRepository,
+       super(const AsyncData(null));
 
   final BookingRepository _bookingRepository;
 
@@ -42,19 +41,14 @@ class BookingController
     state = const AsyncLoading();
 
     try {
-      final firebaseUser =
-          _authRepository.currentUser;
+      final firebaseUser = _authRepository.currentUser;
 
       if (firebaseUser == null) {
-        throw Exception(
-          'No authenticated passenger.',
-        );
+        throw Exception('No authenticated passenger.');
       }
 
       if (session.destination == null) {
-        throw Exception(
-          'Destination not selected.',
-        );
+        throw Exception('Destination not selected.');
       }
 
       final profile = await _userRepository.getUser(firebaseUser.uid);
@@ -68,44 +62,29 @@ class BookingController
         passengerPhone: profile?.phoneNumber,
         passengerPhotoUrl: profile?.profileImage,
         driverId: null,
-        pickup: LatLng(
-          pickupLatitude,
-          pickupLongitude,
-        ),
+        pickup: LatLng(pickupLatitude, pickupLongitude),
         destination: session.destination!,
         pickupAddress: pickupAddress,
-        destinationAddress:
-            destinationAddress,
-        distanceMeters:
-            session.distanceMeters,
-        estimatedFare:
-            session.estimatedFare,
-        additionalPassengers:
-            session.additionalPassengers,
-        baggageCount:
-            session.baggageCount,
-        isOutsideToda:
-            session.isOutsideToda,
+        destinationAddress: destinationAddress,
+        distanceMeters: session.distanceMeters,
+        estimatedFare: session.estimatedFare,
+        additionalPassengers: session.additionalPassengers,
+        baggageCount: session.baggageCount,
+        isOutsideToda: session.isOutsideToda,
         status: BookingStatus.pending,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
 
-      await _bookingRepository
-          .createBooking(
-        booking,
-      );
+      await _bookingRepository.createBooking(booking);
 
       state = const AsyncData(null);
 
       return booking.bookingId;
     } catch (e, stackTrace) {
-      state = AsyncError(
-        e,
-        stackTrace,
-      );
+      state = AsyncError(e, stackTrace);
 
-            rethrow;
+      rethrow;
     }
   }
 
@@ -114,21 +93,22 @@ class BookingController
   //==========================================================================
 
   Future<void> cancelBooking(
-    String bookingId,
-  ) async {
+    String bookingId, {
+    String reasonCode = 'cancelled_by_passenger',
+    String? reasonDetail,
+  }) async {
     state = const AsyncLoading();
 
     try {
       await _bookingRepository.cancelBooking(
         bookingId,
+        reasonCode: reasonCode,
+        reasonDetail: reasonDetail,
       );
 
       state = const AsyncData(null);
     } catch (e, stackTrace) {
-      state = AsyncError(
-        e,
-        stackTrace,
-      );
+      state = AsyncError(e, stackTrace);
 
       rethrow;
     }

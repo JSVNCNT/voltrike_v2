@@ -15,6 +15,15 @@
         { "fieldPath": "driverId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "drivers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "driverStatus", "order": "ASCENDING" },
+        { "fieldPath": "isOnline", "order": "ASCENDING" },
+        { "fieldPath": "isAvailable", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

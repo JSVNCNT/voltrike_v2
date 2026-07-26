@@ -36,3 +36,12 @@
 .report-parties b:not(:first-child) {
   margin-top: 7px;
 }
+.row.operation {
+  grid-template-columns: 1.5fr 1fr .65fr .8fr;
+}
+
+@media (max-width: 680px) {
+  .row.operation {
+    grid-template-columns: 1fr;
+  }
+}

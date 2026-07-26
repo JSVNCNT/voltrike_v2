@@ -27,6 +27,7 @@ Run a self-hosted LiveKit server plus Coturn, then configure:
 
 ```cmd
 firebase functions:secrets:set LIVEKIT_API_KEY
+firebase functions:secrets:set GOOGLE_ROUTES_API_KEY
 firebase functions:secrets:set LIVEKIT_API_SECRET
 ```
 
