@@ -41,7 +41,7 @@ npm run dev
 3. Deploy the Firebase update from the repository root:
 
    ```cmd
-   firebase deploy --only "functions,firestore:rules,storage"
+   firebase deploy --only "functions,firestore:rules,firestore:indexes,database,storage"
    ```
 
 4. Sign in at the Admin Portal and enter the same bootstrap code.
@@ -58,5 +58,10 @@ The repository includes `admin/render.yaml`. Create a Render **Blueprint** from 
 - Publish Directory: `dist`
 
 Add `VITE_MAPBOX_ACCESS_TOKEN` as a Render environment variable. This is a public browser token, so restrict it by deployed URL in Mapbox; do not put secret Mapbox tokens in it.
+
+Render deploys only the React frontend. A Git push or successful Render build
+does not deploy Firebase Functions, rules, or indexes. After changing anything
+under `functions/` or any Firebase rules/index file, run the Firebase deployment
+command above from the repository root before testing the production portal.
 
 Before production use, run `npm install` locally once and commit the generated `admin/package-lock.json`; Render can then use reproducible `npm ci` builds.
