@@ -25,6 +25,23 @@
       ]
     },
     {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "amountDue", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "amountDue", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "reports",
       "queryScope": "COLLECTION",
       "fields": [
@@ -56,6 +73,14 @@
         { "fieldPath": "driverStatus", "order": "ASCENDING" },
         { "fieldPath": "isOnline", "order": "ASCENDING" },
         { "fieldPath": "isAvailable", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "drivers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "totalEarnings", "order": "ASCENDING" }
       ]
     },
     {
