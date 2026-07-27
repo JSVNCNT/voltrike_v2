@@ -30,7 +30,7 @@ void main() {
 
           expect(stage.allowContact, isTrue);
           expect(stage.allowCancel, isTrue);
-          expect(stage.allowReport, isFalse);
+          expect(stage.allowReport, isTrue);
           expect(stage.allowSos, isFalse);
         });
       }
@@ -60,14 +60,14 @@ void main() {
         expect(stage.allowNoShow, isFalse);
       });
 
-      test('${role.name} payment confirmation exposes no secondary actions', () {
+      test('${role.name} payment confirmation still permits reporting', () {
         final stage = RideStagePresentationService.resolve(
           role: role,
           status: BookingStatus.paymentConfirmation,
         );
         expect(stage.allowContact, isFalse);
         expect(stage.allowCancel, isFalse);
-        expect(stage.allowReport, isFalse);
+        expect(stage.allowReport, isTrue);
         expect(stage.allowSos, isFalse);
       });
     }

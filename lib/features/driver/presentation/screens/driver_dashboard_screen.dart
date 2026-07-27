@@ -12,6 +12,7 @@ import '../../../../data/repositories/booking_repository.dart';
 import '../../../../data/repositories/driver_rating_repository.dart';
 import '../../../../data/repositories/driver_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
+import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 
 /// ===========================================================================
 /// Driver Dashboard
@@ -95,6 +96,10 @@ class DriverDashboardScreen extends ConsumerWidget {
                   .where((booking) => booking.status == BookingStatus.completed)
                   .length;
 
+              final cancelledTrips = bookings
+                  .where((booking) => booking.status == BookingStatus.cancelled)
+                  .length;
+
               final currentBooking = bookings
                   .where(
                     (booking) =>
@@ -106,7 +111,7 @@ class DriverDashboardScreen extends ConsumerWidget {
 
               final totalEarnings = bookings.fold<double>(0, (total, booking) {
                 if (booking.status == BookingStatus.completed) {
-                  return total + booking.estimatedFare;
+                  return total + booking.amountDue;
                 }
 
                 return total;
@@ -238,7 +243,30 @@ class DriverDashboardScreen extends ConsumerWidget {
 
                                     const SizedBox(height: 4),
 
-                                    const Text('Trips'),
+                                    const Text('Completed'),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  children: [
+                                    const Icon(Icons.cancel, color: Colors.red),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      cancelledTrips.toString(),
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text('Cancelled'),
                                   ],
                                 ),
                               ),
@@ -328,6 +356,35 @@ class DriverDashboardScreen extends ConsumerWidget {
                                   subtitle: Text(
                                     currentBooking.destinationAddress,
                                   ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: FilledButton.icon(
+                                        onPressed: () => context.push(
+                                          AppRoutes.driverBookingTracking,
+                                          extra: currentBooking.bookingId,
+                                        ),
+                                        icon: const Icon(Icons.map_outlined),
+                                        label: const Text('Open trip'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => showRideReportDialog(
+                                          context: context,
+                                          booking: currentBooking,
+                                          reporterIsDriver: true,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.report_problem_outlined,
+                                        ),
+                                        label: const Text('Report'),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ],

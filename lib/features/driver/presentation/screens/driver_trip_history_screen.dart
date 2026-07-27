@@ -6,8 +6,6 @@ import '../../../common/presentation/widgets/empty_state.dart';
 import '../../../ride/tracking/widgets/expandable_trip_card.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../controllers/driver_trip_history_controller.dart';
-import '../../../../data/repositories/auth_repository.dart';
-import '../../../../data/repositories/report_repository.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../passenger/presentation/screens/trip_receipt_screen.dart';
 
@@ -33,10 +31,15 @@ class _DriverTripHistoryScreenState
         error: (error, _) =>
             Center(child: Text(DomainErrorMapper.message(error))),
         data: (bookings) => bookings.isEmpty
-            ? const EmptyState(title: 'No Trips Yet', message: 'Completed trips appear here.', icon: Icons.receipt_long_outlined)
+            ? const EmptyState(
+                title: 'No Trips Yet',
+                message: 'Completed and cancelled trips appear here.',
+                icon: Icons.receipt_long_outlined,
+              )
             : ListView.separated(
                 padding: const EdgeInsets.all(16),
-                itemCount: (bookings.length > _visibleCount
+                itemCount:
+                    (bookings.length > _visibleCount
                         ? _visibleCount
                         : bookings.length) +
                     (bookings.length > _visibleCount ? 1 : 0),
@@ -49,7 +52,6 @@ class _DriverTripHistoryScreenState
                     );
                   }
                   final booking = bookings[index];
-                  final user = AuthRepository().currentUser;
                   return ExpandableTripCard(
                     booking: booking,
                     otherPartyLabel: booking.passengerName ?? 'Passenger',
@@ -62,7 +64,11 @@ class _DriverTripHistoryScreenState
                         ),
                       ),
                     ),
-                    onReport: user == null ? null : () => showDialog<void>(context: context, builder: (_) => ReportRideDialog(reporterIsDriver: true, onSubmit: (category, details) => ReportRepository().create(bookingId: booking.bookingId, reporterId: user.uid, reportedUserId: booking.passengerId, category: category, details: details))),
+                    onReport: () => showRideReportDialog(
+                      context: context,
+                      booking: booking,
+                      reporterIsDriver: true,
+                    ),
                   );
                 },
               ),

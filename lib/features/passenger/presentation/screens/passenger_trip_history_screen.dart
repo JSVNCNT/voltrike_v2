@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/booking.dart';
+import '../../../../data/models/booking_state_machine.dart';
 import '../../../../data/models/driver_rating.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/booking_repository.dart';
 import '../../../../data/repositories/driver_rating_repository.dart';
-import '../../../../data/repositories/report_repository.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../ride/tracking/widgets/expandable_trip_card.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
@@ -44,8 +44,9 @@ class _PassengerTripHistoryScreenState
               child: Text(DomainErrorMapper.message(snapshot.error!)),
             );
           }
-          final trips = snapshot.data ?? [];
-          trips.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          final trips = BookingStateMachine.terminalHistory(
+            snapshot.data ?? const <Booking>[],
+          );
           if (trips.isEmpty) return const Center(child: Text('No trips yet.'));
           return StreamBuilder<List<DriverRating>>(
             stream: DriverRatingRepository().passengerRatings(user.uid),
@@ -93,18 +94,10 @@ class _PassengerTripHistoryScreenState
                           ),
                     onReport: booking.driverId == null
                         ? null
-                        : () => showDialog<void>(
+                        : () => showRideReportDialog(
                             context: context,
-                            builder: (_) => ReportRideDialog(
-                              onSubmit: (category, details) =>
-                                  ReportRepository().create(
-                                    bookingId: booking.bookingId,
-                                    reporterId: user.uid,
-                                    reportedUserId: booking.driverId!,
-                                    category: category,
-                                    details: details,
-                                  ),
-                            ),
+                            booking: booking,
+                            reporterIsDriver: false,
                           ),
                   );
                 },

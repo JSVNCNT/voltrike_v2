@@ -11,7 +11,7 @@ void main() {
       );
       expect(
         RideStatusService.driverStatus(BookingStatus.driverAssigned).title,
-        'Pickup',
+        'Drive to Pickup',
       );
       expect(
         RideStatusService.passengerStatus(BookingStatus.passengerOnBoard).title,
@@ -19,18 +19,18 @@ void main() {
       );
       expect(
         RideStatusService.driverStatus(BookingStatus.passengerOnBoard).title,
-        'Trip Started',
+        'Trip in Progress',
       );
     });
 
     test('uses terminal labels for cancelled and completed rides', () {
       expect(
         RideStatusService.passengerStatus(BookingStatus.cancelled).title,
-        'Cancelled',
+        'Ride Cancelled',
       );
       expect(
         RideStatusService.driverStatus(BookingStatus.completed).title,
-        'Completed',
+        'Trip Completed',
       );
     });
   });

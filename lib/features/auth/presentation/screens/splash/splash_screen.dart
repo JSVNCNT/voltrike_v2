@@ -57,6 +57,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
             context.go(AppRoutes.driverUnderReview);
             break;
 
+          case SplashDestination.accountSuspended:
+            context.go(AppRoutes.accountSuspended);
+            break;
+
           case SplashDestination.passengerActiveBooking:
             context.go(AppRoutes.driverTracking, extra: recovery.bookingId);
             break;

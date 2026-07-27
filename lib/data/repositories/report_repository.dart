@@ -12,14 +12,11 @@ class ReportRepository {
 
   Future<void> create({
     required String bookingId,
-    required String reporterId,
-    required String reportedUserId,
     required String category,
     required String details,
   }) async {
-    // Reporter identity, reported account, and TODA scope are derived from the
-    // authenticated booking on the backend. The legacy ID arguments remain in
-    // the signature so existing screens do not break during migration.
+    // Reporter identity, the reported account, participant roles, and TODA
+    // scope are all derived from the authenticated booking on the backend.
     try {
       await _functions.httpsCallable('createRideReport').call({
         'reportId': _uuid.v4(),

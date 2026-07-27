@@ -35,4 +35,23 @@ class BookingStateMachine {
   static bool isActive(BookingStatus status) {
     return !isTerminal(status);
   }
+
+  /// Returns the most meaningful timestamp for a terminal booking.
+  static DateTime terminalDate(Booking booking) {
+    return switch (booking.status) {
+      BookingStatus.completed => booking.completedAt ?? booking.updatedAt,
+      BookingStatus.cancelled => booking.cancelledAt ?? booking.updatedAt,
+      _ => booking.updatedAt,
+    };
+  }
+
+  /// Keeps completed and cancelled bookings and orders the newest first.
+  static List<Booking> terminalHistory(Iterable<Booking> bookings) {
+    final history = bookings.where((booking) {
+      return isTerminal(booking.status);
+    }).toList();
+
+    history.sort((a, b) => terminalDate(b).compareTo(terminalDate(a)));
+    return history;
+  }
 }

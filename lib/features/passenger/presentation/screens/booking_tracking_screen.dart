@@ -9,7 +9,6 @@ import '../../../../app/routes.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/chat_repository.dart';
-import '../../../../data/repositories/report_repository.dart';
 import '../../../../data/repositories/safety_repository.dart';
 
 import '../../providers/booking_listener_provider.dart';
@@ -301,19 +300,11 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   }
 
   Future<void> _reportDriver(Booking booking) async {
-    final user = AuthRepository().currentUser;
-    if (user == null || booking.driverId == null) return;
-    await showDialog<void>(
+    if (booking.driverId == null) return;
+    await showRideReportDialog(
       context: context,
-      builder: (_) => ReportRideDialog(
-        onSubmit: (category, details) => ReportRepository().create(
-          bookingId: booking.bookingId,
-          reporterId: user.uid,
-          reportedUserId: booking.driverId!,
-          category: category,
-          details: details,
-        ),
-      ),
+      booking: booking,
+      reporterIsDriver: false,
     );
   }
 
@@ -460,50 +451,52 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
               controller: scrollController,
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
               children: [
-          Center(
-            child: Container(
-              width: 42,
-              height: 5,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          TripStatusCard(
-            status: booking.status,
-            role: RideParticipantRole.passenger,
-            eta: _eta,
-            distance: _remainingDistance,
-          ),
-          if (_routeWarning != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _routeWarning!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          const SizedBox(height: 10),
-          DriverInformationCard(
-            driverName: booking.driverName ?? 'VolTrike driver',
-            vehicleNumber: booking.vehicleNumber ?? 'Not available',
-            plateNumber: booking.plateNumber ?? 'Not available',
-            todaName: booking.todaName ?? 'Not available',
-            photoUrl: booking.driverPhotoUrl,
-            rating: booking.driverRating,
-          ),
-          const SizedBox(height: 10),
-          _activeRideActions(booking),
-          const SizedBox(height: 10),
-          TripInformationCard(
-            pickup: booking.pickupAddress,
-            destination: booking.destinationAddress,
-            distance:
-                '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-            duration: _eta ?? '--',
-            fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
-          ),
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TripStatusCard(
+                  status: booking.status,
+                  role: RideParticipantRole.passenger,
+                  eta: _eta,
+                  distance: _remainingDistance,
+                ),
+                if (_routeWarning != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _routeWarning!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                DriverInformationCard(
+                  driverName: booking.driverName ?? 'VolTrike driver',
+                  vehicleNumber: booking.vehicleNumber ?? 'Not available',
+                  plateNumber: booking.plateNumber ?? 'Not available',
+                  todaName: booking.todaName ?? 'Not available',
+                  photoUrl: booking.driverPhotoUrl,
+                  rating: booking.driverRating,
+                ),
+                const SizedBox(height: 10),
+                _activeRideActions(booking),
+                const SizedBox(height: 10),
+                TripInformationCard(
+                  pickup: booking.pickupAddress,
+                  destination: booking.destinationAddress,
+                  distance:
+                      '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                  duration: _eta ?? '--',
+                  fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
+                ),
               ],
             ),
           ),

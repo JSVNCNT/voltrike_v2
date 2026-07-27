@@ -7,7 +7,6 @@ import 'package:voltrike_v2/features/driver/providers/driver_location_provider.d
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/chat_repository.dart';
-import '../../../../data/repositories/report_repository.dart';
 import '../../../../data/repositories/safety_repository.dart';
 import '../../../../app/routes.dart';
 
@@ -63,10 +62,7 @@ class _DriverBookingTrackingScreenState
               final completedBookingId = _finishingBookingId;
               if (completedBookingId != null) {
                 _finishingBookingId = null;
-                context.go(
-                  AppRoutes.driverReceipt,
-                  extra: completedBookingId,
-                );
+                context.go(AppRoutes.driverReceipt, extra: completedBookingId);
               } else {
                 context.go(AppRoutes.driverHome);
               }
@@ -125,10 +121,8 @@ class _DriverBookingTrackingScreenState
             ListTile(
               leading: const Icon(Icons.map_outlined),
               title: const Text('Google Maps'),
-              onTap: () => Navigator.pop(
-                context,
-                ExternalNavigationApp.googleMaps,
-              ),
+              onTap: () =>
+                  Navigator.pop(context, ExternalNavigationApp.googleMaps),
             ),
             ListTile(
               leading: const Icon(Icons.navigation_outlined),
@@ -366,20 +360,10 @@ class _DriverBookingTrackingScreenState
   }
 
   Future<void> _reportPassenger(Booking booking) async {
-    final user = AuthRepository().currentUser;
-    if (user == null) return;
-    await showDialog<void>(
+    await showRideReportDialog(
       context: context,
-      builder: (_) => ReportRideDialog(
-        reporterIsDriver: true,
-        onSubmit: (category, details) => ReportRepository().create(
-          bookingId: booking.bookingId,
-          reporterId: user.uid,
-          reportedUserId: booking.passengerId,
-          category: category,
-          details: details,
-        ),
-      ),
+      booking: booking,
+      reporterIsDriver: true,
     );
   }
 
@@ -490,67 +474,70 @@ class _DriverBookingTrackingScreenState
               controller: scrollController,
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               children: [
-          if (navigation.restrictionWarning?.isNotEmpty == true) ...[
-            Material(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.red),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(navigation.restrictionWarning!)),
-                  ],
+                if (navigation.restrictionWarning?.isNotEmpty == true) ...[
+                  Material(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.red,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(navigation.restrictionWarning!)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                TripStatusCard(
+                  status: booking.status,
+                  role: RideParticipantRole.driver,
+                  eta: navigation.eta,
+                  distance: navigation.distance,
                 ),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-          TripStatusCard(
-            status: booking.status,
-            role: RideParticipantRole.driver,
-            eta: navigation.eta,
-            distance: navigation.distance,
-          ),
-          if (navigation.instruction?.isNotEmpty == true)
-            Card(
-              color: Colors.teal.shade50,
-              child: ListTile(
-                leading: const Icon(Icons.navigation, color: Colors.teal),
-                title: Text(navigation.instruction!),
-                subtitle: navigation.nextInstruction == null
-                    ? null
-                    : Text('Next: ${navigation.nextInstruction}'),
-              ),
-            ),
-          PassengerInformationCard(
-            passengerName: booking.passengerName ?? 'Passenger',
-            photoUrl: booking.passengerPhotoUrl,
-          ),
-          _rideActions(booking),
-          if (booking.status == BookingStatus.driverAssigned ||
-              booking.status == BookingStatus.driverArriving ||
-              booking.status == BookingStatus.passengerOnBoard ||
-              booking.status == BookingStatus.paymentConfirmation)
-            OutlinedButton.icon(
-              onPressed: () => _openExternalNavigation(booking),
-              icon: const Icon(Icons.navigation_outlined),
-              label: Text(
-                _tripStarted(booking)
-                    ? 'Navigate to Destination'
-                    : 'Navigate to Pickup',
-              ),
-            ),
-          const SizedBox(height: 10),
-          TripInformationCard(
-            pickup: booking.pickupAddress,
-            destination: booking.destinationAddress,
-            distance:
-                '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-            duration: navigation.duration ?? '--',
-            fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
-          ),
+                if (navigation.instruction?.isNotEmpty == true)
+                  Card(
+                    color: Colors.teal.shade50,
+                    child: ListTile(
+                      leading: const Icon(Icons.navigation, color: Colors.teal),
+                      title: Text(navigation.instruction!),
+                      subtitle: navigation.nextInstruction == null
+                          ? null
+                          : Text('Next: ${navigation.nextInstruction}'),
+                    ),
+                  ),
+                PassengerInformationCard(
+                  passengerName: booking.passengerName ?? 'Passenger',
+                  photoUrl: booking.passengerPhotoUrl,
+                ),
+                _rideActions(booking),
+                if (booking.status == BookingStatus.driverAssigned ||
+                    booking.status == BookingStatus.driverArriving ||
+                    booking.status == BookingStatus.passengerOnBoard ||
+                    booking.status == BookingStatus.paymentConfirmation)
+                  OutlinedButton.icon(
+                    onPressed: () => _openExternalNavigation(booking),
+                    icon: const Icon(Icons.navigation_outlined),
+                    label: Text(
+                      _tripStarted(booking)
+                          ? 'Navigate to Destination'
+                          : 'Navigate to Pickup',
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                TripInformationCard(
+                  pickup: booking.pickupAddress,
+                  destination: booking.destinationAddress,
+                  distance:
+                      '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                  duration: navigation.duration ?? '--',
+                  fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
+                ),
               ],
             ),
           ),

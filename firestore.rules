@@ -190,7 +190,9 @@ service cloud.firestore {
       // Participant identity and TODA scope are derived by createRideReport.
       allow create: if false;
       allow read: if signedIn() && (resource.data.reporterId == request.auth.uid || developerAdmin() ||
-        todaAdminFor(resource.data.todaId));
+        (todaAdminFor(resource.data.todaId) &&
+          (!('reviewAudience' in resource.data) ||
+            'toda_admin' in resource.data.reviewAudience)));
       allow update, delete: if false;
     }
     match /safetyIncidents/{incidentId} {

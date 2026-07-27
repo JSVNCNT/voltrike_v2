@@ -12,6 +12,7 @@ enum SplashDestination {
   passengerHome,
   driverHome,
   driverUnderReview,
+  accountSuspended,
   passengerActiveBooking,
   driverActiveBooking,
 }
@@ -61,7 +62,11 @@ class SplashController extends StateNotifier<AsyncValue<SplashRecovery>> {
       final user = await _userRepository.getUser(firebaseUser.uid);
 
       if (user == null || !user.isActive) {
-        _setDestination(SplashDestination.intro);
+        _setDestination(
+          user == null
+              ? SplashDestination.intro
+              : SplashDestination.accountSuspended,
+        );
         return;
       }
 
@@ -77,7 +82,9 @@ class SplashController extends StateNotifier<AsyncValue<SplashRecovery>> {
           return;
         }
 
-        if (driver.isApproved) {
+        if (driver.isSuspended) {
+          _setDestination(SplashDestination.accountSuspended);
+        } else if (driver.isApproved) {
           final bookingId = driver.currentBookingId;
           if (bookingId != null && bookingId.isNotEmpty) {
             final booking = await _bookingRepository.getBooking(bookingId);

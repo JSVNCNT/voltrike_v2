@@ -59,6 +59,7 @@ class RideStagePresentationService {
           primaryAction: RidePrimaryAction.arriveAtPickup,
           allowContact: true,
           allowCancel: true,
+          allowReport: true,
         );
       case BookingStatus.driverArriving:
         return const RideStagePresentation(
@@ -70,6 +71,7 @@ class RideStagePresentationService {
           primaryAction: RidePrimaryAction.startTrip,
           allowContact: true,
           allowCancel: true,
+          allowReport: true,
           allowNoShow: true,
         );
       case BookingStatus.passengerOnBoard:
@@ -91,6 +93,7 @@ class RideStagePresentationService {
             icon: Icons.payments,
           ),
           primaryAction: RidePrimaryAction.completeTrip,
+          allowReport: true,
         );
       case BookingStatus.completed:
         return const RideStagePresentation(
@@ -135,6 +138,7 @@ class RideStagePresentationService {
           primaryAction: RidePrimaryAction.cancelRide,
           allowContact: true,
           allowCancel: true,
+          allowReport: true,
         );
       case BookingStatus.driverArriving:
         return const RideStagePresentation(
@@ -146,6 +150,7 @@ class RideStagePresentationService {
           primaryAction: RidePrimaryAction.cancelRide,
           allowContact: true,
           allowCancel: true,
+          allowReport: true,
         );
       case BookingStatus.passengerOnBoard:
         return const RideStagePresentation(
@@ -166,6 +171,7 @@ class RideStagePresentationService {
             icon: Icons.payments,
           ),
           primaryAction: RidePrimaryAction.none,
+          allowReport: true,
         );
       case BookingStatus.completed:
         return const RideStagePresentation(

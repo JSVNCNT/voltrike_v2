@@ -16,6 +16,7 @@ import '../features/auth/presentation/screens/driver_registration/upload_documen
 import '../features/auth/presentation/screens/driver_registration/under_review_screen.dart';
 
 import '../features/auth/presentation/screens/splash/splash_screen.dart';
+import '../features/auth/presentation/widgets/account_status_gate.dart';
 import '../features/ride/calls/voice_call_screen.dart';
 import '../features/ride/calls/incoming_call_screen.dart';
 import '../data/repositories/booking_voice_call_repository.dart';
@@ -42,6 +43,14 @@ import '../features/driver/presentation/screens/driver_booking_tracking_screen.d
 import '../features/ride/chat/booking_chat_screen.dart';
 
 import 'routes.dart';
+
+Widget _passengerGate(Widget child) {
+  return AccountStatusGate(driverAccount: false, child: child);
+}
+
+Widget _driverGate(Widget child) {
+  return AccountStatusGate(driverAccount: true, child: child);
+}
 
 final GoRouter appRouter = GoRouter(
   initialLocation: AppRoutes.splash,
@@ -88,6 +97,12 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.emailVerification,
       builder: (context, state) => const EmailVerificationScreen(),
+    ),
+
+    GoRoute(
+      path: AppRoutes.accountSuspended,
+      builder: (context, state) =>
+          const AccountStatusGate(child: _AccountRestoredRedirect()),
     ),
 
     //==========================================================================
@@ -141,32 +156,37 @@ final GoRouter appRouter = GoRouter(
     //==========================================================================
     GoRoute(
       path: AppRoutes.passengerHome,
-      builder: (context, state) => const PassengerShellScreen(),
+      builder: (context, state) => _passengerGate(const PassengerShellScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.passengerDashboard,
-      builder: (context, state) => const PassengerShellScreen(initialIndex: 1),
+      builder: (context, state) =>
+          _passengerGate(const PassengerShellScreen(initialIndex: 1)),
     ),
 
     GoRoute(
       path: AppRoutes.passengerProfile,
-      builder: (context, state) => const PassengerShellScreen(initialIndex: 3),
+      builder: (context, state) =>
+          _passengerGate(const PassengerShellScreen(initialIndex: 3)),
     ),
 
     GoRoute(
       path: AppRoutes.editPassengerProfile,
-      builder: (context, state) => const EditPassengerProfileScreen(),
+      builder: (context, state) =>
+          _passengerGate(const EditPassengerProfileScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.passengerSettings,
-      builder: (context, state) => const PassengerSettingsScreen(),
+      builder: (context, state) =>
+          _passengerGate(const PassengerSettingsScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.passengerTripHistory,
-      builder: (context, state) => const PassengerShellScreen(initialIndex: 2),
+      builder: (context, state) =>
+          _passengerGate(const PassengerShellScreen(initialIndex: 2)),
     ),
 
     //==========================================================================
@@ -180,7 +200,7 @@ final GoRouter appRouter = GoRouter(
           return const PassengerShellScreen();
         }
 
-        return SearchingDriverScreen(bookingId: bookingId);
+        return _passengerGate(SearchingDriverScreen(bookingId: bookingId));
       },
     ),
 
@@ -192,7 +212,7 @@ final GoRouter appRouter = GoRouter(
           return const PassengerShellScreen();
         }
 
-        return BookingTrackingScreen(bookingId: bookingId);
+        return _passengerGate(BookingTrackingScreen(bookingId: bookingId));
       },
     ),
 
@@ -204,7 +224,7 @@ final GoRouter appRouter = GoRouter(
           return const PassengerShellScreen();
         }
 
-        return BookingTrackingScreen(bookingId: bookingId);
+        return _passengerGate(BookingTrackingScreen(bookingId: bookingId));
       },
     ),
 
@@ -216,7 +236,7 @@ final GoRouter appRouter = GoRouter(
           return const PassengerShellScreen();
         }
 
-        return RatingScreen(bookingId: bookingId);
+        return _passengerGate(RatingScreen(bookingId: bookingId));
       },
     ),
 
@@ -227,9 +247,8 @@ final GoRouter appRouter = GoRouter(
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
-        return TripReceiptScreen(
-          bookingId: bookingId,
-          completionFlow: true,
+        return _passengerGate(
+          TripReceiptScreen(bookingId: bookingId, completionFlow: true),
         );
       },
     ),
@@ -239,22 +258,24 @@ final GoRouter appRouter = GoRouter(
     //==========================================================================
     GoRoute(
       path: AppRoutes.driverHome,
-      builder: (context, state) => const DriverShellScreen(),
+      builder: (context, state) => _driverGate(const DriverShellScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.driverDashboard,
-      builder: (context, state) => const DriverShellScreen(initialIndex: 1),
+      builder: (context, state) =>
+          _driverGate(const DriverShellScreen(initialIndex: 1)),
     ),
 
     GoRoute(
       path: AppRoutes.driverProfile,
-      builder: (context, state) => const DriverShellScreen(initialIndex: 3),
+      builder: (context, state) =>
+          _driverGate(const DriverShellScreen(initialIndex: 3)),
     ),
 
     GoRoute(
       path: AppRoutes.editDriverProfile,
-      builder: (context, state) => const EditDriverProfileScreen(),
+      builder: (context, state) => _driverGate(const EditDriverProfileScreen()),
     ),
 
     GoRoute(
@@ -274,12 +295,13 @@ final GoRouter appRouter = GoRouter(
 
     GoRoute(
       path: AppRoutes.driverSettings,
-      builder: (context, state) => const DriverSettingsScreen(),
+      builder: (context, state) => _driverGate(const DriverSettingsScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.driverTripHistory,
-      builder: (context, state) => const DriverShellScreen(initialIndex: 2),
+      builder: (context, state) =>
+          _driverGate(const DriverShellScreen(initialIndex: 2)),
     ),
 
     GoRoute(
@@ -293,8 +315,9 @@ final GoRouter appRouter = GoRouter(
 
     GoRoute(
       path: AppRoutes.driverBookingTracking,
-      builder: (context, state) =>
-          DriverBookingTrackingScreen(bookingId: state.extra as String?),
+      builder: (context, state) => _driverGate(
+        DriverBookingTrackingScreen(bookingId: state.extra as String?),
+      ),
     ),
 
     GoRoute(
@@ -304,13 +327,15 @@ final GoRouter appRouter = GoRouter(
         if (bookingId == null || bookingId.isEmpty) {
           return const DriverShellScreen();
         }
-        return TripReceiptScreen(bookingId: bookingId, driverView: true);
+        return _driverGate(
+          TripReceiptScreen(bookingId: bookingId, driverView: true),
+        );
       },
     ),
 
     GoRoute(
       path: AppRoutes.currentBooking,
-      builder: (context, state) => const DriverHomeScreen(),
+      builder: (context, state) => _driverGate(const DriverHomeScreen()),
     ),
 
     GoRoute(
@@ -333,16 +358,15 @@ final GoRouter appRouter = GoRouter(
         final bookingId = extra is String
             ? extra
             : (extra as Map<String, dynamic>?)?['bookingId'] as String?;
-        final accepting = extra is Map<String, dynamic> &&
-            extra['accepting'] == true;
+        final accepting =
+            extra is Map<String, dynamic> && extra['accepting'] == true;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
         return VoiceCallScreen(
           callStatus: BookingVoiceCallRepository().watchStatus(bookingId),
           incoming: accepting,
-          initiate: () =>
-              BookingVoiceCallRepository().initiateCall(bookingId),
+          initiate: () => BookingVoiceCallRepository().initiateCall(bookingId),
           connect: (service) async {
             final credentials = await BookingVoiceCallRepository()
                 .createCredentials(bookingId, accepting: true);
@@ -368,3 +392,26 @@ final GoRouter appRouter = GoRouter(
     ),
   ],
 );
+
+class _AccountRestoredRedirect extends StatefulWidget {
+  const _AccountRestoredRedirect();
+
+  @override
+  State<_AccountRestoredRedirect> createState() =>
+      _AccountRestoredRedirectState();
+}
+
+class _AccountRestoredRedirectState extends State<_AccountRestoredRedirect> {
+  bool _scheduled = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_scheduled) {
+      _scheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.go(AppRoutes.splash);
+      });
+    }
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+  }
+}

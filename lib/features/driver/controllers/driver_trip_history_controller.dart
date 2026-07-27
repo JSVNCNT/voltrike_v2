@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/booking.dart';
+import '../../../../data/models/booking_state_machine.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/booking_repository.dart';
 
@@ -8,8 +9,7 @@ import '../../../../data/repositories/booking_repository.dart';
 /// Repository
 /// ===========================================================================
 
-final bookingRepositoryProvider =
-    Provider<BookingRepository>(
+final bookingRepositoryProvider = Provider<BookingRepository>(
   (ref) => BookingRepository(),
 );
 
@@ -18,10 +18,7 @@ final bookingRepositoryProvider =
 /// ===========================================================================
 
 class DriverTripHistoryController {
-  DriverTripHistoryController(
-    this._bookingRepository,
-    this._authRepository,
-  );
+  DriverTripHistoryController(this._bookingRepository, this._authRepository);
 
   final BookingRepository _bookingRepository;
   final AuthRepository _authRepository;
@@ -35,33 +32,7 @@ class DriverTripHistoryController {
 
     return _bookingRepository
         .bookingsForDriver(user.uid)
-        .map(
-      (bookings) {
-        final completed =
-            bookings.where((booking) {
-          return booking.status ==
-              BookingStatus.completed;
-        }).toList();
-
-        completed.sort(
-          (a, b) {
-            final aDate =
-                a.completedAt ??
-                    a.updatedAt;
-
-            final bDate =
-                b.completedAt ??
-                    b.updatedAt;
-
-            return bDate.compareTo(
-              aDate,
-            );
-          },
-        );
-
-        return completed;
-      },
-    );
+        .map(BookingStateMachine.terminalHistory);
   }
 }
 
@@ -70,29 +41,17 @@ class DriverTripHistoryController {
 /// ===========================================================================
 
 final driverTripHistoryControllerProvider =
-    Provider<
-        DriverTripHistoryController>(
-  (ref) {
-    return DriverTripHistoryController(
-      ref.watch(
-        bookingRepositoryProvider,
-      ),
-      AuthRepository(),
-    );
-  },
-);
+    Provider<DriverTripHistoryController>((ref) {
+      return DriverTripHistoryController(
+        ref.watch(bookingRepositoryProvider),
+        AuthRepository(),
+      );
+    });
 
 /// ===========================================================================
 /// Trips Provider
 /// ===========================================================================
 
-final driverTripHistoryProvider =
-    StreamProvider<List<Booking>>(
-  (ref) {
-    return ref
-        .watch(
-          driverTripHistoryControllerProvider,
-        )
-        .tripHistory();
-  },
-);
+final driverTripHistoryProvider = StreamProvider<List<Booking>>((ref) {
+  return ref.watch(driverTripHistoryControllerProvider).tripHistory();
+});

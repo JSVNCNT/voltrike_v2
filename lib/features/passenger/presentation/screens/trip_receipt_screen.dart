@@ -13,6 +13,7 @@ import '../../controllers/passenger_booking_flow_controller.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/booking_session_provider.dart';
 import '../../providers/booking_listener_provider.dart';
+import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 
 class TripReceiptScreen extends ConsumerWidget {
   const TripReceiptScreen({
@@ -208,6 +209,18 @@ class _ReceiptBody extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
               ],
+              OutlinedButton.icon(
+                onPressed: driverView || booking.driverId != null
+                    ? () => showRideReportDialog(
+                        context: context,
+                        booking: booking,
+                        reporterIsDriver: driverView,
+                      )
+                    : null,
+                icon: const Icon(Icons.report_problem_outlined),
+                label: Text(driverView ? 'Report passenger' : 'Report driver'),
+              ),
+              const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () => _disputeSettlement(context),
                 icon: const Icon(Icons.receipt_long_outlined),

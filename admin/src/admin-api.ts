@@ -24,7 +24,7 @@ export const adminApi = {
   updateFare: (fare: FareConfig) => call<{ updated: boolean }>('adminUpdateFare', { fare }),
   setDriverStatus: (uid: string, status: string) => call<{ updated: boolean }>('adminSetDriverStatus', { uid, status }),
   setVehicleVerification: (driverId: string, isVerified: boolean) => call<{ updated: boolean }>('adminSetVehicleVerification', { driverId, isVerified }),
-  setUserStatus: (uid: string, isActive: boolean) => call<{ updated: boolean }>('adminSetUserStatus', { uid, isActive }),
+  setUserStatus: (uid: string, isActive: boolean, sourceReportId = '') => call<{ updated: boolean }>('adminSetUserStatus', { uid, isActive, sourceReportId }),
   resolveReport: (reportId: string, status: string, action: string) => call<{ updated: boolean }>('adminResolveReport', { reportId, status, action }),
   resolveSettlementDispute: (bookingId: string, resolution: string) => call<{ updated: boolean }>('adminResolveSettlementDispute', { bookingId, resolution }),
   submitZone: (todaId: string, polygon: [number, number][], notes: string, areas?: [number, number][][]) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes, areas }),

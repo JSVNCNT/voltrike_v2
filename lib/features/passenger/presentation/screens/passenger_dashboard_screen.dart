@@ -9,6 +9,7 @@ import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/booking_repository.dart';
 import '../../../../data/repositories/driver_rating_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
+import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 
 /// ===========================================================================
 /// Passenger Dashboard
@@ -74,7 +75,7 @@ class PassengerDashboardScreen extends ConsumerWidget {
             switch (booking.status) {
               case BookingStatus.completed:
                 completedTrips++;
-                totalSpent += booking.estimatedFare;
+                totalSpent += booking.amountDue;
                 break;
 
               case BookingStatus.pending:
@@ -397,7 +398,7 @@ class PassengerDashboardScreen extends ConsumerWidget {
                               children: [
                                 Chip(label: Text(recentTrip.status.name)),
                                 Text(
-                                  '₱${recentTrip.estimatedFare.toStringAsFixed(2)}',
+                                  '₱${recentTrip.amountDue.toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -429,6 +430,45 @@ class PassengerDashboardScreen extends ConsumerWidget {
                                 ),
                               ],
                             ),
+                            if (recentTrip.driverId != null) ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  if (recentTrip.status !=
+                                          BookingStatus.completed &&
+                                      recentTrip.status !=
+                                          BookingStatus.cancelled)
+                                    Expanded(
+                                      child: FilledButton.icon(
+                                        onPressed: () => context.push(
+                                          AppRoutes.driverTracking,
+                                          extra: recentTrip!.bookingId,
+                                        ),
+                                        icon: const Icon(Icons.map_outlined),
+                                        label: const Text('Open current trip'),
+                                      ),
+                                    ),
+                                  if (recentTrip.status !=
+                                          BookingStatus.completed &&
+                                      recentTrip.status !=
+                                          BookingStatus.cancelled)
+                                    const SizedBox(width: 8),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => showRideReportDialog(
+                                        context: context,
+                                        booking: recentTrip!,
+                                        reporterIsDriver: false,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.report_problem_outlined,
+                                      ),
+                                      label: const Text('Report'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),

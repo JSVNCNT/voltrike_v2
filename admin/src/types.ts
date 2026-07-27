@@ -96,6 +96,7 @@ export interface AdminPerson {
   email?: string;
   phoneNumber?: string;
   role?: string;
+  isActive?: boolean;
 }
 
 export interface Report {
@@ -104,6 +105,9 @@ export interface Report {
   reporterId: string;
   reportedUserId: string;
   todaId?: string;
+  reporterRole?: 'passenger' | 'driver';
+  reportedRole?: 'passenger' | 'driver';
+  reviewAudience?: ('developer_admin' | 'toda_admin')[];
   category: string;
   details: string;
   status: 'open' | 'resolved' | 'dismissed';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../data/models/booking.dart';
+import '../../../../data/models/booking_state_machine.dart';
 
 /// Shared expandable representation of a completed or cancelled ride.
 class ExpandableTripCard extends StatefulWidget {
@@ -70,7 +71,7 @@ class _ExpandableTripCardState extends State<ExpandableTripCard> {
                   Text(
                     DateFormat(
                       'MMM d, yyyy',
-                    ).format(booking.completedAt ?? booking.updatedAt),
+                    ).format(BookingStateMachine.terminalDate(booking)),
                   ),
                   Icon(_expanded ? Icons.expand_less : Icons.expand_more),
                 ],
@@ -107,7 +108,7 @@ class _ExpandableTripCardState extends State<ExpandableTripCard> {
               ),
               if (_expanded) ...[
                 const Divider(height: 24),
-                Text('Fare: PHP ${booking.estimatedFare.toStringAsFixed(2)}'),
+                Text('Fare: PHP ${booking.amountDue.toStringAsFixed(2)}'),
                 Text(
                   'Distance: ${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                 ),

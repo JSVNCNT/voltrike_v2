@@ -972,8 +972,22 @@ exports.adminSetVehicleVerification = onCall(
 exports.adminSetUserStatus = onCall({ region: 'asia-southeast1' }, async (request) => {
   const developer = await requireDeveloperAdmin(request);
   const uid = requiredString(request.data?.uid, 'User ID');
+  const sourceReportId = typeof request.data?.sourceReportId === 'string'
+    ? request.data.sourceReportId.trim()
+    : '';
   if (uid === request.auth.uid) throw new HttpsError('failed-precondition', 'You cannot suspend your own account.');
   if (typeof request.data?.isActive !== 'boolean') throw new HttpsError('invalid-argument', 'Account status is required.');
+  let sourceReport = null;
+  if (sourceReportId) {
+    sourceReport = await db.collection('reports').doc(sourceReportId).get();
+    if (!sourceReport.exists ||
+        sourceReport.data().reportedUserId !== uid) {
+      throw new HttpsError(
+        'failed-precondition',
+        'The source report does not match the account being evaluated.',
+      );
+    }
+  }
   const driverRef = db.collection('drivers').doc(uid);
   const driverSnapshot = await driverRef.get();
   const passengerLock = await db.collection('activePassengerBookings').doc(uid).get();
@@ -1005,12 +1019,26 @@ exports.adminSetUserStatus = onCall({ region: 'asia-southeast1' }, async (reques
     if (driverSnapshot.exists) {
       await driverRef.update({ driverStatus: 'suspended', isOnline: false, isAvailable: false, updatedAt: timestamp() });
     }
+    if (sourceReport) {
+      await sourceReport.ref.update({
+        action: 'Reported account suspended pending evaluation.',
+        suspensionBy: developer.uid,
+        suspensionAt: timestamp(),
+      });
+    }
+  } else if (sourceReport) {
+    await sourceReport.ref.update({
+      action: 'Reported account restored after evaluation.',
+      restorationBy: developer.uid,
+      restorationAt: timestamp(),
+    });
   }
   await adminAudit(db.collection('auditLogs').doc(), {
     actor: developer,
     action: request.data.isActive ? 'restore_user' : 'suspend_user',
     targetType: 'user',
     targetId: uid,
+    details: sourceReportId ? { sourceReportId } : {},
   });
   return { updated: true };
 });
@@ -1355,9 +1383,20 @@ exports.adminListReports = onCall(
     if (typeof cursor === 'string' && cursor.length > 0) {
       query = query.startAfter(cursor);
     }
-    if (!search) query = query.limit(pageSize + 1);
+    // TODA visibility also depends on the report audience. Fetch the TODA
+    // scope first so passenger-account reports intended for developer review
+    // cannot leak merely because they share a booking's TODA ID.
+    if (!search && actor.role !== 'toda_admin') {
+      query = query.limit(pageSize + 1);
+    }
     const snapshot = await query.get();
-    const candidates = search ? snapshot.docs : snapshot.docs.slice(0, pageSize);
+    const visible = actor.role === 'toda_admin'
+      ? snapshot.docs.filter((entry) => {
+        const audience = entry.data().reviewAudience;
+        return !Array.isArray(audience) || audience.includes('toda_admin');
+      })
+      : snapshot.docs;
+    const candidates = visible.slice(0, pageSize);
     const userIds = [...new Set(candidates.flatMap((entry) => [
       entry.data().reporterId,
       entry.data().reportedUserId,
@@ -1391,8 +1430,8 @@ exports.adminListReports = onCall(
     }
     return {
       items,
-      nextCursor: !search && snapshot.docs.length > pageSize
-        ? page.at(-1)?.id || null
+      nextCursor: !search && visible.length > pageSize
+        ? candidates.at(-1)?.id || null
         : null,
     };
   },
@@ -2410,8 +2449,24 @@ exports.createRideReport = onCall(
       throw new HttpsError('invalid-argument', 'Valid report and booking IDs are required.');
     }
     const category = requiredString(request.data?.category, 'Report category').slice(0, 100);
-    const details = String(request.data?.details || '').trim().slice(0, 2000);
+    const details = requiredString(
+      request.data?.details,
+      'Report details',
+    ).slice(0, 2000);
+    if (details.length < 5) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Report details must contain at least five characters.',
+      );
+    }
     const uid = request.auth.uid;
+    const reportingUser = await db.collection('users').doc(uid).get();
+    if (!reportingUser.exists || reportingUser.data().isActive === false) {
+      throw new HttpsError(
+        'permission-denied',
+        'An active account is required to submit a report.',
+      );
+    }
     const booking = await db.collection('bookings').doc(bookingId).get();
     if (!booking.exists) throw new HttpsError('not-found', 'Booking not found.');
     const bookingData = booking.data();
@@ -2424,7 +2479,13 @@ exports.createRideReport = onCall(
     if (!reportedUserId) {
       throw new HttpsError('failed-precondition', 'The booking has no other participant to report.');
     }
-    let todaId = null;
+    const reporterRole = uid === bookingData.passengerId
+      ? 'passenger'
+      : 'driver';
+    const reportedRole = reportedUserId === bookingData.driverId
+      ? 'driver'
+      : 'passenger';
+    let todaId = bookingData.todaId || null;
     if (bookingData.driverId) {
       const driver = await db.collection('drivers').doc(bookingData.driverId).get();
       todaId = driver.exists ? driver.data().todaId || null : null;
@@ -2444,6 +2505,11 @@ exports.createRideReport = onCall(
       reporterId: uid,
       reportedUserId,
       todaId,
+      reporterRole,
+      reportedRole,
+      reviewAudience: reportedRole === 'driver'
+        ? ['developer_admin', 'toda_admin']
+        : ['developer_admin'],
       category,
       details,
       status: 'open',
@@ -2762,10 +2828,28 @@ exports.adminResolveSettlementDispute = onCall(
 exports.enrichReportToda = onDocumentCreated('reports/{reportId}', async (event) => {
   const report = event.data.data();
   const booking = await db.collection('bookings').doc(report.bookingId).get();
-  const driverId = booking.exists ? booking.data().driverId : null;
-  if (!driverId) return;
-  const driver = await db.collection('drivers').doc(driverId).get();
-  if (driver.exists) await event.data.ref.set({ todaId: driver.data().todaId }, { merge: true });
+  if (!booking.exists) return;
+  const bookingData = booking.data();
+  const driverId = bookingData.driverId || null;
+  let todaId = bookingData.todaId || null;
+  if (driverId && !todaId) {
+    const driver = await db.collection('drivers').doc(driverId).get();
+    todaId = driver.exists ? driver.data().todaId || null : null;
+  }
+  const reporterRole = report.reporterId === bookingData.passengerId
+    ? 'passenger'
+    : 'driver';
+  const reportedRole = report.reportedUserId === driverId
+    ? 'driver'
+    : 'passenger';
+  await event.data.ref.set({
+    todaId,
+    reporterRole,
+    reportedRole,
+    reviewAudience: reportedRole === 'driver'
+      ? ['developer_admin', 'toda_admin']
+      : ['developer_admin'],
+  }, { merge: true });
 });
 
 // The Firebase-authenticated caller receives a short-lived LiveKit token only

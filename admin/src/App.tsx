@@ -300,27 +300,55 @@ function LegacyReportsPage({ todaId, onMessage }: { todaId?: string; onMessage: 
 
 function ReportsPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
   const [reports, setReports] = useState<Report[]>([]);
-  const reload = useCallback(() => adminApi.reports(todaId).then(setReports), [todaId]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [loadingMore, setLoadingMore] = useState(false);
+  const reload = useCallback(async () => {
+    const page = await adminApi.reportPage(null, search);
+    setReports(page.items);
+    setNextCursor(page.nextCursor);
+  }, [search]);
   useEffect(() => {
-    reload();
+    void reload();
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') reload();
+      if (document.visibilityState === 'visible') void reload();
     }, 5000);
     return () => window.clearInterval(timer);
   }, [reload]);
+  async function loadMore() {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await adminApi.reportPage(nextCursor, search);
+      setReports((current) => [...current, ...page.items]);
+      setNextCursor(page.nextCursor);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
   async function action(id: string, status: string) {
     const note = window.prompt('Action note (optional):') ?? '';
-    try { await adminApi.resolveReport(id, status, note); onMessage(`Report ${status}.`); reload(); }
+    try { await adminApi.resolveReport(id, status, note); onMessage(`Report ${status}.`); await reload(); }
     catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update report.'); }
   }
-  async function suspendReportedUser(uid: string) {
+  async function suspendReportedUser(report: Report) {
     if (!window.confirm('Suspend this reported account? This prevents it from using VolTrike.')) return;
-    try { await adminApi.setUserStatus(uid, false); onMessage('Reported account suspended.'); reload(); }
+    try { await adminApi.setUserStatus(report.reportedUserId, false, report.id); onMessage('Reported account suspended for evaluation.'); await reload(); }
     catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to suspend account.'); }
+  }
+  async function restoreReportedUser(report: Report) {
+    if (!window.confirm('Restore this account after evaluation?')) return;
+    try {
+      await adminApi.setUserStatus(report.reportedUserId, true, report.id);
+      onMessage(report.reportedRole === 'driver' ? 'User account restored. The driver still needs TODA approval before driving.' : 'Passenger account restored.');
+      await reload();
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to restore account.');
+    }
   }
   const name = (person: Report['reporter'] | undefined, fallback: string) => [person?.firstName, person?.middleName, person?.lastName].filter(Boolean).join(' ') || fallback;
   const contact = (person: Report['reporter'] | undefined) => [person?.email, person?.phoneNumber].filter(Boolean).join(' · ');
-  return <section className="panel wide"><h2>{todaId ? 'Reports involving this TODA' : 'All passenger and driver reports'}</h2><p className="muted">Developer Admin can identify both parties. TODA Admin sees only the identities within its authorized driver scope.</p><div className="table">{reports.map((report) => <div className="row report report-card" key={report.id}><span><b>{report.category}</b><small>Booking {report.bookingId}</small><small className={report.status === 'open' ? 'warning' : 'ok'}>{report.status}</small></span><span className="report-parties"><b>Reported by: {name(report.reporter, 'Passenger identity restricted')}</b><small>{contact(report.reporter) || (report.reporter ? 'No contact details' : 'Restricted outside TODA scope')}</small><b>Reported account: {name(report.reportedUser, 'Driver or passenger identity restricted')}</b><small>{contact(report.reportedUser) || (report.reportedUser ? 'No contact details' : 'Restricted outside TODA scope')}</small></span><span>{report.details || 'No details provided.'}{report.action && <small>Action: {report.action}</small>}</span>{report.status === 'open' && <span className="actions"><button onClick={() => action(report.id, 'resolved')}>Resolve</button><button onClick={() => action(report.id, 'dismissed')}>Dismiss</button>{!todaId && <button onClick={() => suspendReportedUser(report.reportedUserId)}>Suspend reported account</button>}</span>}</div>)}{reports.length === 0 && <p className="muted">No reports are available in this scope.</p>}</div></section>;
+  return <section className="panel wide"><h2>{todaId ? 'Driver reports for this TODA' : 'All passenger and driver reports'}</h2><p className="muted">{todaId ? 'TODA administrators receive reports about their drivers. Passenger-account reports are evaluated by the Developer Admin.' : 'Developer Admin receives every report. Reports about drivers are also synchronized to the driver’s TODA.'}</p><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reports" aria-label="Search reports" /><div className="table">{reports.map((report) => <div className="row report report-card" key={report.id}><span><b>{report.category}</b><small>Booking {report.bookingId}</small><small>{report.reportedRole ? `Reported ${report.reportedRole}` : 'Legacy report'}</small><small className={report.status === 'open' ? 'warning' : 'ok'}>{report.status}</small></span><span className="report-parties"><b>Reported by: {name(report.reporter, 'Passenger identity restricted')}</b><small>{contact(report.reporter) || (report.reporter ? 'No contact details' : 'Restricted outside TODA scope')}</small><b>Reported account: {name(report.reportedUser, 'Driver or passenger identity restricted')}</b><small>{contact(report.reportedUser) || (report.reportedUser ? 'No contact details' : 'Restricted outside TODA scope')}</small></span><span>{report.details || 'No details provided.'}{report.action && <small>Action: {report.action}</small>}</span>{report.status === 'open' && <span className="actions"><button onClick={() => action(report.id, 'resolved')}>Resolve</button><button onClick={() => action(report.id, 'dismissed')}>Dismiss</button>{!todaId && report.reportedUser?.isActive !== false && <button onClick={() => suspendReportedUser(report)}>Suspend reported account</button>}</span>}{!todaId && report.reportedUser?.isActive === false && <span className="actions"><button className="primary" onClick={() => restoreReportedUser(report)}>Restore after evaluation</button></span>}</div>)}{reports.length === 0 && <p className="muted">No reports are available in this scope.</p>}{nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older reports'}</button>}</div></section>;
 }
 
 function OperationsPage() {
