@@ -5,23 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/models/app_user.dart';
 import '../../../../data/models/passenger.dart';
 import '../../../../data/repositories/auth_repository.dart';
-import '../../../../data/repositories/passenger_repository.dart';
-import '../../../../data/repositories/user_repository.dart';
+import '../../../../data/repositories/registration_repository.dart';
 
-class PassengerRegistrationController
-    extends StateNotifier<AsyncValue<void>> {
+class PassengerRegistrationController extends StateNotifier<AsyncValue<void>> {
   PassengerRegistrationController({
     required AuthRepository authRepository,
-    required UserRepository userRepository,
-    required PassengerRepository passengerRepository,
-  })  : _authRepository = authRepository,
-        _userRepository = userRepository,
-        _passengerRepository = passengerRepository,
-        super(const AsyncData(null));
+    required RegistrationRepository registrationRepository,
+  }) : _authRepository = authRepository,
+       _registrationRepository = registrationRepository,
+       super(const AsyncData(null));
 
   final AuthRepository _authRepository;
-  final UserRepository _userRepository;
-  final PassengerRepository _passengerRepository;
+  final RegistrationRepository _registrationRepository;
 
   Future<void> register({
     required AppUser user,
@@ -29,64 +24,65 @@ class PassengerRegistrationController
     required String password,
   }) async {
     state = const AsyncLoading();
+    var accountCreated = false;
+    var registrationCommitted = false;
 
     try {
       debugPrint('========== PASSENGER REGISTRATION ==========');
 
       debugPrint('1. Creating Firebase Authentication account...');
 
-      await _authRepository.register(
+      final credential = await _authRepository.register(
         email: user.email,
         password: password,
       );
+      accountCreated = true;
 
       debugPrint('2. Firebase Authentication SUCCESS');
 
-      final firebaseUser = _authRepository.currentUser;
+      final firebaseUser = credential.user;
 
       debugPrint('3. Current UID: ${firebaseUser?.uid}');
 
       if (firebaseUser == null) {
-        throw Exception(
-          'Unable to create account.',
-        );
+        throw Exception('Unable to create account.');
       }
 
-      final appUser = user.copyWith(
-        uid: firebaseUser.uid,
-      );
-
-      debugPrint('4. Saving AppUser document...');
-
-      await _userRepository.createUser(
-        appUser,
-      );
-
-      debugPrint('5. AppUser saved successfully');
+      final appUser = user.copyWith(uid: firebaseUser.uid);
 
       final passengerProfile = passenger.copyWith(
         uid: firebaseUser.uid,
         updatedAt: DateTime.now(),
       );
 
-      debugPrint('6. Saving Passenger document...');
+      debugPrint('4. Saving registration documents...');
 
-      await _passengerRepository.createPassenger(
-        passengerProfile,
+      await _registrationRepository.createPassengerRegistration(
+        user: appUser,
+        passenger: passengerProfile,
       );
+      registrationCommitted = true;
 
-      debugPrint('7. Passenger saved successfully');
+      debugPrint('5. Registration documents saved successfully');
 
-      debugPrint('8. Sending verification email...');
+      debugPrint('6. Sending verification email...');
 
-      await _authRepository.sendEmailVerification();
-
-      debugPrint('9. Verification email sent');
+      try {
+        await _authRepository.sendEmailVerification();
+        debugPrint('7. Verification email sent');
+      } catch (error) {
+        // The account and profile are valid. The verification screens allow
+        // the user to retry sending the email, so do not fail registration.
+        debugPrint('7. Verification email could not be sent: $error');
+      }
 
       debugPrint('========== REGISTRATION COMPLETE ==========');
 
       state = const AsyncData(null);
     } on FirebaseAuthException catch (e, stackTrace) {
+      if (accountCreated && !registrationCommitted) {
+        await _deleteNewAccount();
+      }
       debugPrint('========== FIREBASE AUTH ERROR ==========');
       debugPrint('Code: ${e.code}');
       debugPrint('Message: ${e.message}');
@@ -95,12 +91,24 @@ class PassengerRegistrationController
       state = AsyncError(e, stackTrace);
       rethrow;
     } catch (e, stackTrace) {
+      if (accountCreated && !registrationCommitted) {
+        await _deleteNewAccount();
+      }
       debugPrint('========== UNKNOWN ERROR ==========');
       debugPrint(e.toString());
       debugPrintStack(stackTrace: stackTrace);
 
       state = AsyncError(e, stackTrace);
       rethrow;
+    }
+  }
+
+  Future<void> _deleteNewAccount() async {
+    try {
+      await _authRepository.deleteAccount();
+      debugPrint('Rolled back incomplete Firebase Authentication account.');
+    } catch (error) {
+      debugPrint('Could not roll back incomplete account: $error');
     }
   }
 }

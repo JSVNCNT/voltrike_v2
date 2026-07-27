@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/driver_repository.dart';
 import '../../../../data/repositories/passenger_repository.dart';
+import '../../../../data/repositories/registration_repository.dart';
 import '../../../../data/repositories/toda_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
 import '../../../../data/repositories/vehicle_repository.dart';
@@ -12,8 +13,7 @@ import '../../../../data/repositories/storage_repository.dart';
 /// Authentication
 /// ===========================================================================
 
-final authRepositoryProvider =
-    Provider<AuthRepository>(
+final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthRepository(),
 );
 
@@ -21,8 +21,7 @@ final authRepositoryProvider =
 /// Users
 /// ===========================================================================
 
-final userRepositoryProvider =
-    Provider<UserRepository>(
+final userRepositoryProvider = Provider<UserRepository>(
   (ref) => UserRepository(),
 );
 
@@ -30,17 +29,23 @@ final userRepositoryProvider =
 /// Passengers
 /// ===========================================================================
 
-final passengerRepositoryProvider =
-    Provider<PassengerRepository>(
+final passengerRepositoryProvider = Provider<PassengerRepository>(
   (ref) => PassengerRepository(),
+);
+
+/// ===========================================================================
+/// Registration
+/// ===========================================================================
+
+final registrationRepositoryProvider = Provider<RegistrationRepository>(
+  (ref) => RegistrationRepository(),
 );
 
 /// ===========================================================================
 /// Drivers
 /// ===========================================================================
 
-final driverRepositoryProvider =
-    Provider<DriverRepository>(
+final driverRepositoryProvider = Provider<DriverRepository>(
   (ref) => DriverRepository(),
 );
 
@@ -48,8 +53,7 @@ final driverRepositoryProvider =
 /// Vehicles
 /// ===========================================================================
 
-final vehicleRepositoryProvider =
-    Provider<VehicleRepository>(
+final vehicleRepositoryProvider = Provider<VehicleRepository>(
   (ref) => VehicleRepository(),
 );
 
@@ -57,8 +61,7 @@ final vehicleRepositoryProvider =
 /// Storage
 /// ===========================================================================
 
-final storageRepositoryProvider =
-    Provider<StorageRepository>(
+final storageRepositoryProvider = Provider<StorageRepository>(
   (ref) => StorageRepository(),
 );
 
@@ -66,7 +69,6 @@ final storageRepositoryProvider =
 /// TODA
 /// ===========================================================================
 
-final todaRepositoryProvider =
-    Provider<TodaRepository>(
+final todaRepositoryProvider = Provider<TodaRepository>(
   (ref) => TodaRepository(),
 );
