@@ -34,7 +34,7 @@ class RingtoneService {
     await _call.stop();
     await _call.setReleaseMode(ReleaseMode.loop);
     await _call.setVolume(.7);
-    await _call.play(AssetSource('ringtones/inside_chat_screen_ringtone.mp3'));
+    await _call.play(AssetSource('ringtones/call_ringtone.mp3'));
   }
 
   Future<void> stopIncomingCall() async {

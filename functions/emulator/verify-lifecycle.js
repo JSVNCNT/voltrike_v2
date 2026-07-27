@@ -231,6 +231,124 @@ async function main() {
     passengerToken,
     [200],
   );
+  const startedCall = await callable(
+    'startBookingCall',
+    passengerToken,
+    { bookingId },
+  );
+  assert.equal(startedCall.status, 'ringing');
+  assert.ok(startedCall.callId.startsWith('call_'));
+  await Promise.all([
+    expectHttpStatus(
+      'passenger may read the booking call before acceptance',
+      firestoreDocument(`bookingCalls/${bookingId}`),
+      passengerToken,
+      [200],
+    ),
+    expectHttpStatus(
+      'assigned driver may read the booking call before acceptance',
+      firestoreDocument(`bookingCalls/${bookingId}`),
+      driverToken,
+      [200],
+    ),
+    expectHttpStatus(
+      'unassigned driver cannot read the booking call',
+      firestoreDocument(`bookingCalls/${bookingId}`),
+      secondDriverToken,
+      [403],
+    ),
+  ]);
+  await expectHttpStatus(
+    'recipient may discover a ringing call through the durable query',
+    `${firestoreBase}:runQuery`,
+    driverToken,
+    [200],
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: 'bookingCalls' }],
+          where: {
+            compositeFilter: {
+              op: 'AND',
+              filters: [
+                {
+                  fieldFilter: {
+                    field: { fieldPath: 'recipientId' },
+                    op: 'EQUAL',
+                    value: { stringValue: 'driver-test-001' },
+                  },
+                },
+                {
+                  fieldFilter: {
+                    field: { fieldPath: 'status' },
+                    op: 'EQUAL',
+                    value: { stringValue: 'ringing' },
+                  },
+                },
+                {
+                  fieldFilter: {
+                    field: { fieldPath: 'expiresAt' },
+                    op: 'GREATER_THAN',
+                    value: {
+                      timestampValue: new Date().toISOString(),
+                    },
+                  },
+                },
+              ],
+            },
+          },
+          orderBy: [
+            {
+              field: { fieldPath: 'expiresAt' },
+              direction: 'DESCENDING',
+            },
+          ],
+          limit: 1,
+        },
+      }),
+    },
+  );
+  await callable(
+    'respondBookingCall',
+    passengerToken,
+    {
+      bookingId,
+      callId: startedCall.callId,
+      response: 'accepted',
+    },
+    { expectError: 'PERMISSION_DENIED' },
+  );
+  const acceptedCall = await callable(
+    'respondBookingCall',
+    driverToken,
+    {
+      bookingId,
+      callId: startedCall.callId,
+      response: 'accepted',
+    },
+  );
+  assert.equal(acceptedCall.status, 'accepted');
+  assert.ok(acceptedCall.endsAtMillis > Date.now());
+  const callCredentials = await callable(
+    'createBookingCallToken',
+    passengerToken,
+    {
+      bookingId,
+      callId: startedCall.callId,
+    },
+  );
+  assert.equal(callCredentials.callId, startedCall.callId);
+  assert.ok(callCredentials.token.length > 20);
+  await callable(
+    'endBookingCall',
+    passengerToken,
+    {
+      bookingId,
+      callId: startedCall.callId,
+    },
+  );
   await expectHttpStatus(
     'passenger cannot overwrite driver tracking location',
     realtimeDocument(

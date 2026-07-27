@@ -19,7 +19,6 @@ import '../features/auth/presentation/screens/splash/splash_screen.dart';
 import '../features/auth/presentation/widgets/account_status_gate.dart';
 import '../features/ride/calls/voice_call_screen.dart';
 import '../features/ride/calls/incoming_call_screen.dart';
-import '../data/repositories/booking_voice_call_repository.dart';
 
 import '../features/driver/presentation/screens/driver_settings_screen.dart';
 import '../features/passenger/presentation/screens/passenger_shell_screen.dart';
@@ -355,27 +354,19 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.bookingVoiceCall,
       builder: (context, state) {
         final extra = state.extra;
+        final details = extra is Map<String, dynamic> ? extra : null;
         final bookingId = extra is String
             ? extra
-            : (extra as Map<String, dynamic>?)?['bookingId'] as String?;
-        final accepting =
-            extra is Map<String, dynamic> && extra['accepting'] == true;
+            : details?['bookingId'] as String?;
+        final callId = details?['callId'] as String?;
+        final outgoing = extra is String || details?['outgoing'] != false;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
         return VoiceCallScreen(
-          callStatus: BookingVoiceCallRepository().watchStatus(bookingId),
-          incoming: accepting,
-          initiate: () => BookingVoiceCallRepository().initiateCall(bookingId),
-          connect: (service) async {
-            final credentials = await BookingVoiceCallRepository()
-                .createCredentials(bookingId, accepting: true);
-            await service.connect(
-              serverUrl: credentials.serverUrl,
-              token: credentials.token,
-            );
-          },
-          endCall: () => BookingVoiceCallRepository().endCall(bookingId),
+          bookingId: bookingId,
+          callId: callId,
+          outgoing: outgoing,
         );
       },
     ),
@@ -383,11 +374,16 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.incomingBookingCall,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final extra = state.extra;
+        final details = extra is Map<String, dynamic> ? extra : null;
+        final bookingId = extra is String
+            ? extra
+            : details?['bookingId'] as String?;
+        final callId = details?['callId'] as String?;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
-        return IncomingCallScreen(bookingId: bookingId);
+        return IncomingCallScreen(bookingId: bookingId, callId: callId);
       },
     ),
   ],

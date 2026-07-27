@@ -1,5 +1,5 @@
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions');
@@ -20,6 +20,17 @@ const {
   validBookingId,
   validOperationId,
 } = require('./booking-lifecycle');
+const {
+  CALL_DURATION_MS,
+  CALL_INVITATION_MS,
+  CALL_STATUS,
+  callAllowedForBookingStatus,
+  effectiveCallStatus,
+  participantRole,
+  recipientFor,
+  terminalCallStatus,
+  timestampMillis: callTimestampMillis,
+} = require('./booking-call-policy');
 const {
   adminIdentityMatches,
   canManageToda,
@@ -524,12 +535,12 @@ async function sendToUser(userId, title, body, data) {
   const channelId = type === 'chat_message'
     ? 'chat_messages'
     : type === 'incoming_call'
-      ? 'incoming_calls'
+      ? 'incoming_calls_v2'
       : 'booking_updates';
   const sound = type === 'chat_message'
     ? 'chat_ringtone'
     : type === 'incoming_call'
-      ? 'inside_chat_screen_ringtone'
+      ? 'call_ringtone'
       : 'booking_ringtone';
   const response = await admin.messaging().sendEachForMulticast({
     tokens,
@@ -2911,8 +2922,353 @@ exports.enrichReportToda = onDocumentCreated('reports/{reportId}', async (event)
   }, { merge: true });
 });
 
-// The Firebase-authenticated caller receives a short-lived LiveKit token only
-// when they are the passenger or assigned driver for an active booking.
+function callResult(data, { idempotent = false } = {}) {
+  return {
+    bookingId: data.bookingId,
+    callId: data.callId,
+    status: data.status,
+    callerId: data.callerId,
+    recipientId: data.recipientId,
+    expiresAtMillis: callTimestampMillis(data.expiresAt),
+    endsAtMillis: callTimestampMillis(data.endsAt),
+    idempotent,
+  };
+}
+
+function requireCallIdentity(data) {
+  const bookingId = requiredString(data?.bookingId, 'Booking ID');
+  const callId = requiredString(data?.callId, 'Call ID');
+  if (!validBookingId(bookingId) || !validOperationId(callId)) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Valid booking and call IDs are required.',
+    );
+  }
+  return { bookingId, callId };
+}
+
+function requireCallParticipant(booking, uid) {
+  const role = participantRole(booking, uid);
+  if (!role) {
+    throw new HttpsError(
+      'permission-denied',
+      'You are not part of this booking.',
+    );
+  }
+  return role;
+}
+
+async function deleteLiveKitRoom(roomName, context = {}) {
+  if (typeof roomName !== 'string' || roomName.length === 0) return;
+  const url = liveKitUrl.value();
+  if (!url) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Voice calling is not configured.',
+    );
+  }
+  const { RoomServiceClient } = require('livekit-server-sdk');
+  const serviceUrl = url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+  const rooms = new RoomServiceClient(
+    serviceUrl,
+    liveKitApiKey.value(),
+    liveKitApiSecret.value(),
+  );
+  try {
+    await rooms.deleteRoom(roomName);
+  } catch (error) {
+    // LiveKit removes empty rooms automatically. Clients still receive the
+    // terminal Firestore state when a room is already absent.
+    logger.info('LiveKit room was already absent while closing a call', {
+      ...context,
+      roomName,
+      error: String(error),
+    });
+  }
+}
+
+// Creates a durable invitation. Token issuance is deliberately separate so
+// neither participant can enter LiveKit until the recipient accepts.
+exports.startBookingCall = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        'unauthenticated',
+        'Sign in before starting a call.',
+      );
+    }
+    const bookingId = requiredString(request.data?.bookingId, 'Booking ID');
+    if (!validBookingId(bookingId)) {
+      throw new HttpsError('invalid-argument', 'A valid booking ID is required.');
+    }
+    if (!liveKitUrl.value()) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Voice calling is not configured.',
+      );
+    }
+
+    const uid = request.auth.uid;
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    const callRef = db.collection('bookingCalls').doc(bookingId);
+    const now = Timestamp.now();
+    const proposedCallId = `call_${randomUUID().replace(/-/g, '')}`;
+    const result = await db.runTransaction(async (transaction) => {
+      const [bookingSnapshot, callSnapshot] = await Promise.all([
+        transaction.get(bookingRef),
+        transaction.get(callRef),
+      ]);
+      if (!bookingSnapshot.exists) {
+        throw new HttpsError('not-found', 'Booking not found.');
+      }
+      const booking = bookingSnapshot.data();
+      requireCallParticipant(booking, uid);
+      if (!callAllowedForBookingStatus(booking.status)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Voice calls are unavailable at this ride stage.',
+        );
+      }
+      const recipientId = recipientFor(booking, uid);
+      if (!recipientId) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The other ride participant is unavailable.',
+        );
+      }
+
+      if (callSnapshot.exists) {
+        const existing = callSnapshot.data();
+        const effectiveStatus = effectiveCallStatus(existing, now.toMillis());
+        const currentSchema =
+          validOperationId(existing.callId) &&
+          typeof existing.roomName === 'string' &&
+          existing.roomName.length > 0;
+        if (currentSchema &&
+            effectiveStatus === CALL_STATUS.ringing &&
+            existing.callerId === uid &&
+            existing.recipientId === recipientId) {
+          return {
+            data: existing,
+            idempotent: true,
+            notify: false,
+          };
+        }
+        if (currentSchema &&
+            (effectiveStatus === CALL_STATUS.ringing ||
+              effectiveStatus === CALL_STATUS.accepted)) {
+          throw new HttpsError(
+            'already-exists',
+            'A ride call is already active.',
+          );
+        }
+      }
+
+      const data = {
+        schemaVersion: 2,
+        bookingId,
+        callId: proposedCallId,
+        roomName: `voltrike_${proposedCallId}`,
+        callerId: uid,
+        recipientId,
+        status: CALL_STATUS.ringing,
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: Timestamp.fromMillis(
+          now.toMillis() + CALL_INVITATION_MS,
+        ),
+        acceptedAt: null,
+        acceptedBy: null,
+        endsAt: null,
+        endedAt: null,
+        endedBy: null,
+      };
+      transaction.set(callRef, data);
+      return { data, idempotent: false, notify: true };
+    });
+
+    if (result.notify) {
+      try {
+        await sendToUser(
+          result.data.recipientId,
+          'Incoming ride call',
+          'Your ride participant is calling you.',
+          {
+            bookingId,
+            callId: result.data.callId,
+            type: 'incoming_call',
+            expiresAtMillis: result.data.expiresAt.toMillis(),
+          },
+        );
+      } catch (error) {
+        // The Firestore listener is the durable discovery path. A temporary
+        // FCM failure must not make the already-created invitation look lost
+        // to the caller.
+        logger.error('Could not send incoming call notification', {
+          bookingId,
+          callId: result.data.callId,
+          error: String(error),
+        });
+      }
+    }
+    return callResult(result.data, { idempotent: result.idempotent });
+  },
+);
+
+// Only the intended recipient can accept or decline. Either participant may
+// mark a genuinely elapsed invitation expired, which gives clients an exact
+// timeout while the scheduled cleanup remains a backend fallback.
+exports.respondBookingCall = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before responding.');
+    }
+    const { bookingId, callId } = requireCallIdentity(request.data);
+    const response = requiredString(request.data?.response, 'Response');
+    if (![
+      CALL_STATUS.accepted,
+      CALL_STATUS.declined,
+      CALL_STATUS.expired,
+    ].includes(response)) {
+      throw new HttpsError('invalid-argument', 'Unsupported call response.');
+    }
+
+    const uid = request.auth.uid;
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    const callRef = db.collection('bookingCalls').doc(bookingId);
+    const now = Timestamp.now();
+    const result = await db.runTransaction(async (transaction) => {
+      const [bookingSnapshot, callSnapshot] = await Promise.all([
+        transaction.get(bookingRef),
+        transaction.get(callRef),
+      ]);
+      if (!bookingSnapshot.exists || !callSnapshot.exists) {
+        throw new HttpsError('not-found', 'The call invitation is unavailable.');
+      }
+      const booking = bookingSnapshot.data();
+      requireCallParticipant(booking, uid);
+      const call = callSnapshot.data();
+      if (call.callId !== callId) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This call invitation is no longer current.',
+        );
+      }
+
+      const effectiveStatus = effectiveCallStatus(call, now.toMillis());
+      if (terminalCallStatus(effectiveStatus)) {
+        if (effectiveStatus === CALL_STATUS.expired &&
+            call.status !== CALL_STATUS.expired) {
+          const expired = {
+            ...call,
+            status: CALL_STATUS.expired,
+            expiredAt: now,
+            updatedAt: now,
+          };
+          transaction.set(callRef, {
+            status: CALL_STATUS.expired,
+            expiredAt: now,
+            updatedAt: now,
+          }, { merge: true });
+          return { data: expired, idempotent: false };
+        }
+        return {
+          data: { ...call, status: effectiveStatus },
+          idempotent: true,
+        };
+      }
+      if (call.status === CALL_STATUS.accepted) {
+        if (response === CALL_STATUS.accepted &&
+            call.acceptedBy === uid) {
+          return { data: call, idempotent: true };
+        }
+        throw new HttpsError(
+          'failed-precondition',
+          'This call has already been accepted.',
+        );
+      }
+      if (call.status !== CALL_STATUS.ringing) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This call can no longer be answered.',
+        );
+      }
+
+      if (response === CALL_STATUS.expired) {
+        const expiresAt = callTimestampMillis(call.expiresAt);
+        if (expiresAt == null || expiresAt > now.toMillis()) {
+          throw new HttpsError(
+            'failed-precondition',
+            'This call invitation has not expired.',
+          );
+        }
+        const expired = {
+          ...call,
+          status: CALL_STATUS.expired,
+          expiredAt: now,
+          updatedAt: now,
+        };
+        transaction.set(callRef, {
+          status: CALL_STATUS.expired,
+          expiredAt: now,
+          updatedAt: now,
+        }, { merge: true });
+        return { data: expired, idempotent: false };
+      }
+
+      if (uid !== call.recipientId) {
+        throw new HttpsError(
+          'permission-denied',
+          'Only the called participant can answer this invitation.',
+        );
+      }
+      if (response === CALL_STATUS.declined) {
+        const declined = {
+          ...call,
+          status: CALL_STATUS.declined,
+          respondedBy: uid,
+          respondedAt: now,
+          updatedAt: now,
+        };
+        transaction.set(callRef, {
+          status: CALL_STATUS.declined,
+          respondedBy: uid,
+          respondedAt: now,
+          updatedAt: now,
+        }, { merge: true });
+        return { data: declined, idempotent: false };
+      }
+
+      if (!callAllowedForBookingStatus(booking.status)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Voice calls are unavailable at this ride stage.',
+        );
+      }
+      const accepted = {
+        ...call,
+        status: CALL_STATUS.accepted,
+        acceptedBy: uid,
+        acceptedAt: now,
+        endsAt: Timestamp.fromMillis(now.toMillis() + CALL_DURATION_MS),
+        updatedAt: now,
+      };
+      transaction.set(callRef, {
+        status: CALL_STATUS.accepted,
+        acceptedBy: uid,
+        acceptedAt: accepted.acceptedAt,
+        endsAt: accepted.endsAt,
+        updatedAt: now,
+      }, { merge: true });
+      return { data: accepted, idempotent: false };
+    });
+    return callResult(result.data, { idempotent: result.idempotent });
+  },
+);
+
+// Issues a short-lived participant token only for the current accepted call.
 exports.createBookingCallToken = onCall(
   {
     region: 'asia-southeast1',
@@ -2920,105 +3276,72 @@ exports.createBookingCallToken = onCall(
   },
   async (request) => {
     if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'Sign in before starting a call.');
-    }
-    const { AccessToken } = require('livekit-server-sdk');
-    const bookingId = request.data?.bookingId;
-    if (typeof bookingId !== 'string' || bookingId.length === 0) {
-      throw new HttpsError('invalid-argument', 'A booking ID is required.');
-    }
-    const bookingSnapshot = await db.collection('bookings').doc(bookingId).get();
-    if (!bookingSnapshot.exists) {
-      throw new HttpsError('not-found', 'Booking not found.');
-    }
-    const booking = bookingSnapshot.data();
-    const activeStatuses = ['driverAssigned', 'driverArriving'];
-    if (!activeStatuses.includes(booking.status)) {
-      throw new HttpsError('failed-precondition', 'Voice calls are only available during an active ride.');
-    }
-    if (![booking.passengerId, booking.driverId].includes(request.auth.uid)) {
-      throw new HttpsError('permission-denied', 'You are not part of this booking.');
-    }
-    const url = liveKitUrl.value();
-    if (!url) {
-      throw new HttpsError('failed-precondition', 'Voice calling is not configured.');
-    }
-    const roomName = `booking_${bookingId}`;
-    const token = new AccessToken(liveKitApiKey.value(), liveKitApiSecret.value(), {
-      identity: request.auth.uid,
-      ttl: '2m',
-    });
-    token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
-    const recipientId = booking.passengerId === request.auth.uid
-      ? booking.driverId
-      : booking.passengerId;
-    const accepting = request.data?.accepting === true;
-    const callRef = db.collection('bookingCalls').doc(bookingId);
-    if (accepting) {
-      await callRef.set({
-        status: 'accepted',
-        acceptedBy: request.auth.uid,
-        acceptedAt: timestamp(),
-        updatedAt: timestamp(),
-      }, { merge: true });
-    } else {
-      await callRef.set({
-        bookingId,
-        callerId: request.auth.uid,
-        recipientId,
-        status: 'ringing',
-        createdAt: timestamp(),
-        updatedAt: timestamp(),
-        expiresAt: Timestamp.fromMillis(Date.now() + 30000),
-      });
-    }
-    if (recipientId && !accepting) {
-      await sendToUser(
-        recipientId,
-        'Incoming ride call',
-        'Your ride participant is calling you.',
-        { bookingId, type: 'incoming_call' },
+      throw new HttpsError(
+        'unauthenticated',
+        'Sign in before joining a call.',
       );
     }
-    return { serverUrl: url, token: await token.toJwt(), roomName };
-  },
-);
-
-exports.respondBookingCall = onCall(
-  { region: 'asia-southeast1' },
-  async (request) => {
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'Sign in before responding.');
-    }
-    const bookingId = requiredString(request.data?.bookingId, 'Booking ID');
-    const response = requiredString(request.data?.response, 'Response');
-    if (!['declined', 'expired'].includes(response)) {
-      throw new HttpsError('invalid-argument', 'Unsupported call response.');
-    }
-    const [booking, call] = await Promise.all([
+    const { bookingId, callId } = requireCallIdentity(request.data);
+    const [bookingSnapshot, callSnapshot] = await Promise.all([
       db.collection('bookings').doc(bookingId).get(),
       db.collection('bookingCalls').doc(bookingId).get(),
     ]);
-    if (!booking.exists ||
-        ![booking.data().passengerId, booking.data().driverId]
-          .includes(request.auth.uid)) {
-      throw new HttpsError('permission-denied', 'You are not part of this call.');
+    if (!bookingSnapshot.exists || !callSnapshot.exists) {
+      throw new HttpsError('not-found', 'The active call is unavailable.');
     }
-    if (call.exists && ['declined', 'ended'].includes(call.data().status)) {
-      return { idempotent: true, status: call.data().status };
+    const booking = bookingSnapshot.data();
+    requireCallParticipant(booking, request.auth.uid);
+    const call = callSnapshot.data();
+    const nowMillis = Date.now();
+    if (call.callId !== callId ||
+        effectiveCallStatus(call, nowMillis) !== CALL_STATUS.accepted) {
+      throw new HttpsError(
+        'failed-precondition',
+        'The call must be accepted before joining.',
+      );
     }
-    await db.collection('bookingCalls').doc(bookingId).set({
-      status: response,
-      respondedBy: request.auth.uid,
-      respondedAt: timestamp(),
-      updatedAt: timestamp(),
-    }, { merge: true });
-    return { idempotent: false, status: response };
+    const endsAtMillis = callTimestampMillis(call.endsAt);
+    if (endsAtMillis == null || endsAtMillis <= nowMillis) {
+      throw new HttpsError('failed-precondition', 'This call has ended.');
+    }
+    const url = liveKitUrl.value();
+    if (!url) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Voice calling is not configured.',
+      );
+    }
+
+    const { AccessToken } = require('livekit-server-sdk');
+    const remainingSeconds = Math.max(
+      1,
+      Math.ceil((endsAtMillis - nowMillis) / 1000),
+    );
+    const token = new AccessToken(
+      liveKitApiKey.value(),
+      liveKitApiSecret.value(),
+      {
+        identity: request.auth.uid,
+        ttl: `${remainingSeconds}s`,
+      },
+    );
+    token.addGrant({
+      roomJoin: true,
+      room: call.roomName,
+      canPublish: true,
+      canSubscribe: true,
+    });
+    return {
+      serverUrl: url,
+      token: await token.toJwt(),
+      roomName: call.roomName,
+      callId,
+      endsAtMillis,
+    };
   },
 );
 
-// Either participant can deliberately end an active booking call. Deleting the
-// room disconnects both sides, and is also invoked by the two-minute UI timer.
+// Either participant can deliberately end only the current call attempt.
 exports.endBookingCall = onCall(
   {
     region: 'asia-southeast1',
@@ -3028,44 +3351,129 @@ exports.endBookingCall = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in before ending a call.');
     }
-    const { RoomServiceClient } = require('livekit-server-sdk');
-    const bookingId = request.data?.bookingId;
-    if (typeof bookingId !== 'string' || bookingId.length === 0) {
-      throw new HttpsError('invalid-argument', 'A booking ID is required.');
+    const { bookingId, callId } = requireCallIdentity(request.data);
+    const [bookingSnapshot, callSnapshot] = await Promise.all([
+      db.collection('bookings').doc(bookingId).get(),
+      db.collection('bookingCalls').doc(bookingId).get(),
+    ]);
+    if (!bookingSnapshot.exists || !callSnapshot.exists) {
+      throw new HttpsError('not-found', 'The active call is unavailable.');
     }
-    const bookingSnapshot = await db.collection('bookings').doc(bookingId).get();
     const booking = bookingSnapshot.data();
-    if (!bookingSnapshot.exists || !booking ||
-        ![booking.passengerId, booking.driverId].includes(request.auth.uid)) {
-      throw new HttpsError('permission-denied', 'You are not part of this booking.');
+    requireCallParticipant(booking, request.auth.uid);
+    const call = callSnapshot.data();
+    if (call.callId !== callId) {
+      throw new HttpsError(
+        'failed-precondition',
+        'This call is no longer current.',
+      );
     }
-    const url = liveKitUrl.value();
-    if (!url) {
-      throw new HttpsError('failed-precondition', 'Voice calling is not configured.');
+    if (terminalCallStatus(call.status)) {
+      return callResult(call, { idempotent: true });
     }
-    const roomName = `booking_${bookingId}`;
-    const serviceUrl = url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-    const rooms = new RoomServiceClient(
-      serviceUrl,
-      liveKitApiKey.value(),
-      liveKitApiSecret.value(),
-    );
-    try {
-      await rooms.deleteRoom(roomName);
-    } catch (error) {
-      // A room may already be empty/deleted; ending a call remains idempotent.
-      logger.info('LiveKit room already absent while ending call', {
-        bookingId,
-        error: String(error),
+
+    await deleteLiveKitRoom(call.roomName, { bookingId, callId });
+    const now = Timestamp.now();
+    const result = await db.runTransaction(async (transaction) => {
+      const currentSnapshot = await transaction.get(
+        db.collection('bookingCalls').doc(bookingId),
+      );
+      if (!currentSnapshot.exists ||
+          currentSnapshot.data().callId !== callId) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This call is no longer current.',
+        );
+      }
+      const current = currentSnapshot.data();
+      if (terminalCallStatus(current.status)) {
+        return { data: current, idempotent: true };
+      }
+      const ended = {
+        ...current,
+        status: CALL_STATUS.ended,
+        endedBy: request.auth.uid,
+        endedAt: now,
+        updatedAt: now,
+      };
+      transaction.set(currentSnapshot.ref, {
+        status: CALL_STATUS.ended,
+        endedBy: request.auth.uid,
+        endedAt: now,
+        updatedAt: now,
+      }, { merge: true });
+      return { data: ended, idempotent: false };
+    });
+    return callResult(result.data, { idempotent: result.idempotent });
+  },
+);
+
+// Exact expiry is enforced when a client responds or requests a token. This
+// scheduled job provides durable cleanup when both apps are offline.
+exports.expireBookingCalls = onSchedule(
+  {
+    schedule: 'every 1 minutes',
+    region: 'asia-southeast1',
+    secrets: [liveKitApiKey, liveKitApiSecret],
+  },
+  async () => {
+    const now = Timestamp.now();
+    const [ringing, accepted] = await Promise.all([
+      db.collection('bookingCalls')
+        .where('status', '==', CALL_STATUS.ringing)
+        .where('expiresAt', '<=', now)
+        .limit(100)
+        .get(),
+      db.collection('bookingCalls')
+        .where('status', '==', CALL_STATUS.accepted)
+        .where('endsAt', '<=', now)
+        .limit(100)
+        .get(),
+    ]);
+
+    await Promise.all(ringing.docs.map((entry) =>
+      db.runTransaction(async (transaction) => {
+        const current = await transaction.get(entry.ref);
+        if (!current.exists ||
+            current.data().callId !== entry.data().callId ||
+            effectiveCallStatus(current.data(), now.toMillis()) !==
+              CALL_STATUS.expired) {
+          return;
+        }
+        transaction.set(entry.ref, {
+          status: CALL_STATUS.expired,
+          expiredAt: now,
+          updatedAt: now,
+        }, { merge: true });
+      }),
+    ));
+    await Promise.all(accepted.docs.map(async (entry) => {
+      const call = entry.data();
+      await deleteLiveKitRoom(call.roomName, {
+        bookingId: call.bookingId,
+        callId: call.callId,
+        source: 'scheduled-expiry',
       });
-    }
-    await db.collection('bookingCalls').doc(bookingId).set({
-      status: 'ended',
-      endedBy: request.auth.uid,
-      endedAt: timestamp(),
-      updatedAt: timestamp(),
-    }, { merge: true });
-    return { ended: true };
+      await db.runTransaction(async (transaction) => {
+        const current = await transaction.get(entry.ref);
+        if (!current.exists ||
+            current.data().callId !== call.callId ||
+            effectiveCallStatus(current.data(), now.toMillis()) !==
+              CALL_STATUS.ended) {
+          return;
+        }
+        transaction.set(entry.ref, {
+          status: CALL_STATUS.ended,
+          endedBy: 'system',
+          endedAt: now,
+          updatedAt: now,
+        }, { merge: true });
+      });
+    }));
+    logger.info('Expired booking calls cleaned up', {
+      ringing: ringing.size,
+      accepted: accepted.size,
+    });
   },
 );
 

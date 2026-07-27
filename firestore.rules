@@ -68,10 +68,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /bookingCalls/{bookingId} {
-      allow read: if signedIn() && request.auth.uid in [
-        resource.data.callerId,
-        resource.data.recipientId
-      ];
+      // Direct call-state listeners are authorized from the booking, so the
+      // caller may subscribe safely even before the call document exists.
+      allow get: if bookingMember(bookingId);
+      // Durable incoming-call discovery is constrained to the recipient.
+      allow list: if signedIn() &&
+        resource.data.recipientId == request.auth.uid;
       allow write: if false;
     }
     match /auditLogs/{auditId} {

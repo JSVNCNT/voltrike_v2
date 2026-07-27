@@ -5,11 +5,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../../app/router.dart';
 import '../../../app/routes.dart';
 import '../../../config/firebase_options.dart';
+import '../../../data/models/booking_call_session.dart';
+import '../../../data/repositories/booking_voice_call_repository.dart';
 import 'ringtone_service.dart';
 
 @pragma('vm:entry-point')
@@ -27,10 +30,14 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   StreamSubscription<String>? _tokenSubscription;
+  StreamSubscription<RemoteMessage>? _messageSubscription;
   StreamSubscription<RemoteMessage>? _tapSubscription;
   StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<BookingCallSession?>? _incomingCallSubscription;
   bool _initialized = false;
   String? _userId;
+  String? _lastOpenedCallId;
+  Map<Object?, Object?>? _pendingIncomingData;
   int _notificationId = 0;
 
   static const _bookingChannel = AndroidNotificationChannel(
@@ -48,11 +55,11 @@ class NotificationService {
     sound: RawResourceAndroidNotificationSound('chat_ringtone'),
   );
   static const _callChannel = AndroidNotificationChannel(
-    'incoming_calls',
+    'incoming_calls_v2',
     'Incoming calls',
     description: 'Incoming ride calls',
     importance: Importance.max,
-    sound: RawResourceAndroidNotificationSound('inside_chat_screen_ringtone'),
+    sound: RawResourceAndroidNotificationSound('call_ringtone'),
   );
   Timer? _callStopTimer;
 
@@ -61,7 +68,9 @@ class NotificationService {
     _initialized = true;
     await _initializeLocalNotifications();
     await _messaging.requestPermission(alert: true, badge: true, sound: true);
-    FirebaseMessaging.onMessage.listen(_showForegroundNotification);
+    _messageSubscription = FirebaseMessaging.onMessage.listen(
+      _showForegroundNotification,
+    );
     _tapSubscription = FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
     final initial = await _messaging.getInitialMessage();
     if (initial != null) _handleTap(initial);
@@ -89,7 +98,7 @@ class NotificationService {
         if (payload == null || payload.isEmpty) return;
         final value = jsonDecode(payload);
         if (value is Map) {
-          _handleData(Map<Object?, Object?>.from(value));
+          _scheduleData(Map<Object?, Object?>.from(value));
         }
       },
     );
@@ -107,7 +116,7 @@ class NotificationService {
         payload != null &&
         payload.isNotEmpty) {
       final value = jsonDecode(payload);
-      if (value is Map) _handleData(Map<Object?, Object?>.from(value));
+      if (value is Map) _scheduleData(Map<Object?, Object?>.from(value));
     }
   }
 
@@ -146,18 +155,46 @@ class NotificationService {
       payload: jsonEncode(message.data),
     );
     if (type == 'incoming_call') {
-      _handleData(message.data);
+      _scheduleData(message.data);
     }
   }
 
   Future<void> syncUser(String userId) async {
     _userId = userId;
+    final pendingIncomingData = _pendingIncomingData;
+    _pendingIncomingData = null;
+    if (pendingIncomingData != null) {
+      _scheduleData(pendingIncomingData);
+    }
     final token = await _messaging.getToken();
     if (token != null) await _saveToken(userId, token);
+    await _incomingCallSubscription?.cancel();
+    _incomingCallSubscription = BookingVoiceCallRepository()
+        .watchIncomingCall(userId)
+        .listen(
+          (session) {
+            if (session == null ||
+                session.effectiveStatus() != BookingCallStatus.ringing) {
+              return;
+            }
+            _scheduleData({
+              'bookingId': session.bookingId,
+              'callId': session.callId,
+              'type': 'incoming_call',
+            });
+          },
+          onError: (_) {
+            // FCM remains available while Firestore reconnects its listener.
+          },
+        );
   }
 
   Future<void> clearUser() async {
     final userId = _userId;
+    await _incomingCallSubscription?.cancel();
+    _incomingCallSubscription = null;
+    _lastOpenedCallId = null;
+    _pendingIncomingData = null;
     final token = await _messaging.getToken();
     if (userId != null && token != null) {
       await FirebaseFirestore.instance
@@ -184,10 +221,14 @@ class NotificationService {
   }
 
   void _handleTap(RemoteMessage message) {
-    _handleData(message.data);
+    _scheduleData(message.data);
   }
 
-  void _handleData(Map<Object?, Object?> data) {
+  void _scheduleData(Map<Object?, Object?> data) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _navigateData(data));
+  }
+
+  void _navigateData(Map<Object?, Object?> data) {
     _callStopTimer?.cancel();
     unawaited(RingtoneService.instance.stopIncomingCall());
     final bookingId = data['bookingId'] as String?;
@@ -199,7 +240,17 @@ class NotificationService {
       return;
     }
     if (type == 'incoming_call') {
-      appRouter.push(AppRoutes.incomingBookingCall, extra: bookingId);
+      if (_userId == null) {
+        _pendingIncomingData = Map<Object?, Object?>.from(data);
+        return;
+      }
+      final callId = data['callId'] as String?;
+      if (callId != null && callId == _lastOpenedCallId) return;
+      _lastOpenedCallId = callId;
+      appRouter.push(
+        AppRoutes.incomingBookingCall,
+        extra: {'bookingId': bookingId, 'callId': callId},
+      );
       return;
     }
     appRouter.go(
@@ -212,8 +263,10 @@ class NotificationService {
 
   Future<void> dispose() async {
     await _tokenSubscription?.cancel();
+    await _messageSubscription?.cancel();
     await _tapSubscription?.cancel();
     await _authSubscription?.cancel();
+    await _incomingCallSubscription?.cancel();
     _callStopTimer?.cancel();
     await RingtoneService.instance.dispose();
   }

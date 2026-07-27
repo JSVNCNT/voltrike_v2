@@ -84,6 +84,7 @@ class RideStagePresentationService {
             icon: Icons.directions,
           ),
           primaryAction: RidePrimaryAction.dropOffPassenger,
+          allowContact: true,
           allowReport: true,
           allowSos: true,
         );
@@ -165,6 +166,7 @@ class RideStagePresentationService {
             icon: Icons.directions_car,
           ),
           primaryAction: RidePrimaryAction.none,
+          allowContact: true,
           allowReport: true,
           allowSos: true,
         );

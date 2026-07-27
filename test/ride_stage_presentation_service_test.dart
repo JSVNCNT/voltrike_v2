@@ -35,13 +35,13 @@ void main() {
         });
       }
 
-      test('${role.name} in-progress exposes only safety actions', () {
+      test('${role.name} in-progress exposes contact and safety actions', () {
         final stage = RideStagePresentationService.resolve(
           role: role,
           status: BookingStatus.passengerOnBoard,
         );
 
-        expect(stage.allowContact, isFalse);
+        expect(stage.allowContact, isTrue);
         expect(stage.allowCancel, isFalse);
         expect(stage.allowReport, isTrue);
         expect(stage.allowSos, isTrue);

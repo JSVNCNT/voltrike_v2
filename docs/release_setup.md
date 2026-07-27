@@ -16,7 +16,7 @@ Before release, deploy Firebase Functions after setting LiveKit server credentia
 cd functions
 npm install
 cd ..
-firebase deploy --only "functions,firestore:rules,database,storage"
+firebase deploy --only "functions,firestore:rules,firestore:indexes,database,storage"
 ```
 
 The Functions runtime is Node 22. Re-deploy after any `functions/index.js` change.
@@ -32,8 +32,11 @@ firebase functions:secrets:set LIVEKIT_API_SECRET
 ```
 
 Set the `LIVEKIT_URL` function parameter to your WebSocket URL when the CLI
-prompts during deploy. `createBookingCallToken` issues a two-minute token
-only to the assigned driver or passenger of an active booking. At two minutes,
-the client calls `endBookingCall`, which deletes the LiveKit room and
-disconnects both participants. Never place the LiveKit secret or a long-lived
-token in Flutter source.
+prompts during deploy. The call lifecycle is coordinated by
+`startBookingCall`, `respondBookingCall`, `createBookingCallToken`, and
+`endBookingCall`. A recipient has 30 seconds to accept, and only an accepted
+call receives a LiveKit token. The server limits the accepted call to two
+minutes and `expireBookingCalls` closes stale invitations and rooms even if a
+client disconnects without cleanup. Firestore remains the shared source of
+truth for passenger and driver state. Never place the LiveKit secret or a
+long-lived token in Flutter source.
