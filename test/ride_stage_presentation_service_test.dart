@@ -31,7 +31,7 @@ void main() {
           expect(stage.allowContact, isTrue);
           expect(stage.allowCancel, isTrue);
           expect(stage.allowReport, isTrue);
-          expect(stage.allowSos, isFalse);
+          expect(stage.allowSos, isTrue);
         });
       }
 
@@ -68,7 +68,7 @@ void main() {
         expect(stage.allowContact, isFalse);
         expect(stage.allowCancel, isFalse);
         expect(stage.allowReport, isTrue);
-        expect(stage.allowSos, isFalse);
+        expect(stage.allowSos, isTrue);
       });
     }
 

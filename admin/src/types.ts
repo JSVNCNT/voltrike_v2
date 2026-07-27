@@ -138,6 +138,8 @@ export interface AdminMetrics {
   earnings: number;
   trips: number;
   tripRevenue: number;
+  bookings: number;
+  safetyIncidents: number;
   scope: string;
 }
 
@@ -166,13 +168,28 @@ export interface BookingOperation {
 
 export interface SafetyIncident {
   id: string;
+  schemaVersion?: number;
   bookingId: string;
   category: string;
   reporterRole: string;
   passengerId: string;
+  passengerName?: string | null;
   driverId?: string | null;
+  driverName?: string | null;
   todaId?: string | null;
+  todaName?: string | null;
   bookingStatus: string;
+  pickupAddress?: string | null;
+  destinationAddress?: string | null;
+  driverLocation?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    bearing?: number;
+    speed?: number;
+    timestamp?: number;
+    online?: boolean;
+  } | null;
   status: string;
   emergencyDispatch: string;
   requiresManualEmergencyContact: boolean;

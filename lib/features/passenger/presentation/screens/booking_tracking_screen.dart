@@ -70,6 +70,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
   ProviderSubscription<AsyncValue<Booking?>>? _bookingSubscription;
   BookingStatus? _lastRoutedStatus;
+  bool _sosSubmitting = false;
 
   //==========================================================================
   // Helpers
@@ -292,7 +293,9 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
           onMessage: stage.allowContact ? () => _openChat(booking) : null,
           onCancel: stage.allowCancel ? () => _cancelBooking(booking) : null,
           onReport: stage.allowReport ? () => _reportDriver(booking) : null,
-          onSos: stage.allowSos ? () => _triggerSos(booking) : null,
+          onSos: stage.allowSos && !_sosSubmitting
+              ? () => _triggerSos(booking)
+              : null,
           messageBadge: snapshot.data ?? 0,
         ),
       ),
@@ -309,6 +312,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   }
 
   Future<void> _triggerSos(Booking booking) async {
+    if (_sosSubmitting) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -330,18 +334,29 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
+    setState(() => _sosSubmitting = true);
     try {
-      await SafetyRepository().triggerSos(booking.bookingId);
+      final alreadyRecorded = await SafetyRepository().triggerSos(
+        booking.bookingId,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS incident recorded for review.')),
+        SnackBar(
+          content: Text(
+            alreadyRecorded
+                ? 'This SOS incident is already recorded for review.'
+                : 'SOS incident recorded for review.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not record SOS: $error')));
+    } finally {
+      if (mounted) setState(() => _sosSubmitting = false);
     }
   }
 

@@ -17,6 +17,39 @@
       ]
     },
     {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "reviewAudience", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "collectionGroup": "zoneRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "safetyIncidents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "drivers",
       "queryScope": "COLLECTION",
       "fields": [

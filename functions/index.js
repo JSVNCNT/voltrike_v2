@@ -1,4 +1,5 @@
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { createHash } = require('node:crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions');
@@ -27,7 +28,6 @@ const {
   calculateFare,
   fareSnapshot,
 } = require('./fare-policy');
-
 const functionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 const runtimeProjectId =
   process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
@@ -1232,10 +1232,17 @@ exports.adminGetMetrics = onCall(
     const bookings = scoped('bookings');
     const reports = scoped('reports');
     const zones = scoped('zoneRequests');
+    const safetyIncidents = scoped('safetyIncidents');
+    const openReportsQuery = actor.role === 'toda_admin'
+      ? reports
+        .where('status', '==', 'open')
+        .where('reviewAudience', 'array-contains', 'toda_admin')
+      : reports.where('status', '==', 'open');
     const [driverCount, openReports, pendingZones, completedTrips,
-      driverEarnings, tripRevenue] = await Promise.all([
+      driverEarnings, tripRevenue, bookingCount, openSafetyIncidents] =
+      await Promise.all([
       drivers.count().get(),
-      reports.where('status', '==', 'open').count().get(),
+      openReportsQuery.count().get(),
       zones.where('status', '==', 'pending').count().get(),
       bookings.where('status', '==', BOOKING_STATUS.completed).count().get(),
       drivers.aggregate({
@@ -1244,6 +1251,8 @@ exports.adminGetMetrics = onCall(
       bookings.where('status', '==', BOOKING_STATUS.completed).aggregate({
         value: AggregateField.sum('amountDue'),
       }).get(),
+      bookings.count().get(),
+      safetyIncidents.where('status', '==', 'open').count().get(),
     ]);
     return {
       drivers: driverCount.data().count,
@@ -1252,6 +1261,8 @@ exports.adminGetMetrics = onCall(
       trips: completedTrips.data().count,
       earnings: Number(driverEarnings.data().value || 0),
       tripRevenue: Number(tripRevenue.data().value || 0),
+      bookings: bookingCount.data().count,
+      safetyIncidents: openSafetyIncidents.data().count,
       scope: actor.role === 'toda_admin' ? actor.todaId : 'platform',
     };
   },
@@ -1333,14 +1344,17 @@ exports.adminListRatings = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
     const actor = await requireAdmin(request);
+    if (actor.role !== 'toda_admin') {
+      throw new HttpsError(
+        'permission-denied',
+        'Driver ratings are managed by the assigned TODA administrator.',
+      );
+    }
     const pageSize = adminPageSize(request.data?.pageSize);
     const ratings = db.collection('ratings');
-    let query = ratings.orderBy('createdAt', 'desc');
-    if (actor.role === 'toda_admin') {
-      query = ratings
-        .where('todaId', '==', actor.todaId)
-        .orderBy('createdAt', 'desc');
-    }
+    let query = ratings
+      .where('todaId', '==', actor.todaId)
+      .orderBy('createdAt', 'desc');
     const cursor = request.data?.cursor;
     if (typeof cursor === 'string' && cursor.length > 0) {
       const cursorDocument = await ratings.doc(cursor).get();
@@ -1503,7 +1517,7 @@ exports.adminListBookings = onCall(
     return {
       items,
       nextCursor: !search && snapshot.docs.length > pageSize
-        ? page.at(-1)?.id || null
+        ? candidates.at(-1)?.id || null
         : null,
     };
   },
@@ -1514,23 +1528,28 @@ exports.adminListSafetyIncidents = onCall(
   async (request) => {
     const actor = await requireAdmin(request);
     const pageSize = adminPageSize(request.data?.pageSize);
-    let query = db.collection('safetyIncidents')
-      .orderBy(FieldPath.documentId())
-      .limit(pageSize);
+    const incidents = db.collection('safetyIncidents');
+    let query = incidents.orderBy(FieldPath.documentId());
     if (actor.role === 'toda_admin') {
-      query = db.collection('safetyIncidents')
+      query = incidents
         .where('todaId', '==', actor.todaId)
-        .orderBy(FieldPath.documentId())
-        .limit(pageSize);
+        .orderBy(FieldPath.documentId());
     }
-    const snapshot = await query.get();
+    const cursor = request.data?.cursor;
+    if (typeof cursor === 'string' && cursor.length > 0) {
+      query = query.startAfter(cursor);
+    }
+    const snapshot = await query.limit(pageSize + 1).get();
+    const page = snapshot.docs.slice(0, pageSize);
     return {
-      items: snapshot.docs.map((entry) => ({
+      items: page.map((entry) => ({
         id: entry.id,
         ...entry.data(),
         createdAt: adminDate(entry.data().createdAt),
       })),
-      nextCursor: null,
+      nextCursor: snapshot.docs.length > pageSize
+        ? page.at(-1)?.id || null
+        : null,
     };
   },
 );
@@ -2526,20 +2545,21 @@ exports.createRideReport = onCall(
 );
 
 // Records an in-app SOS with trusted ride, participant, TODA, and latest
-// backend driver-location snapshots. It does not claim to contact emergency
-// services; that external integration remains an explicit development stub.
+// backend driver-location snapshots. One reporter gets one durable incident
+// per booking, so retries and repeated taps cannot create duplicate alerts.
+// It does not claim to contact emergency services; that external integration
+// remains an explicit development stub.
 exports.createSafetyIncident = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in before using ride SOS.');
     }
-    const incidentId = request.data?.incidentId;
     const bookingId = request.data?.bookingId;
-    if (!validOperationId(incidentId) || !validBookingId(bookingId)) {
+    if (!validBookingId(bookingId)) {
       throw new HttpsError(
         'invalid-argument',
-        'Valid incident and booking IDs are required.',
+        'A valid booking ID is required.',
       );
     }
     const booking = await db.collection('bookings').doc(bookingId).get();
@@ -2548,68 +2568,107 @@ exports.createSafetyIncident = onCall(
     if (![data.passengerId, data.driverId].includes(request.auth.uid)) {
       throw new HttpsError('permission-denied', 'You are not part of this ride.');
     }
-    if (data.status !== BOOKING_STATUS.passengerOnBoard) {
+    const sosStatuses = [
+      BOOKING_STATUS.driverAssigned,
+      BOOKING_STATUS.driverArriving,
+      BOOKING_STATUS.passengerOnBoard,
+      BOOKING_STATUS.paymentConfirmation,
+    ];
+    if (!sosStatuses.includes(data.status)) {
       throw new HttpsError(
         'failed-precondition',
-        'SOS incident capture is available during an active ride.',
+        'SOS is available after a driver is assigned and before the ride closes.',
       );
     }
 
+    const incidentId = `sos_${createHash('sha256')
+      .update(`${bookingId}:${request.auth.uid}`)
+      .digest('hex')
+      .slice(0, 40)}`;
     const incidentRef = db.collection('safetyIncidents').doc(incidentId);
-    const existing = await incidentRef.get();
-    if (existing.exists) {
-      if (existing.data().bookingId === bookingId &&
-          existing.data().reportedBy === request.auth.uid) {
-        return { incidentId, idempotent: true };
-      }
-      throw new HttpsError('already-exists', 'This incident ID is already used.');
-    }
 
-    let todaId = null;
+    let todaId = data.todaId || null;
+    let todaName = data.todaName || null;
     let driverLocation = null;
     if (data.driverId) {
       const [driver, location] = await Promise.all([
         db.collection('drivers').doc(data.driverId).get(),
         realtime.ref(`driver_locations/${data.driverId}`).get(),
       ]);
-      todaId = driver.exists ? driver.data().todaId || null : null;
-      driverLocation = location.exists() ? location.val() : null;
+      todaId = todaId || (driver.exists ? driver.data().todaId || null : null);
+      const locationData = location.exists() ? location.val() : null;
+      if (locationData && typeof locationData === 'object') {
+        driverLocation = {
+          latitude: Number(locationData.latitude),
+          longitude: Number(locationData.longitude),
+          accuracy: Number(locationData.accuracy),
+          bearing: Number(locationData.bearing || 0),
+          speed: Number(locationData.speed || 0),
+          timestamp: Number(locationData.timestamp || locationData.updatedAt),
+          online: locationData.online === true,
+        };
+      }
     }
-    await incidentRef.create({
-      incidentId,
-      bookingId,
-      category: 'sos',
-      reportedBy: request.auth.uid,
-      reporterRole: data.passengerId === request.auth.uid
-        ? 'passenger'
-        : 'driver',
-      passengerId: data.passengerId,
-      driverId: data.driverId || null,
-      todaId,
-      bookingStatus: data.status,
-      pickup: data.pickup,
-      destination: data.destination,
-      driverLocation,
-      status: 'open',
-      emergencyDispatch: 'development_placeholder',
-      requiresManualEmergencyContact: true,
-      createdAt: timestamp(),
-      updatedAt: timestamp(),
-    });
-    await adminAudit(db.collection('auditLogs').doc(), {
-      actor: {
-        uid: request.auth.uid,
-        role: data.passengerId === request.auth.uid ? 'passenger' : 'driver',
+    if (todaId && !todaName) {
+      const toda = await db.collection('todas').doc(todaId).get();
+      todaName = toda.exists ? toda.data().name || null : null;
+    }
+    const reporterRole = data.passengerId === request.auth.uid
+      ? 'passenger'
+      : 'driver';
+    const result = await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(incidentRef);
+      if (existing.exists) {
+        if (existing.data().bookingId === bookingId &&
+            existing.data().reportedBy === request.auth.uid) {
+          return { idempotent: true };
+        }
+        throw new HttpsError(
+          'already-exists',
+          'This incident ID is already used.',
+        );
+      }
+      transaction.create(incidentRef, {
+        schemaVersion: 2,
+        incidentId,
+        bookingId,
+        category: 'sos',
+        reportedBy: request.auth.uid,
+        reporterRole,
+        passengerId: data.passengerId,
+        passengerName: data.passengerName || null,
+        driverId: data.driverId || null,
+        driverName: data.driverName || null,
         todaId,
-      },
-      action: 'create_sos_incident',
-      targetType: 'booking',
-      targetId: bookingId,
-      details: { incidentId },
+        todaName,
+        bookingStatus: data.status,
+        pickup: data.pickup,
+        pickupAddress: data.pickupAddress || null,
+        destination: data.destination,
+        destinationAddress: data.destinationAddress || null,
+        driverLocation,
+        status: 'open',
+        emergencyDispatch: 'development_placeholder',
+        requiresManualEmergencyContact: true,
+        createdAt: timestamp(),
+        updatedAt: timestamp(),
+      });
+      transaction.create(db.collection('auditLogs').doc(), {
+        type: 'admin_action',
+        actorId: request.auth.uid,
+        actorRole: reporterRole,
+        actorTodaId: todaId,
+        action: 'create_sos_incident',
+        targetType: 'booking',
+        targetId: bookingId,
+        details: { incidentId },
+        createdAt: timestamp(),
+      });
+      return { idempotent: false };
     });
     return {
       incidentId,
-      idempotent: false,
+      idempotent: result.idempotent,
       emergencyDispatch: 'development_placeholder',
     };
   },

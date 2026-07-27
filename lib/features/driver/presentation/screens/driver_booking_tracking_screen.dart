@@ -49,6 +49,7 @@ class _DriverBookingTrackingScreenState
   GoogleMapController? _mapController;
   ProviderSubscription<Booking?>? _bookingSubscription;
   String? _finishingBookingId;
+  bool _sosSubmitting = false;
 
   @override
   void initState() {
@@ -368,6 +369,7 @@ class _DriverBookingTrackingScreenState
   }
 
   Future<void> _triggerSos(Booking booking) async {
+    if (_sosSubmitting) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -389,18 +391,29 @@ class _DriverBookingTrackingScreenState
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
+    setState(() => _sosSubmitting = true);
     try {
-      await SafetyRepository().triggerSos(booking.bookingId);
+      final alreadyRecorded = await SafetyRepository().triggerSos(
+        booking.bookingId,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS incident recorded for review.')),
+        SnackBar(
+          content: Text(
+            alreadyRecorded
+                ? 'This SOS incident is already recorded for review.'
+                : 'SOS incident recorded for review.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not record SOS: $error')));
+    } finally {
+      if (mounted) setState(() => _sosSubmitting = false);
     }
   }
 
@@ -435,7 +448,9 @@ class _DriverBookingTrackingScreenState
             : null,
         onCancel: stage.allowCancel ? () => _cancelRide(booking) : null,
         onReport: stage.allowReport ? () => _reportPassenger(booking) : null,
-        onSos: stage.allowSos ? () => _triggerSos(booking) : null,
+        onSos: stage.allowSos && !_sosSubmitting
+            ? () => _triggerSos(booking)
+            : null,
         onNoShow: stage.allowNoShow ? () => _markNoShow(booking) : null,
         messageBadge: snapshot.data ?? 0,
       ),

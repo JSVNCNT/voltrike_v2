@@ -78,9 +78,10 @@ export const adminApi = {
       search,
       pageSize: 25,
     }),
-  safetyIncidents: () =>
+  safetyIncidentPage: (cursor?: string | null) =>
     call<PageResult<SafetyIncident>>('adminListSafetyIncidents', {
-      pageSize: 100,
+      cursor: cursor || '',
+      pageSize: 50,
     }),
   async zones(todaId?: string): Promise<ZoneRequest[]> {
     const source = collection(db, 'zoneRequests');

@@ -1,5 +1,4 @@
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:uuid/uuid.dart';
 
 class SafetyRepository {
   SafetyRepository({FirebaseFunctions? functions})
@@ -7,14 +6,15 @@ class SafetyRepository {
           functions ?? FirebaseFunctions.instanceFor(region: 'asia-southeast1');
 
   final FirebaseFunctions _functions;
-  static const Uuid _uuid = Uuid();
 
-  Future<void> triggerSos(String bookingId) async {
-    await _functions.httpsCallable('createSafetyIncident').call<void>({
-      'incidentId': _uuid.v4(),
-      'bookingId': bookingId,
-      'category': 'sos',
-    });
+  Future<bool> triggerSos(String bookingId) async {
+    final result = await _functions
+        .httpsCallable('createSafetyIncident')
+        .call<Map<String, dynamic>>({
+          'bookingId': bookingId,
+          'category': 'sos',
+        });
+    return result.data['idempotent'] == true;
   }
 
   Future<Map<String, dynamic>> shareTripInformation(String bookingId) async {

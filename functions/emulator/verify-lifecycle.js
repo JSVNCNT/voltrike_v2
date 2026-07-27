@@ -257,10 +257,17 @@ async function main() {
     operationId: operation('arrive-main', 1),
     action: 'arrived',
   });
-  await callable('createSafetyIncident', passengerToken, {
+  const safetyIncident = await callable('createSafetyIncident', passengerToken, {
     bookingId,
-    incidentId: 'incident-test-main-001',
   });
+  const repeatedSafetyIncident = await callable(
+    'createSafetyIncident',
+    passengerToken,
+    { bookingId },
+  );
+  assert.equal(safetyIncident.idempotent, false);
+  assert.equal(repeatedSafetyIncident.idempotent, true);
+  assert.equal(safetyIncident.incidentId, repeatedSafetyIncident.incidentId);
   const shared = await callable(
     'getShareTripInformation',
     passengerToken,
@@ -385,13 +392,32 @@ async function main() {
       (item) => item.todaId === 'test-toda-bacolod',
     ),
   );
-  const developerRatings = await callable(
+  await callable(
     'adminListRatings',
+    developerToken,
+    { pageSize: 20 },
+    { expectError: 'PERMISSION_DENIED' },
+  );
+  const developerSafety = await callable(
+    'adminListSafetyIncidents',
     developerToken,
     { pageSize: 20 },
   );
   assert.ok(
-    developerRatings.items.some((item) => item.bookingId === bookingId),
+    developerSafety.items.some((item) => item.bookingId === bookingId),
+  );
+  const todaSafety = await callable(
+    'adminListSafetyIncidents',
+    todaAdminToken,
+    { pageSize: 20 },
+  );
+  assert.ok(
+    todaSafety.items.some((item) => item.bookingId === bookingId),
+  );
+  assert.ok(
+    todaSafety.items.every(
+      (item) => item.todaId === 'test-toda-bacolod',
+    ),
   );
   const todaRatings = await callable(
     'adminListRatings',
@@ -406,6 +432,22 @@ async function main() {
       (item) => item.todaId === 'test-toda-bacolod',
     ),
   );
+  const developerMetrics = await callable(
+    'adminGetMetrics',
+    developerToken,
+    {},
+  );
+  assert.ok(developerMetrics.bookings >= 2);
+  assert.ok(developerMetrics.trips >= 1);
+  assert.ok(developerMetrics.safetyIncidents >= 1);
+  const todaMetrics = await callable(
+    'adminGetMetrics',
+    todaAdminToken,
+    {},
+  );
+  assert.ok(todaMetrics.bookings >= 1);
+  assert.ok(todaMetrics.trips >= 1);
+  assert.ok(todaMetrics.safetyIncidents >= 1);
   await callable(
     'adminUpdateFare',
     todaAdminToken,
