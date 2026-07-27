@@ -63,7 +63,7 @@ typography, booking lifecycle, repositories, providers, routes, and callbacks.
 - [x] Add reusable compact participant and Material 3 action presentation.
 - [x] Modernize shared ride action card without changing callbacks.
 - [x] Modernize driver active tracking sheet.
-- [x] Add small driver external-navigation control over the map.
+- [x] Keep driver guidance inside the embedded Navigation SDK.
 - [x] Modernize passenger active tracking sheet and remove duplicate actions.
 - [x] Keep trip details available in the expanded sheet state.
 - [x] Align "matched", pickup, onboard, and payment copy across both roles.
@@ -80,7 +80,7 @@ typography, booking lifecycle, repositories, providers, routes, and callbacks.
 - `lib/features/ride/tracking/widgets/trip_status_card.dart`
 - `lib/features/ride/tracking/widgets/trip_information_card.dart`
 - `lib/features/ride/tracking/services/ride_stage_presentation_service.dart`
-- `lib/features/driver/services/external_navigation_service.dart`
+- `lib/features/driver/presentation/widgets/driver_turn_by_turn_map.dart`
 
 ## Token-saving resume strategy
 

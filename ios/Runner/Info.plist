@@ -28,11 +28,6 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VolTrike uses the microphone for voice calls with your active ride participant.</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>comgooglemaps</string>
-		<string>waze</string>
-	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -31,7 +31,7 @@ human-designed. It must not look like a generic AI-generated interface.
 6. Use Material 3 components and semantics on mobile.
 7. Keep SOS visually distinct and accurately disclose its current behavior. Do
    not imply that external emergency services were contacted when they were not.
-8. Preserve Google Maps, Waze, and system chooser behavior for driver navigation.
+8. Keep driver guidance inside VolTrike through the embedded Navigation SDK.
 9. Do not revive unused legacy trip models, duplicate screens, or zero-byte
    placeholder widgets while modernizing the active UI.
 10. Do not combine data values that only appear equivalent. In particular,
@@ -162,8 +162,8 @@ security rules remain unchanged and authoritative.
 - [x] Standardize shared app bars and the modernized screens' page padding,
       loading, errors, and scroll behavior.
       scroll behavior.
-- [ ] Keep active driver navigation as a small accessible map control that opens
-      Google Maps, Waze, or the current chooser.
+- [x] Keep active driver guidance inside the embedded Navigation SDK and remove
+      external Google Maps, Waze, and system-chooser handoffs.
 - [ ] Do not casually consolidate driver online toggles: Home and Dashboard
       currently use different operational paths.
 

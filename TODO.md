@@ -95,14 +95,13 @@
 - DONE: Both roles join LiveKit only after acceptance.
 - VERIFY: Call-state tests; foreground/background two-device calls.
 
-## M10 [ ] External driver navigation handoff
-- CODE: Implemented; dependency resolution and device checks pending.
-- ADD: Google Maps, Waze, and chooser actions.
+## M10 [ ] Embedded driver navigation
+- CODE: Implemented with the Google Navigation SDK; device checks pending.
 - ADD: Pickup/destination selection based on ride stage.
-- HANDLE: Missing app, invalid coordinates, return to VolTrike.
-- HANDLE: Continue heartbeat while navigation app is foregrounded.
-- DONE: Correct destination opens and active ride restores.
-- VERIFY: Installed/missing-app checks; background tracking check.
+- HANDLE: Invalid coordinates, GPS loss, quota, and SDK initialization errors.
+- HANDLE: Continue heartbeat while embedded guidance is active.
+- DONE: Correct in-app route opens and the active ride remains available.
+- VERIFY: Pickup/drop-off guidance and background tracking checks.
 
 ## M11 [ ] History and dashboard UI
 - CODE: Implemented; visual and provider validation pending.
@@ -135,7 +134,7 @@
 - ADD: Two-role happy-path integration coverage.
 - COVER: Accept, restart, tracking, settlement, rating, report, call.
 - RUN: Flutter tests, Functions tests, admin typecheck.
-- RUN: Two-device defense smoke test with external navigation.
+- RUN: Two-device defense smoke test with embedded driver navigation.
 - DONE: No critical failures; evidence recorded in `DONE.md`.
 - VERIFY: Repeat clean-data demo from account login.
 

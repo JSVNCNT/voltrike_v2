@@ -253,16 +253,16 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
     }
     if (message.contains('quotaExceeded') ||
         message.contains('quotaCheckFailed')) {
-      return 'The daily navigation limit has been reached. Use Maps or Waze.';
+      return 'The daily in-app navigation limit has been reached.';
     }
     if (message.contains('locationUnavailable') ||
         message.contains('Location services')) {
-      return 'Waiting for an accurate GPS location. You can use Maps or Waze.';
+      return 'Waiting for an accurate GPS location.';
     }
     if (message.contains('terms')) {
       return 'Accept the Google Navigation terms to use in-app guidance.';
     }
-    return 'In-app guidance is unavailable. Use Google Maps or Waze.';
+    return 'In-app guidance is currently unavailable.';
   }
 
   @override

@@ -24,7 +24,7 @@
 2. Passenger requests Jung's Townhouse -> Estefania.
 3. Driver accepts; both restart into active tracking.
 4. Verify moving marker, route refresh, ETA, call, chat.
-5. Test Google Maps/Waze handoff and VolTrike restoration.
+5. Test the embedded driver Navigation SDK through pickup and drop-off.
 6. Driver marks arrival, starts ride, confirms cash/drop-off.
 7. Verify driver earnings receipt; return home once.
 8. Verify passenger rating -> receipt -> home once.
@@ -41,7 +41,7 @@
 - Call Firestore read rules expose participants only.
 - Aggregate queries require no unexpected indexes.
 - Android background-location permission flow is acceptable.
-- Waze missing-app failure remains user-safe.
+- Navigation SDK failures remain user-safe and keep the active ride available.
 
 # RELEASE EXCLUSIONS
 - Polygon redesign/testing remains deferred.

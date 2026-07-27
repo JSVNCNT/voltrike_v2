@@ -16,7 +16,6 @@ import '../../providers/driver_current_booking_provider.dart';
 import '../../providers/driver_booking_provider.dart';
 import '../../providers/driver_navigation_provider.dart';
 import '../../controllers/driver_navigation_controller.dart';
-import '../../services/external_navigation_service.dart';
 
 import '../widgets/passenger_information_card.dart';
 import '../widgets/driver_turn_by_turn_map.dart';
@@ -133,51 +132,6 @@ class _DriverBookingTrackingScreenState
 
   String _guidanceDestinationLabel(Booking booking) {
     return _tripStarted(booking) ? 'destination' : 'pickup';
-  }
-
-  Future<void> _openExternalNavigation(Booking booking) async {
-    final app = await showModalBottomSheet<ExternalNavigationApp>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.map_outlined),
-              title: const Text('Google Maps'),
-              onTap: () =>
-                  Navigator.pop(context, ExternalNavigationApp.googleMaps),
-            ),
-            ListTile(
-              leading: const Icon(Icons.navigation_outlined),
-              title: const Text('Waze'),
-              onTap: () => Navigator.pop(context, ExternalNavigationApp.waze),
-            ),
-            ListTile(
-              leading: const Icon(Icons.open_in_new),
-              title: const Text('Choose navigation app'),
-              onTap: () =>
-                  Navigator.pop(context, ExternalNavigationApp.chooser),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (app == null) return;
-    try {
-      await const ExternalNavigationService().open(
-        app: app,
-        destination: _routeDestination(booking),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Navigation app unavailable. Try another option.'),
-        ),
-      );
-    }
   }
 
   Widget _driverNavigation([Booking? activeBooking]) {
@@ -536,11 +490,6 @@ class _DriverBookingTrackingScreenState
                               ),
                             ),
                           ),
-                          IconButton(
-                            tooltip: 'Open another navigation app',
-                            onPressed: () => _openExternalNavigation(booking),
-                            icon: const Icon(Icons.open_in_new_rounded),
-                          ),
                         ],
                       ),
                     ),
@@ -842,27 +791,6 @@ class _DriverBookingTrackingScreenState
                 ),
               ),
             ],
-            if (booking.status == BookingStatus.driverAssigned ||
-                booking.status == BookingStatus.driverArriving ||
-                booking.status == BookingStatus.passengerOnBoard ||
-                booking.status == BookingStatus.paymentConfirmation)
-              Align(
-                alignment: const Alignment(0.88, -0.18),
-                child: Semantics(
-                  button: true,
-                  label: _tripStarted(booking)
-                      ? 'Open navigation to destination'
-                      : 'Open navigation to pickup',
-                  child: FloatingActionButton.small(
-                    heroTag: 'driver-external-navigation',
-                    tooltip: _tripStarted(booking)
-                        ? 'Navigate to destination'
-                        : 'Navigate to pickup',
-                    onPressed: () => _openExternalNavigation(booking),
-                    child: const Icon(Icons.navigation_rounded),
-                  ),
-                ),
-              ),
             DraggableScrollableSheet(
               initialChildSize: 0.48,
               minChildSize: 0.16,
