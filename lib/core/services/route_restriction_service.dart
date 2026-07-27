@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../data/models/route_restriction.dart';
 

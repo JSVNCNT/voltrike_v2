@@ -44,10 +44,10 @@ dependencies:
   # Google Maps
   # ===========================================================================
 
- 
-  # Google Maps
-  google_maps_flutter: ^2.18.0
-  google_maps_flutter_platform_interface: ^2.12.0
+  # Pinned while the official Flutter wrapper is pre-1.0.
+  # 0.10.0 / Android Nav SDK 7.7.0 collides with LiveKit's WebRTC
+  # org.jni_zero classes. Keep the newest compatible pilot version.
+  google_navigation_flutter: 0.9.2
 
   # Location
   geolocator: ^14.0.2
@@ -150,4 +150,4 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: assets/images/appLogo.png
-  min_sdk_android: 21
+  min_sdk_android: 24

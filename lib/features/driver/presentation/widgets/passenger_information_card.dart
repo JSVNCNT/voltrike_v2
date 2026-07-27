@@ -23,52 +23,64 @@ class PassengerInformationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final hasPhoto = photoUrl?.trim().isNotEmpty == true;
+
     return Card(
-      elevation: 4,
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             CircleAvatar(
-              radius: 32,
-              backgroundImage: photoUrl != null
-                  ? NetworkImage(photoUrl!)
-                  : null,
-              child: photoUrl == null
-                  ? const Icon(
-                      Icons.person,
-                      size: 32,
-                    )
-                  : null,
+              radius: 27,
+              backgroundColor: colorScheme.primaryContainer,
+              foregroundColor: colorScheme.onPrimaryContainer,
+              backgroundImage: hasPhoto ? NetworkImage(photoUrl!) : null,
+              child: hasPhoto
+                  ? null
+                  : const Icon(Icons.person_rounded, size: 28),
             ),
-
-            const SizedBox(height: 12),
-
-            Text(
-              passengerName,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          passengerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.verified_user_outlined,
+                        size: 18,
+                        color: colorScheme.primary,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Confirmed ride passenger',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            const SizedBox(height: 4),
-
-            Text(
-              'Passenger',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(
-                    color: Colors.grey,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            const Chip(
-              avatar: Icon(Icons.verified_user_outlined, size: 18),
-              label: Text('Confirmed ride passenger'),
-            ),
+            Icon(Icons.person_pin_circle_outlined, color: colorScheme.primary),
           ],
         ),
       ),

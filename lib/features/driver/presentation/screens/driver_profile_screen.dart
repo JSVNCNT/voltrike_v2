@@ -1,57 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../app/routes.dart';
+import '../../../../core/errors/domain_error_mapper.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/driver_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
+import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../../common/presentation/widgets/emergency_contacts_card.dart';
+import '../../../common/presentation/widgets/profile_widgets.dart';
 
-/// ===========================================================================
-/// Driver Profile Screen
-///
-/// Displays the authenticated driver's profile.
-///
-/// Shows:
-/// • Profile Photo
-/// • Driver Status
-/// • Driver Information
-/// • Driver Statistics
-///
-/// Settings are accessible from the AppBar.
-/// ===========================================================================
 class DriverProfileScreen extends ConsumerWidget {
   const DriverProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = AuthRepository();
-
-    final user = auth.currentUser;
-
-    if (user == null) {
+    final firebaseUser = AuthRepository().currentUser;
+    if (firebaseUser == null) {
       return const Scaffold(body: Center(child: Text('Driver not signed in.')));
     }
 
     return StreamBuilder(
-      stream: DriverRepository().driverStream(user.uid),
+      stream: DriverRepository().driverStream(firebaseUser.uid),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
         if (snapshot.hasError) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Driver Profile')),
-            body: Center(child: Text(snapshot.error.toString())),
-          );
+          return _ProfileError(error: snapshot.error!);
         }
 
         final driver = snapshot.data;
-
         if (driver == null) {
           return const Scaffold(
             body: Center(child: Text('Driver profile not found.')),
@@ -59,194 +43,152 @@ class DriverProfileScreen extends ConsumerWidget {
         }
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Driver Profile'),
+          appBar: AppAppBar(
+            title: 'Profile',
             actions: [
               IconButton(
-                icon: const Icon(Icons.settings),
-                onPressed: () {
-                  context.push(AppRoutes.driverSettings);
-                },
+                tooltip: 'Settings',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => context.push(AppRoutes.driverSettings),
               ),
             ],
           ),
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  //----------------------------------------------------------------
-                  // Profile
-                  //----------------------------------------------------------------
-                  CircleAvatar(
-                    radius: 60,
-                    backgroundImage: driver.profilePhotoUrl.isNotEmpty
-                        ? NetworkImage(driver.profilePhotoUrl)
-                        : null,
-                    child: driver.profilePhotoUrl.isEmpty
-                        ? const Icon(Icons.person, size: 60)
-                        : null,
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  Chip(
-                    avatar: Icon(
-                      driver.isOnline ? Icons.circle : Icons.circle_outlined,
-                      color: driver.isOnline ? Colors.green : Colors.red,
-                      size: 16,
+          body: FutureBuilder(
+            future: UserRepository().getUser(firebaseUser.uid),
+            builder: (context, userSnapshot) {
+              final appUser = userSnapshot.data;
+              return SafeArea(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  children: [
+                    ProfileIdentityHeader(
+                      name:
+                          appUser?.fullName ??
+                          firebaseUser.displayName ??
+                          'VolTrike driver',
+                      subtitle: appUser?.email ?? firebaseUser.email ?? '',
+                      photoUrl: driver.profilePhotoUrl,
+                      statusLabel: driver.isOnline ? 'Online' : 'Offline',
+                      statusColor: driver.isOnline
+                          ? AppColors.success
+                          : AppColors.textSecondary,
                     ),
-                    label: Text(driver.isOnline ? 'ONLINE' : 'OFFLINE'),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  //----------------------------------------------------------------
-                  // Driver Information
-                  //----------------------------------------------------------------
-                  Card(
-                    child: Column(
+                    const SizedBox(height: 24),
+                    ProfileSection(
+                      title: 'Driver information',
                       children: [
-                        ListTile(
-                          leading: const Icon(Icons.groups),
-                          title: const Text('TODA ID'),
-                          subtitle: Text(driver.todaId),
+                        ProfileInfoTile(
+                          icon: Icons.groups_outlined,
+                          label: 'TODA',
+                          value: _available(driver.todaId),
                         ),
-
-                        const Divider(height: 1),
-
-                        FutureBuilder(
-                          future: UserRepository().getUser(user.uid),
-                          builder: (context, userSnapshot) {
-                            final dateOfBirth = userSnapshot.data?.dateOfBirth;
-                            if (dateOfBirth == null) {
-                              return const SizedBox.shrink();
-                            }
-                            return Column(
-                              children: [
-                                ListTile(
-                                  leading: const Icon(Icons.cake_outlined),
-                                  title: const Text('Date of Birth'),
-                                  subtitle: Text(
-                                    dateOfBirth
-                                        .toLocal()
-                                        .toString()
-                                        .split(' ')
-                                        .first,
-                                  ),
-                                ),
-                                const Divider(height: 1),
-                              ],
-                            );
-                          },
-                        ),
-
-                        ListTile(
-                          leading: const Icon(Icons.directions_car),
-                          title: const Text('Vehicle ID'),
-                          subtitle: Text(driver.vehicleId),
-                        ),
-
-                        const Divider(height: 1),
-
-                        ListTile(
-                          leading: const Icon(Icons.badge),
-                          title: const Text('License Number'),
-                          subtitle: Text(driver.licenseNumber),
-                        ),
-
-                        const Divider(height: 1),
-
-                        ListTile(
-                          leading: const Icon(Icons.event),
-                          title: const Text('License Expiry'),
-                          subtitle: Text(
-                            driver.licenseExpiry
-                                .toLocal()
-                                .toString()
-                                .split(' ')
-                                .first,
+                        if (appUser?.dateOfBirth != null)
+                          ProfileInfoTile(
+                            icon: Icons.cake_outlined,
+                            label: 'Date of birth',
+                            value: _date(appUser!.dateOfBirth!),
                           ),
+                        ProfileInfoTile(
+                          icon: Icons.electric_rickshaw_outlined,
+                          label: 'Vehicle ID',
+                          value: _available(driver.vehicleId),
                         ),
-
-                        const Divider(height: 1),
-
-                        ListTile(
-                          leading: Icon(
-                            driver.isApproved
-                                ? Icons.check_circle
-                                : Icons.pending,
-                            color: driver.isApproved
-                                ? Colors.green
-                                : Colors.orange,
-                          ),
-                          title: const Text('Approval Status'),
-                          subtitle: Text(driver.driverStatus.toUpperCase()),
+                        ProfileInfoTile(
+                          icon: Icons.badge_outlined,
+                          label: 'License number',
+                          value: _available(driver.licenseNumber),
+                        ),
+                        ProfileInfoTile(
+                          icon: Icons.event_outlined,
+                          label: 'License expiry',
+                          value: _date(driver.licenseExpiry),
+                          iconColor: driver.licenseExpiry.isBefore(
+                            DateTime.now(),
+                          )
+                              ? AppColors.error
+                              : AppColors.primary,
+                        ),
+                        ProfileInfoTile(
+                          icon: driver.isApproved
+                              ? Icons.verified_outlined
+                              : Icons.pending_outlined,
+                          label: 'Approval status',
+                          value: _titleCase(driver.driverStatus),
+                          iconColor: driver.isApproved
+                              ? AppColors.success
+                              : AppColors.warning,
                         ),
                       ],
                     ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  EmergencyContactsCard(userId: user.uid),
-
-                  const SizedBox(height: 24),
-
-                  //----------------------------------------------------------------
-                  // Statistics
-                  //----------------------------------------------------------------
-                  Card(
-                    child: Column(
+                    const SizedBox(height: 24),
+                    EmergencyContactsCard(userId: firebaseUser.uid),
+                    const SizedBox(height: 24),
+                    ProfileSection(
+                      title: 'Performance',
                       children: [
-                        ListTile(
-                          leading: const Icon(Icons.star, color: Colors.amber),
-                          title: const Text('Average Rating'),
-                          trailing: Text(
-                            driver.rating.toStringAsFixed(1),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                        ProfileInfoTile(
+                          icon: Icons.star_outline_rounded,
+                          label: 'Average rating',
+                          value:
+                              '${driver.rating.toStringAsFixed(1)} / 5 '
+                              '(${driver.ratingCount} ratings)',
+                          iconColor: AppColors.rating,
                         ),
-
-                        const Divider(height: 1),
-
-                        ListTile(
-                          leading: const Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                          ),
-                          title: const Text('Completed Trips'),
-                          trailing: Text(
-                            driver.completedTrips.toString(),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                        ProfileInfoTile(
+                          icon: Icons.check_circle_outline_rounded,
+                          label: 'Completed trips',
+                          value: '${driver.completedTrips}',
+                          iconColor: AppColors.success,
                         ),
-
-                        const Divider(height: 1),
-
-                        ListTile(
-                          leading: const Icon(
-                            Icons.payments,
-                            color: Colors.green,
-                          ),
-                          title: const Text('Total Earnings'),
-                          trailing: Text(
-                            '₱${driver.totalEarnings.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
+                        ProfileInfoTile(
+                          icon: Icons.account_balance_wallet_outlined,
+                          label: 'Profile earnings total',
+                          value: NumberFormat.currency(
+                            locale: 'en_PH',
+                            symbol: '₱',
+                          ).format(driver.totalEarnings),
+                          iconColor: AppColors.success,
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            },
           ),
         );
       },
     );
   }
+}
+
+class _ProfileError extends StatelessWidget {
+  const _ProfileError({required this.error});
+
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const AppAppBar(title: 'Profile'),
+      body: Center(child: Text(DomainErrorMapper.message(error))),
+    );
+  }
+}
+
+String _date(DateTime value) {
+  return DateFormat('MMMM d, yyyy').format(value.toLocal());
+}
+
+String _available(String value) {
+  return value.trim().isEmpty ? 'Not provided' : value;
+}
+
+String _titleCase(String value) {
+  return value
+      .replaceAll('_', ' ')
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+      .join(' ');
 }

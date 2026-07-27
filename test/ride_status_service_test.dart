@@ -7,19 +7,19 @@ void main() {
     test('uses role-appropriate assigned and active-trip labels', () {
       expect(
         RideStatusService.passengerStatus(BookingStatus.driverAssigned).title,
-        'Driver Assigned',
+        'Driver Matched',
       );
       expect(
         RideStatusService.driverStatus(BookingStatus.driverAssigned).title,
-        'Drive to Pickup',
+        'Heading to Pickup',
       );
       expect(
         RideStatusService.passengerStatus(BookingStatus.passengerOnBoard).title,
-        'On the Way',
+        'Trip in Progress',
       );
       expect(
         RideStatusService.driverStatus(BookingStatus.passengerOnBoard).title,
-        'Trip in Progress',
+        'Heading to Destination',
       );
     });
 

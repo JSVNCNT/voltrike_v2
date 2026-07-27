@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/config/navigation_config.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:voltrike_v2/features/driver/providers/driver_location_provider.dart';
 
 import '../../../../data/models/booking.dart';
@@ -17,6 +19,7 @@ import '../../controllers/driver_navigation_controller.dart';
 import '../../services/external_navigation_service.dart';
 
 import '../widgets/passenger_information_card.dart';
+import '../widgets/driver_turn_by_turn_map.dart';
 
 import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
@@ -109,6 +112,27 @@ class _DriverBookingTrackingScreenState
 
   LatLng _routeDestination(Booking booking) {
     return _tripStarted(booking) ? booking.destination : booking.pickup;
+  }
+
+  bool _guidanceEligible(Booking booking) {
+    return booking.status == BookingStatus.driverAssigned ||
+        booking.status == BookingStatus.driverArriving ||
+        booking.status == BookingStatus.passengerOnBoard;
+  }
+
+  bool _useInAppGuidance(Booking booking) {
+    return !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        NavigationConfig.inAppTurnByTurnEnabled &&
+        _guidanceEligible(booking);
+  }
+
+  String _guidanceLegKey(Booking booking) {
+    return '${booking.bookingId}:${_tripStarted(booking) ? 'dropoff' : 'pickup'}';
+  }
+
+  String _guidanceDestinationLabel(Booking booking) {
+    return _tripStarted(booking) ? 'destination' : 'pickup';
   }
 
   Future<void> _openExternalNavigation(Booking booking) async {
@@ -459,15 +483,17 @@ class _DriverBookingTrackingScreenState
 
   Widget _trackingSheet({
     required Booking booking,
-    required LatLng? driverLocation,
     required DriverNavigationState navigation,
     required RidePrimaryAction primaryAction,
+    required bool isUpdatingRide,
     required ScrollController scrollController,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Material(
       elevation: 10,
-      color: Theme.of(context).scaffoldBackgroundColor,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      color: colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -489,6 +515,38 @@ class _DriverBookingTrackingScreenState
               controller: scrollController,
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               children: [
+                if (navigation.navigationError?.isNotEmpty == true) ...[
+                  Material(
+                    color: colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.gps_off_rounded,
+                            color: colorScheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              navigation.navigationError!,
+                              style: TextStyle(
+                                color: colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Open another navigation app',
+                            onPressed: () => _openExternalNavigation(booking),
+                            icon: const Icon(Icons.open_in_new_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (navigation.restrictionWarning?.isNotEmpty == true) ...[
                   Material(
                     color: Colors.red.shade50,
@@ -515,35 +573,53 @@ class _DriverBookingTrackingScreenState
                   eta: navigation.eta,
                   distance: navigation.distance,
                 ),
-                if (navigation.instruction?.isNotEmpty == true)
+                if (navigation.isTurnByTurnActive ||
+                    navigation.isRerouting) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Chip(
+                      avatar: Icon(
+                        navigation.isRerouting
+                            ? Icons.sync_rounded
+                            : Icons.navigation_rounded,
+                        size: 18,
+                      ),
+                      label: Text(
+                        navigation.isRerouting
+                            ? 'Rerouting with live traffic'
+                            : 'In-app navigation beta',
+                      ),
+                    ),
+                  ),
+                ],
+                if (navigation.instruction?.isNotEmpty == true) ...[
+                  const SizedBox(height: 10),
                   Card(
-                    color: Colors.teal.shade50,
+                    margin: EdgeInsets.zero,
+                    elevation: 0,
+                    color: colorScheme.secondaryContainer.withValues(
+                      alpha: 0.62,
+                    ),
                     child: ListTile(
-                      leading: const Icon(Icons.navigation, color: Colors.teal),
+                      leading: Icon(
+                        Icons.navigation_rounded,
+                        color: colorScheme.primary,
+                      ),
                       title: Text(navigation.instruction!),
                       subtitle: navigation.nextInstruction == null
                           ? null
                           : Text('Next: ${navigation.nextInstruction}'),
                     ),
                   ),
+                ],
+                const SizedBox(height: 10),
                 PassengerInformationCard(
                   passengerName: booking.passengerName ?? 'Passenger',
                   photoUrl: booking.passengerPhotoUrl,
                 ),
+                const SizedBox(height: 10),
                 _rideActions(booking),
-                if (booking.status == BookingStatus.driverAssigned ||
-                    booking.status == BookingStatus.driverArriving ||
-                    booking.status == BookingStatus.passengerOnBoard ||
-                    booking.status == BookingStatus.paymentConfirmation)
-                  OutlinedButton.icon(
-                    onPressed: () => _openExternalNavigation(booking),
-                    icon: const Icon(Icons.navigation_outlined),
-                    label: Text(
-                      _tripStarted(booking)
-                          ? 'Navigate to Destination'
-                          : 'Navigate to Pickup',
-                    ),
-                  ),
                 const SizedBox(height: 10),
                 TripInformationCard(
                   pickup: booking.pickupAddress,
@@ -562,6 +638,7 @@ class _DriverBookingTrackingScreenState
               minimum: const EdgeInsets.fromLTRB(16, 6, 16, 10),
               child: RidePrimaryButton(
                 action: primaryAction,
+                isLoading: isUpdatingRide,
                 onPressed: () => _advanceRide(booking),
               ),
             ),
@@ -594,6 +671,10 @@ class _DriverBookingTrackingScreenState
 
     final driverLocation = ref.watch(driverLocationProvider);
 
+    final isUpdatingRide = ref.watch(
+      driverBookingControllerProvider.select((state) => state.isLoading),
+    );
+
     final primaryAction =
         booking.status == BookingStatus.driverAssigned ||
             booking.status == BookingStatus.driverArriving ||
@@ -601,12 +682,15 @@ class _DriverBookingTrackingScreenState
             booking.status == BookingStatus.paymentConfirmation
         ? RideActionService.driverPrimaryAction(booking.status)
         : RidePrimaryAction.none;
+    final useInAppGuidance = _useInAppGuidance(booking);
 
     //==========================================================================
     // Follow Driver
     //==========================================================================
 
-    if (driverLocation != null) {
+    if (driverLocation != null &&
+        !useInAppGuidance &&
+        _guidanceEligible(booking)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
 
@@ -633,45 +717,51 @@ class _DriverBookingTrackingScreenState
         child: Stack(
           children: [
             Positioned.fill(
-              child: GoogleMap(
-                onMapCreated: _onMapCreated,
-                myLocationEnabled: true,
-                myLocationButtonEnabled: true,
-                zoomControlsEnabled: false,
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.sizeOf(context).height * 0.18,
-                ),
-                initialCameraPosition: CameraPosition(
-                  target: booking.pickup,
-                  zoom: 15,
-                ),
-                markers: {
-                  if (driverLocation != null)
-                    Marker(
-                      markerId: const MarkerId('driver'),
-                      position: driverLocation,
-                      infoWindow: const InfoWindow(title: 'Driver'),
+              child: useInAppGuidance
+                  ? DriverTurnByTurnMap(
+                      destination: _routeDestination(booking),
+                      destinationLabel: _guidanceDestinationLabel(booking),
+                      legKey: _guidanceLegKey(booking),
+                    )
+                  : GoogleMap(
+                      onMapCreated: _onMapCreated,
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                      zoomControlsEnabled: false,
+                      padding: EdgeInsets.only(
+                        bottom: MediaQuery.sizeOf(context).height * 0.18,
+                      ),
+                      initialCameraPosition: CameraPosition(
+                        target: booking.pickup,
+                        zoom: 15,
+                      ),
+                      markers: {
+                        if (driverLocation != null)
+                          Marker(
+                            markerId: const MarkerId('driver'),
+                            position: driverLocation,
+                            infoWindow: const InfoWindow(title: 'Driver'),
+                          ),
+                        Marker(
+                          markerId: const MarkerId('pickup'),
+                          position: booking.pickup,
+                          infoWindow: const InfoWindow(title: 'Pickup'),
+                        ),
+                        Marker(
+                          markerId: const MarkerId('destination'),
+                          position: booking.destination,
+                          infoWindow: const InfoWindow(title: 'Destination'),
+                        ),
+                      },
+                      polylines: {
+                        if (navigation.routePoints.isNotEmpty)
+                          Polyline(
+                            polylineId: const PolylineId('route'),
+                            points: navigation.routePoints,
+                            width: 5,
+                          ),
+                      },
                     ),
-                  Marker(
-                    markerId: const MarkerId('pickup'),
-                    position: booking.pickup,
-                    infoWindow: const InfoWindow(title: 'Pickup'),
-                  ),
-                  Marker(
-                    markerId: const MarkerId('destination'),
-                    position: booking.destination,
-                    infoWindow: const InfoWindow(title: 'Destination'),
-                  ),
-                },
-                polylines: {
-                  if (navigation.routePoints.isNotEmpty)
-                    Polyline(
-                      polylineId: const PolylineId('route'),
-                      points: navigation.routePoints,
-                      width: 5,
-                    ),
-                },
-              ),
             ),
 
             if (booking.bookingId.isEmpty) ...[
@@ -739,22 +829,6 @@ class _DriverBookingTrackingScreenState
 
                       const SizedBox(height: 16),
 
-                      if (booking.status == BookingStatus.driverAssigned &&
-                          driverLocation != null)
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _followDriver(
-                              booking: booking,
-                              driverLocation: driverLocation,
-                            ),
-                            icon: const Icon(Icons.navigation_outlined),
-                            label: const Text('Navigate to Pickup'),
-                          ),
-                        ),
-
-                      const SizedBox(height: 16),
-
                       TripInformationCard(
                         pickup: booking.pickupAddress,
                         destination: booking.destinationAddress,
@@ -768,6 +842,27 @@ class _DriverBookingTrackingScreenState
                 ),
               ),
             ],
+            if (booking.status == BookingStatus.driverAssigned ||
+                booking.status == BookingStatus.driverArriving ||
+                booking.status == BookingStatus.passengerOnBoard ||
+                booking.status == BookingStatus.paymentConfirmation)
+              Align(
+                alignment: const Alignment(0.88, -0.18),
+                child: Semantics(
+                  button: true,
+                  label: _tripStarted(booking)
+                      ? 'Open navigation to destination'
+                      : 'Open navigation to pickup',
+                  child: FloatingActionButton.small(
+                    heroTag: 'driver-external-navigation',
+                    tooltip: _tripStarted(booking)
+                        ? 'Navigate to destination'
+                        : 'Navigate to pickup',
+                    onPressed: () => _openExternalNavigation(booking),
+                    child: const Icon(Icons.navigation_rounded),
+                  ),
+                ),
+              ),
             DraggableScrollableSheet(
               initialChildSize: 0.48,
               minChildSize: 0.16,
@@ -776,9 +871,9 @@ class _DriverBookingTrackingScreenState
               snapSizes: const [0.16, 0.48, 0.88],
               builder: (context, scrollController) => _trackingSheet(
                 booking: booking,
-                driverLocation: driverLocation,
                 navigation: navigation,
                 primaryAction: primaryAction,
+                isUpdatingRide: isUpdatingRide,
                 scrollController: scrollController,
               ),
             ),

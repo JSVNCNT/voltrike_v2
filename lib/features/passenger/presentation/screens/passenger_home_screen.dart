@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';

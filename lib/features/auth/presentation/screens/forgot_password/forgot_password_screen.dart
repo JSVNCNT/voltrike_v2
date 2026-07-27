@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../app/routes.dart';
 import '../../../../../core/constants/app_strings.dart';
+import '../../../../../core/errors/domain_error_mapper.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/utils/validators.dart';
 import '../../../../../core/widgets/buttons/primary_button.dart';
@@ -23,8 +24,7 @@ class ForgotPasswordScreen extends ConsumerStatefulWidget {
       _ForgotPasswordScreenState();
 }
 
-class _ForgotPasswordScreenState
-    extends ConsumerState<ForgotPasswordScreen> {
+class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
 
   final _emailController = TextEditingController();
@@ -51,30 +51,21 @@ class _ForgotPasswordScreenState
     try {
       await ref
           .read(forgotPasswordControllerProvider.notifier)
-          .sendResetEmail(
-            _emailController.text.trim(),
-          );
+          .sendResetEmail(_emailController.text.trim());
 
       if (!mounted) return;
 
       setState(() {
-        _message =
-            'A password reset link has been sent to your email.';
+        _message = 'A password reset link has been sent to your email.';
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString().replaceFirst(
-              'Exception: ',
-              '',
-            );
-      });
+      setState(() => _error = DomainErrorMapper.message(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state =
-        ref.watch(forgotPasswordControllerProvider);
+    final state = ref.watch(forgotPasswordControllerProvider);
 
     return LoadingOverlay(
       isLoading: state.isLoading,
@@ -83,26 +74,20 @@ class _ForgotPasswordScreenState
           key: _formKey,
           child: Column(
             children: [
-              const SizedBox(height: AppSpacing.lg),
-
-              const AuthLogo(
-                logoSize: 90,
-              ),
+              const AuthLogo(logoSize: 72),
 
               const SizedBox(height: AppSpacing.xl),
 
               const AuthHeader(
-                title: 'Forgot Password',
+                title: 'Reset your password',
                 subtitle:
-                    'Enter your email to receive a password reset link.',
+                    'We will email a secure reset link to your account address.',
               ),
 
               const SizedBox(height: AppSpacing.xl),
 
               if (_error != null) ...[
-                ValidationMessage(
-                  message: _error!,
-                ),
+                ValidationMessage(message: _error!),
                 const SizedBox(height: AppSpacing.md),
               ],
 
@@ -119,18 +104,16 @@ class _ForgotPasswordScreenState
                 label: AppStrings.email,
                 hint: 'example@email.com',
                 prefixIcon: Icons.email_outlined,
-                keyboardType:
-                    TextInputType.emailAddress,
-                textInputAction:
-                    TextInputAction.done,
-                validator:
-                    Validators.validateEmail,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                validator: Validators.validateEmail,
               ),
 
               const SizedBox(height: AppSpacing.xl),
 
               PrimaryButton(
                 text: AppStrings.sendResetLink,
+                icon: Icons.mark_email_read_outlined,
                 onPressed: _sendResetLink,
                 isLoading: state.isLoading,
               ),
@@ -141,12 +124,8 @@ class _ForgotPasswordScreenState
                 onPressed: () {
                   context.go(AppRoutes.login);
                 },
-                icon: const Icon(
-                  Icons.arrow_back,
-                ),
-                label: const Text(
-                  AppStrings.login,
-                ),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text(AppStrings.login),
               ),
             ],
           ),

@@ -1,36 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../app/routes.dart';
+import '../../../../core/errors/domain_error_mapper.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/app_user.dart';
 import '../../../../data/models/passenger.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/passenger_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
+import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../../common/presentation/widgets/emergency_contacts_card.dart';
+import '../../../common/presentation/widgets/profile_widgets.dart';
 
-/// ===========================================================================
-/// Passenger Profile Screen
-///
-/// Displays the authenticated passenger's profile.
-///
-/// Shows:
-/// • Profile Photo
-/// • Passenger Information
-/// • Passenger Statistics
-///
-/// Settings are accessible from the AppBar.
-/// ===========================================================================
 class PassengerProfileScreen extends ConsumerWidget {
   const PassengerProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = AuthRepository();
-
-    final firebaseUser = auth.currentUser;
-
+    final firebaseUser = AuthRepository().currentUser;
     if (firebaseUser == null) {
       return const Scaffold(
         body: Center(child: Text('Passenger not signed in.')),
@@ -45,16 +35,11 @@ class PassengerProfileScreen extends ConsumerWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
         if (userSnapshot.hasError) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Passenger Profile')),
-            body: Center(child: Text(userSnapshot.error.toString())),
-          );
+          return _ProfileError(error: userSnapshot.error!);
         }
 
         final appUser = userSnapshot.data;
-
         if (appUser == null) {
           return const Scaffold(
             body: Center(child: Text('User profile not found.')),
@@ -69,16 +54,11 @@ class PassengerProfileScreen extends ConsumerWidget {
                 body: Center(child: CircularProgressIndicator()),
               );
             }
-
             if (passengerSnapshot.hasError) {
-              return Scaffold(
-                appBar: AppBar(title: const Text('Passenger Profile')),
-                body: Center(child: Text(passengerSnapshot.error.toString())),
-              );
+              return _ProfileError(error: passengerSnapshot.error!);
             }
 
             final passenger = passengerSnapshot.data;
-
             if (passenger == null) {
               return const Scaffold(
                 body: Center(child: Text('Passenger profile not found.')),
@@ -86,11 +66,12 @@ class PassengerProfileScreen extends ConsumerWidget {
             }
 
             return Scaffold(
-              appBar: AppBar(
-                title: const Text('Passenger Profile'),
+              appBar: AppAppBar(
+                title: 'Profile',
                 actions: [
                   IconButton(
-                    icon: const Icon(Icons.settings),
+                    tooltip: 'Settings',
+                    icon: const Icon(Icons.settings_outlined),
                     onPressed: () {
                       context.push(AppRoutes.passengerSettings);
                     },
@@ -98,199 +79,78 @@ class PassengerProfileScreen extends ConsumerWidget {
                 ],
               ),
               body: SafeArea(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      //----------------------------------------------------------------
-                      // Profile
-                      //----------------------------------------------------------------
-                      CircleAvatar(
-                        radius: 60,
-                        backgroundImage: appUser.profileImage.isNotEmpty
-                            ? NetworkImage(appUser.profileImage)
-                            : null,
-                        child: appUser.profileImage.isEmpty
-                            ? const Icon(Icons.person, size: 60)
-                            : null,
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      Text(
-                        appUser.fullName,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  children: [
+                    ProfileIdentityHeader(
+                      name: appUser.fullName,
+                      subtitle: appUser.email,
+                      photoUrl: appUser.profileImage,
+                      statusLabel: appUser.isActive ? 'Active' : 'Inactive',
+                      statusColor: appUser.isActive
+                          ? AppColors.success
+                          : AppColors.error,
+                    ),
+                    const SizedBox(height: 24),
+                    ProfileSection(
+                      title: 'Account information',
+                      children: [
+                        ProfileInfoTile(
+                          icon: Icons.phone_outlined,
+                          label: 'Phone number',
+                          value: _available(appUser.phoneNumber),
                         ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      Text(
-                        appUser.email,
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      //----------------------------------------------------------------
-                      // Account Information
-                      //----------------------------------------------------------------
-                      Card(
-                        child: Column(
-                          children: [
-                            ListTile(
-                              leading: const Icon(Icons.phone),
-                              title: const Text('Phone Number'),
-                              subtitle: Text(appUser.phoneNumber),
-                            ),
-
-                            const Divider(height: 1),
-
-                            if (appUser.dateOfBirth != null) ...[
-                              ListTile(
-                                leading: const Icon(Icons.cake_outlined),
-                                title: const Text('Date of Birth'),
-                                subtitle: Text(
-                                  appUser.dateOfBirth!
-                                      .toLocal()
-                                      .toString()
-                                      .split(' ')
-                                      .first,
-                                ),
-                              ),
-                              const Divider(height: 1),
-                            ],
-
-                            ListTile(
-                              leading: Icon(
-                                appUser.isActive
-                                    ? Icons.check_circle
-                                    : Icons.cancel,
-                                color: appUser.isActive
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                              title: const Text('Account Status'),
-                              subtitle: Text(
-                                appUser.isActive ? 'Active' : 'Inactive',
-                              ),
-                            ),
-
-                            const Divider(height: 1),
-
-                            ListTile(
-                              leading: Icon(
-                                appUser.emailVerified
-                                    ? Icons.verified
-                                    : Icons.warning,
-                                color: appUser.emailVerified
-                                    ? Colors.green
-                                    : Colors.orange,
-                              ),
-                              title: const Text('Email Verification'),
-                              subtitle: Text(
-                                appUser.emailVerified
-                                    ? 'Verified'
-                                    : 'Not Verified',
-                              ),
-                            ),
-
-                            const Divider(height: 1),
-
-                            ListTile(
-                              leading: const Icon(Icons.calendar_today),
-                              title: const Text('Member Since'),
-                              subtitle: Text(
-                                appUser.createdAt
-                                    .toLocal()
-                                    .toString()
-                                    .split(' ')
-                                    .first,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      EmergencyContactsCard(userId: appUser.uid),
-
-                      const SizedBox(height: 24),
-
-                      //----------------------------------------------------------------
-                      // Passenger Statistics
-                      //----------------------------------------------------------------
-                      Card(
-                        child: Column(
-                          children: [
-                            ListTile(
-                              leading: const Icon(
-                                Icons.local_taxi,
-                                color: Colors.blue,
-                              ),
-                              title: const Text('Total Trips'),
-                              trailing: Text(
-                                passenger.totalTrips.toString(),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-
-                            const Divider(height: 1),
-
-                            ListTile(
-                              leading: const Icon(
-                                Icons.star,
-                                color: Colors.amber,
-                              ),
-                              title: const Text('Passenger Rating'),
-                              trailing: Text(
-                                passenger.rating.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-
-                            const Divider(height: 1),
-
-                            ListTile(
-                              leading: const Icon(
-                                Icons.favorite,
-                                color: Colors.red,
-                              ),
-                              title: const Text('Favorite Locations'),
-                              trailing: Text(
-                                passenger.favoriteLocations.length.toString(),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      Center(
-                        child: Text(
-                          'Voltrike Passenger v1.0.0',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
+                        if (appUser.dateOfBirth != null)
+                          ProfileInfoTile(
+                            icon: Icons.cake_outlined,
+                            label: 'Date of birth',
+                            value: _date(appUser.dateOfBirth!),
                           ),
+                        ProfileInfoTile(
+                          icon: appUser.emailVerified
+                              ? Icons.verified_outlined
+                              : Icons.warning_amber_rounded,
+                          label: 'Email verification',
+                          value: appUser.emailVerified
+                              ? 'Verified'
+                              : 'Not verified',
+                          iconColor: appUser.emailVerified
+                              ? AppColors.success
+                              : AppColors.warning,
                         ),
-                      ),
-
-                      const SizedBox(height: 24),
-                    ],
-                  ),
+                        ProfileInfoTile(
+                          icon: Icons.calendar_today_outlined,
+                          label: 'Member since',
+                          value: _date(appUser.createdAt),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    EmergencyContactsCard(userId: appUser.uid),
+                    const SizedBox(height: 24),
+                    ProfileSection(
+                      title: 'Passenger activity',
+                      children: [
+                        ProfileInfoTile(
+                          icon: Icons.route_outlined,
+                          label: 'Total trips',
+                          value: '${passenger.totalTrips}',
+                        ),
+                        ProfileInfoTile(
+                          icon: Icons.star_outline_rounded,
+                          label: 'Passenger rating',
+                          value: '${passenger.rating.toStringAsFixed(1)} / 5',
+                          iconColor: AppColors.rating,
+                        ),
+                        ProfileInfoTile(
+                          icon: Icons.favorite_outline_rounded,
+                          label: 'Favorite locations',
+                          value: '${passenger.favoriteLocations.length}',
+                          iconColor: AppColors.error,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             );
@@ -299,4 +159,26 @@ class PassengerProfileScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+class _ProfileError extends StatelessWidget {
+  const _ProfileError({required this.error});
+
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const AppAppBar(title: 'Profile'),
+      body: Center(child: Text(DomainErrorMapper.message(error))),
+    );
+  }
+}
+
+String _date(DateTime value) {
+  return DateFormat('MMMM d, yyyy').format(value.toLocal());
+}
+
+String _available(String value) {
+  return value.trim().isEmpty ? 'Not provided' : value;
 }

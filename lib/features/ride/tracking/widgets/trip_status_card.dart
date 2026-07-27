@@ -24,42 +24,64 @@ class TripStatusCard extends StatelessWidget {
     final rideStatus = role == RideParticipantRole.driver
         ? RideStatusService.driverStatus(status)
         : RideStatusService.passengerStatus(status);
-    final color = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: colorScheme.primaryContainer.withValues(alpha: 0.58),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(rideStatus.icon, color: color),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    rideStatus.title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                ),
-              ],
+            CircleAvatar(
+              radius: 23,
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
+              child: Icon(rideStatus.icon),
             ),
-            const SizedBox(height: 8),
-            Text(rideStatus.description),
-            if (eta != null || distance != null) ...[
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 16,
-                runSpacing: 8,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (eta != null) _Metric(icon: Icons.schedule, text: 'ETA: $eta'),
-                  if (distance != null)
-                    _Metric(icon: Icons.route, text: distance!),
+                  Text(
+                    rideStatus.title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    rideStatus.description,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onPrimaryContainer.withValues(
+                        alpha: 0.82,
+                      ),
+                    ),
+                  ),
+                  if (eta != null || distance != null) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (eta != null)
+                          _Metric(
+                            icon: Icons.schedule_rounded,
+                            text: 'ETA $eta',
+                          ),
+                        if (distance != null)
+                          _Metric(icon: Icons.route_rounded, text: distance!),
+                      ],
+                    ),
+                  ],
                 ],
               ),
-            ],
+            ),
           ],
         ),
       ),
@@ -75,13 +97,28 @@ class _Metric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18),
-        const SizedBox(width: 6),
-        Text(text),
-      ],
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: colorScheme.primary),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

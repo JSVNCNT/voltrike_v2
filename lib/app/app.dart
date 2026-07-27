@@ -37,19 +37,6 @@ class VolTrikeApp extends StatelessWidget {
 
           routerConfig: appRouter,
 
-          builder: (context, child) {
-            final mediaQuery = MediaQuery.of(context);
-
-            return MediaQuery(
-              data: mediaQuery.copyWith(
-                // Prevent extreme text scaling from breaking layouts.
-                textScaler: TextScaler.linear(
-                  mediaQuery.textScaler.scale(1.0).clamp(0.9, 1.2),
-                ),
-              ),
-              child: child ?? const SizedBox.shrink(),
-            );
-          },
         ),
       ),
     );

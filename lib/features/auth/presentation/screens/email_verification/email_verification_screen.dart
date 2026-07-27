@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../app/routes.dart';
 import '../../../../../core/constants/app_strings.dart';
+import '../../../../../core/errors/domain_error_mapper.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/theme/app_text_styles.dart';
@@ -18,21 +19,16 @@ import '../../widgets/countdown_timer.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../widgets/validation_message.dart';
 
-class EmailVerificationScreen
-    extends ConsumerStatefulWidget {
-  const EmailVerificationScreen({
-    super.key,
-  });
+class EmailVerificationScreen extends ConsumerStatefulWidget {
+  const EmailVerificationScreen({super.key});
 
   @override
-  ConsumerState<EmailVerificationScreen>
-      createState() =>
-          _EmailVerificationScreenState();
+  ConsumerState<EmailVerificationScreen> createState() =>
+      _EmailVerificationScreenState();
 }
 
 class _EmailVerificationScreenState
-    extends ConsumerState<
-        EmailVerificationScreen> {
+    extends ConsumerState<EmailVerificationScreen> {
   Timer? _timer;
 
   String? _message;
@@ -42,12 +38,9 @@ class _EmailVerificationScreenState
   void initState() {
     super.initState();
 
-    _timer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) {
-        _refreshStatus();
-      },
-    );
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _refreshStatus();
+    });
   }
 
   @override
@@ -64,10 +57,7 @@ class _EmailVerificationScreenState
 
     try {
       final verified = await ref
-          .read(
-            emailVerificationControllerProvider
-                .notifier,
-          )
+          .read(emailVerificationControllerProvider.notifier)
           .refreshVerification();
 
       if (!mounted) return;
@@ -75,24 +65,14 @@ class _EmailVerificationScreenState
       if (verified) {
         _timer?.cancel();
 
-        context.go(
-          AppRoutes.splash,
-        );
+        context.go(AppRoutes.splash);
       } else {
         setState(() {
-          _message =
-              'Waiting for email verification...';
+          _message = 'Waiting for email verification...';
         });
       }
     } catch (e) {
-      setState(() {
-        _error = e
-            .toString()
-            .replaceFirst(
-              'Exception: ',
-              '',
-            );
-      });
+      setState(() => _error = DomainErrorMapper.message(e));
     }
   }
 
@@ -104,77 +84,56 @@ class _EmailVerificationScreenState
 
     try {
       await ref
-          .read(
-            emailVerificationControllerProvider
-                .notifier,
-          )
+          .read(emailVerificationControllerProvider.notifier)
           .resendVerificationEmail();
 
       if (!mounted) return;
 
       setState(() {
-        _message =
-            'Verification email sent successfully.';
+        _message = 'Verification email sent successfully.';
       });
     } catch (e) {
-      setState(() {
-        _error = e
-            .toString()
-            .replaceFirst(
-              'Exception: ',
-              '',
-            );
-      });
+      setState(() => _error = DomainErrorMapper.message(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(
-      emailVerificationControllerProvider,
-    );
+    final state = ref.watch(emailVerificationControllerProvider);
 
     return LoadingOverlay(
       isLoading: state.isLoading,
       child: AuthScaffold(
         child: Column(
           children: [
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const AuthLogo(logoSize: 68),
 
-            const AuthLogo(
-              logoSize: 90,
-            ),
+            const SizedBox(height: AppSpacing.xl),
 
-            const SizedBox(
-              height: AppSpacing.xl,
-            ),
-
-            const CircleAvatar(
-              radius: 44,
-              backgroundColor:
-                  AppColors.primary,
-              child: Icon(
+            Container(
+              width: 68,
+              height: 68,
+              decoration: const BoxDecoration(
+                color: AppColors.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
                 Icons.mark_email_read_outlined,
-                color: Colors.white,
-                size: 44,
+                color: AppColors.primaryDark,
+                size: 36,
               ),
             ),
 
-            const SizedBox(
-              height: AppSpacing.xl,
-            ),
+            const SizedBox(height: AppSpacing.xl),
 
             const AuthHeader(
               title: AppStrings.verifyEmail,
               subtitle:
-                  'A verification email has been sent.\nPlease verify your account to continue.',
+                  'Open the email we sent, verify your address, then refresh this screen.',
+              textAlign: TextAlign.center,
             ),
 
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const SizedBox(height: AppSpacing.lg),
 
             Text(
               'Once your email has been verified, VolTrike will automatically continue.',
@@ -182,17 +141,11 @@ class _EmailVerificationScreenState
               style: AppTextStyles.bodyMedium,
             ),
 
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const SizedBox(height: AppSpacing.lg),
 
             if (_error != null) ...[
-              ValidationMessage(
-                message: _error!,
-              ),
-              const SizedBox(
-                height: AppSpacing.md,
-              ),
+              ValidationMessage(message: _error!),
+              const SizedBox(height: AppSpacing.md),
             ],
 
             if (_message != null) ...[
@@ -200,18 +153,11 @@ class _EmailVerificationScreenState
                 message: _message!,
                 type: ValidationType.success,
               ),
-              const SizedBox(
-                height: AppSpacing.md,
-              ),
+              const SizedBox(height: AppSpacing.md),
             ],
-                        CountdownTimer(
-              seconds: 60,
-              onFinished: () {},
-            ),
+            CountdownTimer(seconds: 60, onFinished: () {}),
 
-            const SizedBox(
-              height: AppSpacing.md,
-            ),
+            const SizedBox(height: AppSpacing.md),
 
             PrimaryButton(
               text: AppStrings.resendVerification,
@@ -219,52 +165,33 @@ class _EmailVerificationScreenState
               isLoading: state.isLoading,
             ),
 
-            const SizedBox(
-              height: AppSpacing.md,
-            ),
+            const SizedBox(height: AppSpacing.md),
 
             OutlinedButton.icon(
               onPressed: _refreshStatus,
-              icon: const Icon(
-                Icons.refresh,
-              ),
-              label: const Text(
-                'Refresh Status',
-              ),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Refresh Status'),
             ),
 
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const SizedBox(height: AppSpacing.lg),
 
             TextButton.icon(
               onPressed: () {
                 _timer?.cancel();
 
-                context.go(
-                  AppRoutes.login,
-                );
+                context.go(AppRoutes.login);
               },
-              icon: const Icon(
-                Icons.arrow_back,
-              ),
-              label: const Text(
-                AppStrings.login,
-              ),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text(AppStrings.login),
             ),
 
-            const SizedBox(
-              height: AppSpacing.xl,
+            const SizedBox(height: AppSpacing.xl),
+
+            Text(
+              'If you cannot find the email, check your Spam or Junk folder.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey),
             ),
-
-             Text(
-  'If you cannot find the email, check your Spam or Junk folder.',
-  textAlign: TextAlign.center,
-  style: AppTextStyles.bodyMedium.copyWith(
-    color: Colors.grey,
-  ),
-),
-
           ],
         ),
       ),

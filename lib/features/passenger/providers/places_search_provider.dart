@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../../core/services/places_service.dart';
 import '../../../data/models/place_prediction.dart';

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_text_styles.dart';
 
 class RegistrationStepIndicator extends StatelessWidget {
   const RegistrationStepIndicator({
@@ -15,42 +14,34 @@ class RegistrationStepIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: List.generate(
-        totalSteps,
-        (index) {
-          final step = index + 1;
-          final active = step <= currentStep;
-
-          return Expanded(
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 15,
-                  backgroundColor:
-                      active ? AppColors.primary : AppColors.disabled,
-                  child: Text(
-                    '$step',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-
-                if (step != totalSteps)
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: active
-                          ? AppColors.primary
-                          : AppColors.disabled,
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
+    final progress = currentStep / totalSteps;
+    return Semantics(
+      label: 'Step $currentStep of $totalSteps',
+      value: '${(progress * 100).round()} percent complete',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Step $currentStep of $totalSteps',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: AppColors.primaryDark),
+              ),
+              const Spacer(),
+              Text(
+                '${(progress * 100).round()}%',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(100),
+            child: LinearProgressIndicator(value: progress, minHeight: 8),
+          ),
+        ],
       ),
     );
   }

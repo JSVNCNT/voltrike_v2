@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/errors/domain_error_mapper.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/report_repository.dart';
 
@@ -73,12 +75,24 @@ class _ReportRideDialogState extends State<ReportRideDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
+    icon: const Icon(
+      Icons.assignment_late_outlined,
+      color: AppColors.error,
+    ),
     title: const Text('Report ride'),
     content: Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Text(
+          'Choose the concern and add enough detail for TODA or administrator review.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 16),
         DropdownButtonFormField(
           initialValue: _category,
+          decoration: const InputDecoration(labelText: 'Concern type'),
           items: _categories
               .map((e) => DropdownMenuItem(value: e, child: Text(e)))
               .toList(),
@@ -91,7 +105,7 @@ class _ReportRideDialogState extends State<ReportRideDialog> {
           decoration: const InputDecoration(
             labelText: 'What happened?',
             hintText: 'Add details for TODA review',
-            border: OutlineInputBorder(),
+            alignLabelWithHint: true,
           ),
         ),
       ],
@@ -130,7 +144,9 @@ class _ReportRideDialogState extends State<ReportRideDialog> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ).showSnackBar(
+          SnackBar(content: Text(DomainErrorMapper.message(error))),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);

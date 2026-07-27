@@ -20,6 +20,9 @@ class AppAppBar extends StatelessWidget
     this.showProfile = false,
     this.onNotificationPressed,
     this.onProfilePressed,
+    this.leading,
+    this.actions = const [],
+    this.centerTitle = false,
   });
 
   final String title;
@@ -31,6 +34,9 @@ class AppAppBar extends StatelessWidget
   final VoidCallback? onNotificationPressed;
 
   final VoidCallback? onProfilePressed;
+  final Widget? leading;
+  final List<Widget> actions;
+  final bool centerTitle;
 
   @override
   Size get preferredSize =>
@@ -39,8 +45,9 @@ class AppAppBar extends StatelessWidget
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      centerTitle: true,
+      centerTitle: centerTitle,
       elevation: 0,
+      leading: leading,
       title: Text(title),
       actions: [
         if (showNotifications)
@@ -57,6 +64,7 @@ class AppAppBar extends StatelessWidget
             ),
             onPressed: onProfilePressed,
           ),
+        ...actions,
       ],
     );
   }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
@@ -286,18 +286,15 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
               bookingId: booking.bookingId,
               userId: userId,
             ),
-      builder: (context, snapshot) => Material(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        child: RideActionsCard(
-          onCall: stage.allowContact ? () => _openCall(booking) : null,
-          onMessage: stage.allowContact ? () => _openChat(booking) : null,
-          onCancel: stage.allowCancel ? () => _cancelBooking(booking) : null,
-          onReport: stage.allowReport ? () => _reportDriver(booking) : null,
-          onSos: stage.allowSos && !_sosSubmitting
-              ? () => _triggerSos(booking)
-              : null,
-          messageBadge: snapshot.data ?? 0,
-        ),
+      builder: (context, snapshot) => RideActionsCard(
+        onCall: stage.allowContact ? () => _openCall(booking) : null,
+        onMessage: stage.allowContact ? () => _openChat(booking) : null,
+        onCancel: stage.allowCancel ? () => _cancelBooking(booking) : null,
+        onReport: stage.allowReport ? () => _reportDriver(booking) : null,
+        onSos: stage.allowSos && !_sosSubmitting
+            ? () => _triggerSos(booking)
+            : null,
+        messageBadge: snapshot.data ?? 0,
       ),
     );
   }
@@ -454,10 +451,12 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     required Booking booking,
     required ScrollController scrollController,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Material(
       elevation: 10,
-      color: Theme.of(context).scaffoldBackgroundColor,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      color: colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -515,33 +514,6 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
               ],
             ),
           ),
-          if (RideStagePresentationService.resolve(
-            role: RideParticipantRole.passenger,
-            status: booking.status,
-          ).allowContact)
-            SafeArea(
-              top: false,
-              minimum: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openCall(booking),
-                      icon: const Icon(Icons.call_outlined),
-                      label: const Text('Call'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      onPressed: () => _openChat(booking),
-                      icon: const Icon(Icons.message_outlined),
-                      label: const Text('Message'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );

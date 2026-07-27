@@ -30,75 +30,162 @@ class DriverInformationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final hasPhoto = photoUrl?.trim().isNotEmpty == true;
+
     return Card(
-      elevation: 4,
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 32,
-              backgroundImage: photoUrl?.trim().isNotEmpty == true
-                  ? NetworkImage(photoUrl!)
-                  : null,
-              child: photoUrl?.trim().isNotEmpty == true
-                  ? null
-                  : const Icon(Icons.person, size: 32),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: colorScheme.primaryContainer,
+                  foregroundColor: colorScheme.onPrimaryContainer,
+                  backgroundImage: hasPhoto ? NetworkImage(photoUrl!) : null,
+                  child: hasPhoto
+                      ? null
+                      : const Icon(Icons.person_rounded, size: 28),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              driverName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.verified_rounded,
+                            size: 18,
+                            color: colorScheme.primary,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Registered VolTrike driver',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (rating != null) ...[
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            StarRating(rating: rating!, size: 16),
+                            const SizedBox(width: 6),
+                            Text(
+                              rating!.toStringAsFixed(1),
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.electric_rickshaw_rounded,
+                  color: colorScheme.primary,
+                ),
+              ],
             ),
-
-            const SizedBox(height: 12),
-
-            Text(
-              driverName,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            const Divider(height: 28),
+            _DriverDetail(
+              icon: Icons.electric_rickshaw_outlined,
+              label: 'Vehicle',
+              value: vehicleNumber,
             ),
-            const SizedBox(height: 8),
-            const Chip(
-              avatar: Icon(Icons.verified_outlined, size: 18),
-              label: Text('Registered VolTrike driver'),
+            const SizedBox(height: 10),
+            _DriverDetail(
+              icon: Icons.confirmation_number_outlined,
+              label: 'Plate number',
+              value: plateNumber,
             ),
-
-            if (rating != null) ...[
-              const SizedBox(height: 8),
-
-              StarRating(rating: rating!, size: 22),
-
-              const SizedBox(height: 4),
-
-              Text(
-                '${rating!.toStringAsFixed(1)} / 5.0',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-
-            const Divider(height: 32),
-
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.electric_rickshaw),
-              title: const Text('Vehicle'),
-              subtitle: Text(vehicleNumber),
-            ),
-
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.confirmation_number),
-              title: const Text('Plate Number'),
-              subtitle: Text(plateNumber),
-            ),
-
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.location_city),
-              title: const Text('TODA'),
-              subtitle: Text(todaName),
+            const SizedBox(height: 10),
+            _DriverDetail(
+              icon: Icons.location_city_outlined,
+              label: 'TODA',
+              value: todaName,
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DriverDetail extends StatelessWidget {
+  const _DriverDetail({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colorScheme.secondaryContainer.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 19, color: colorScheme.onSecondaryContainer),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                value,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

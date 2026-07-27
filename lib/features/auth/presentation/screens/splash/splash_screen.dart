@@ -76,12 +76,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     });
 
     return AuthScaffold(
-      backgroundColor: AppColors.primary,
+      backgroundColor: AppColors.primaryDark,
+      useSurface: false,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const AuthLogo(
-            logoSize: 120,
+            logoSize: 92,
             textColor: AppColors.textWhite,
             taglineColor: Colors.white70,
           ),
@@ -89,13 +90,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           const SizedBox(height: AppConstants.defaultPadding * 2),
 
           state.when(
-            loading: () => const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: Colors.white,
-              ),
+            loading: () => const Column(
+              children: [
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(height: 14),
+                Text(
+                  'Restoring your session…',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ],
             ),
             data: (_) => const SizedBox.shrink(),
             error: (_, _) => Column(

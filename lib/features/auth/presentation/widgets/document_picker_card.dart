@@ -23,84 +23,52 @@ class DocumentPickerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          AppRadius.lg,
-        ),
-        side: BorderSide(
-          color: Colors.grey.shade300,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(
-          AppRadius.lg,
-        ),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(
-            AppSpacing.md,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(
-                    alpha: 0.10,
+    return Semantics(
+      button: true,
+      label: '$title, ${file == null ? 'not selected' : 'selected'}',
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
-                  borderRadius: BorderRadius.circular(
-                    AppRadius.md,
+                  child: Icon(icon, color: AppColors.primary),
+                ),
+
+                const SizedBox(width: AppSpacing.md),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: AppTextStyles.titleMedium),
+
+                      const SizedBox(height: 4),
+
+                      Text(
+                        file == null
+                            ? 'Choose photo or PDF'
+                            : file!.path.split(Platform.pathSeparator).last,
+                        style: AppTextStyles.bodyMedium,
+                      ),
+                    ],
                   ),
                 ),
-                child: Icon(
-                  icon,
-                  color: AppColors.primary,
-                ),
-              ),
 
-              const SizedBox(
-                width: AppSpacing.md,
-              ),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style:
-                          AppTextStyles.titleMedium,
-                    ),
-
-                    const SizedBox(
-                      height: 4,
-                    ),
-
-                    Text(
-                      file == null
-                          ? 'Tap to upload'
-                          : 'Selected',
-                      style:
-                          AppTextStyles.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-
-              file != null
-                  ? const Icon(
-                      Icons.check_circle,
-                      color: Colors.green,
-                    )
-                  : const Icon(
-                      Icons.upload_file,
-                    ),
-            ],
+                file != null
+                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    : const Icon(Icons.upload_file),
+              ],
+            ),
           ),
         ),
       ),

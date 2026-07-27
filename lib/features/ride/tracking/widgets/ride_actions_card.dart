@@ -35,34 +35,42 @@ class RideActionsCard extends StatelessWidget {
 
     final actions = <_ActionButton>[
       if (onCall != null)
-        _ActionButton(icon: Icons.call, label: 'Call', onPressed: onCall!),
+        _ActionButton(
+          icon: Icons.call_rounded,
+          label: 'Call',
+          onPressed: onCall!,
+          emphasis: _ActionEmphasis.tonal,
+        ),
       if (onMessage != null)
         _ActionButton(
-          icon: Icons.chat_bubble_outline,
-          label: 'Message',
+          icon: Icons.chat_bubble_outline_rounded,
+          label: 'Chat',
           onPressed: onMessage!,
           badge: messageBadge,
+          emphasis: _ActionEmphasis.tonal,
         ),
       if (onReport != null)
         _ActionButton(
-          icon: Icons.report_problem_outlined,
+          icon: Icons.assignment_late_outlined,
           label: 'Report',
           foregroundColor: theme.colorScheme.error,
           onPressed: onReport!,
         ),
       if (onSos != null)
         _ActionButton(
-          icon: Icons.sos,
+          icon: Icons.sos_rounded,
           label: 'SOS',
           foregroundColor: theme.colorScheme.error,
+          emphasis: _ActionEmphasis.errorTonal,
           onPressed: onSos!,
         ),
       if (onCancel != null)
         _ActionButton(
-          icon: Icons.cancel_outlined,
-          label: 'Cancel',
+          icon: Icons.close_rounded,
+          label: 'Cancel ride',
           foregroundColor: theme.colorScheme.error,
           onPressed: onCancel!,
+          emphasis: _ActionEmphasis.text,
         ),
       if (onNoShow != null)
         _ActionButton(
@@ -70,24 +78,38 @@ class RideActionsCard extends StatelessWidget {
           label: 'No-show',
           foregroundColor: theme.colorScheme.error,
           onPressed: onNoShow!,
+          emphasis: _ActionEmphasis.text,
         ),
     ];
 
     if (actions.isEmpty) return const SizedBox.shrink();
 
     return Card(
-      elevation: 2,
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [for (final action in actions) action],
+        padding: const EdgeInsets.all(12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 8.0;
+            final itemWidth = (constraints.maxWidth - spacing) / 2;
+            return Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                for (final action in actions)
+                  SizedBox(width: itemWidth, child: action),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 }
+
+enum _ActionEmphasis { outlined, tonal, errorTonal, text }
 
 class _ActionButton extends StatelessWidget {
   const _ActionButton({
@@ -95,6 +117,7 @@ class _ActionButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.foregroundColor,
+    this.emphasis = _ActionEmphasis.outlined,
     this.badge = 0,
   });
 
@@ -102,24 +125,54 @@ class _ActionButton extends StatelessWidget {
   final String label;
   final VoidCallback onPressed;
   final Color? foregroundColor;
+  final _ActionEmphasis emphasis;
   final int badge;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final button = switch (emphasis) {
+      _ActionEmphasis.tonal => FilledButton.tonalIcon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+      ),
+      _ActionEmphasis.errorTonal => FilledButton.tonalIcon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+        style: FilledButton.styleFrom(
+          foregroundColor: theme.colorScheme.onErrorContainer,
+          backgroundColor: theme.colorScheme.errorContainer,
+        ),
+      ),
+      _ActionEmphasis.text => TextButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+        style: TextButton.styleFrom(foregroundColor: foregroundColor),
+      ),
+      _ActionEmphasis.outlined => OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(foregroundColor: foregroundColor),
+      ),
+    };
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        OutlinedButton.icon(
-          onPressed: onPressed,
-          icon: Icon(icon),
-          label: Text(label),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: foregroundColor,
-            minimumSize: const Size(0, 44),
-          ),
-        ),
+        SizedBox(width: double.infinity, height: 48, child: button),
         if (badge > 0)
-          Positioned(top: -7, right: -7, child: _UnreadBadge(count: badge)),
+          Positioned(
+            top: -6,
+            right: -6,
+            child: Semantics(
+              label: '$badge unread chat messages',
+              child: ExcludeSemantics(child: _UnreadBadge(count: badge)),
+            ),
+          ),
       ],
     );
   }

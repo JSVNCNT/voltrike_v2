@@ -55,7 +55,7 @@
     <application
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:label="voltrike_v2">
+        android:label="@string/app_name">
 
         <!-- ============================================================ -->
         <!-- Google Maps API Key -->

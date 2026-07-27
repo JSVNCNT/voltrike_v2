@@ -52,9 +52,9 @@ class RideStagePresentationService {
       case BookingStatus.driverAssigned:
         return const RideStagePresentation(
           status: RideStatus(
-            title: 'Drive to Pickup',
-            description: 'Proceed to the passenger pickup location.',
-            icon: Icons.navigation,
+            title: 'Heading to Pickup',
+            description: 'Follow the route to meet your passenger.',
+            icon: Icons.route_rounded,
           ),
           primaryAction: RidePrimaryAction.arriveAtPickup,
           allowContact: true,
@@ -65,9 +65,9 @@ class RideStagePresentationService {
       case BookingStatus.driverArriving:
         return const RideStagePresentation(
           status: RideStatus(
-            title: 'At Pickup',
+            title: 'Waiting at Pickup',
             description: 'Wait for the passenger before starting the trip.',
-            icon: Icons.person_pin_circle,
+            icon: Icons.person_pin_circle_rounded,
           ),
           primaryAction: RidePrimaryAction.startTrip,
           allowContact: true,
@@ -79,9 +79,9 @@ class RideStagePresentationService {
       case BookingStatus.passengerOnBoard:
         return const RideStagePresentation(
           status: RideStatus(
-            title: 'Trip in Progress',
+            title: 'Heading to Destination',
             description: 'Navigate to the passenger destination.',
-            icon: Icons.directions,
+            icon: Icons.directions_rounded,
           ),
           primaryAction: RidePrimaryAction.dropOffPassenger,
           allowContact: true,
@@ -135,9 +135,9 @@ class RideStagePresentationService {
       case BookingStatus.driverAssigned:
         return const RideStagePresentation(
           status: RideStatus(
-            title: 'Driver Assigned',
+            title: 'Driver Matched',
             description: 'Your driver is heading to the pickup.',
-            icon: Icons.local_taxi,
+            icon: Icons.handshake_outlined,
           ),
           primaryAction: RidePrimaryAction.cancelRide,
           allowContact: true,
@@ -150,7 +150,7 @@ class RideStagePresentationService {
           status: RideStatus(
             title: 'Driver at Pickup',
             description: 'Meet your driver at the selected pickup point.',
-            icon: Icons.location_on,
+            icon: Icons.location_on_rounded,
           ),
           primaryAction: RidePrimaryAction.cancelRide,
           allowContact: true,
@@ -161,9 +161,9 @@ class RideStagePresentationService {
       case BookingStatus.passengerOnBoard:
         return const RideStagePresentation(
           status: RideStatus(
-            title: 'On the Way',
+            title: 'Trip in Progress',
             description: 'Your ride is heading to the destination.',
-            icon: Icons.directions_car,
+            icon: Icons.directions_car_rounded,
           ),
           primaryAction: RidePrimaryAction.none,
           allowContact: true,

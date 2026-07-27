@@ -88,5 +88,24 @@ void main() {
         isFalse,
       );
     });
+
+    test('matched and navigation copy stay presentation-only', () {
+      final passengerMatched = RideStagePresentationService.resolve(
+        role: RideParticipantRole.passenger,
+        status: BookingStatus.driverAssigned,
+      );
+      final driverPickup = RideStagePresentationService.resolve(
+        role: RideParticipantRole.driver,
+        status: BookingStatus.driverAssigned,
+      );
+      final driverDestination = RideStagePresentationService.resolve(
+        role: RideParticipantRole.driver,
+        status: BookingStatus.passengerOnBoard,
+      );
+
+      expect(passengerMatched.status.title, 'Driver Matched');
+      expect(driverPickup.status.title, 'Heading to Pickup');
+      expect(driverDestination.status.title, 'Heading to Destination');
+    });
   });
 }

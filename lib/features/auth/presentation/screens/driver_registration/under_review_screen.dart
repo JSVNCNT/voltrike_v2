@@ -3,195 +3,116 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../app/routes.dart';
+import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/widgets/buttons/primary_button.dart';
-
 import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
 
 class DriverUnderReviewScreen extends ConsumerWidget {
-  const DriverUnderReviewScreen({
-    super.key,
-  });
+  const DriverUnderReviewScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return AuthScaffold(
-      child: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              const SizedBox(
-                height: AppSpacing.lg,
-              ),
-
-              const AuthLogo(
-                logoSize: 90,
-              ),
-
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
-
-              const AuthHeader(
-                title: 'Registration Submitted',
-                subtitle:
-                    'Your driver application has been received.',
-              ),
-
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
-
-              Image.asset(
-                'assets/icons/under_review.png',
-                height: 180,
-              ),
-
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
-
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.all(20),
-                  child: Column(
-                    children: const [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Registration submitted successfully',
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      SizedBox(height: 16),
-
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.email,
-                            color: Colors.blue,
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Verification email has been sent',
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      SizedBox(height: 16),
-
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.description,
-                            color: Colors.orange,
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Your uploaded documents are under review',
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      SizedBox(height: 16),
-
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.admin_panel_settings,
-                            color: Colors.teal,
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Waiting for TODA administrator approval',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
-                            PrimaryButton(
-                text: 'Go to Login',
-                onPressed: () {
-                  context.go(
-                    AppRoutes.login,
-                  );
-                },
-              ),
-
-              const SizedBox(
-                height: AppSpacing.md,
-              ),
-
-              OutlinedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Verification email feature will be available soon.',
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(
-                  Icons.mark_email_read_outlined,
-                ),
-                label: const Text(
-                  'Resend Verification Email',
-                ),
-              ),
-
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
-
-              const Text(
-                'Please verify your email address and wait for your TODA administrator '
-                'to review your application. Once approved, you can log in and start '
-                'accepting bookings.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 13,
-                  height: 1.5,
-                ),
-              ),
-
-              const SizedBox(
-                height: AppSpacing.xxl,
-              ),
-            ],
+      child: Column(
+        children: [
+          const AuthLogo(logoSize: 68),
+          const SizedBox(height: AppSpacing.xl),
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.fact_check_outlined,
+              size: 36,
+              color: AppColors.warning,
+            ),
           ),
-        ),
+          const SizedBox(height: AppSpacing.lg),
+          const AuthHeader(
+            title: 'Application under review',
+            subtitle:
+                'Your registration and documents were submitted to your TODA.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(18),
+              child: Column(
+                children: [
+                  _ReviewStep(
+                    icon: Icons.check_circle_outline_rounded,
+                    color: AppColors.success,
+                    label: 'Registration submitted',
+                  ),
+                  Divider(height: 28),
+                  _ReviewStep(
+                    icon: Icons.mark_email_read_outlined,
+                    color: AppColors.primary,
+                    label: 'Verification email sent',
+                  ),
+                  Divider(height: 28),
+                  _ReviewStep(
+                    icon: Icons.description_outlined,
+                    color: AppColors.warning,
+                    label: 'Documents awaiting review',
+                  ),
+                  Divider(height: 28),
+                  _ReviewStep(
+                    icon: Icons.groups_outlined,
+                    color: AppColors.primaryDark,
+                    label: 'TODA approval pending',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            'Verify your email and wait for approval. Account access will update '
+            'when your TODA completes its review.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          PrimaryButton(
+            text: 'Return to sign in',
+            icon: Icons.login_rounded,
+            onPressed: () => context.go(AppRoutes.login),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _ReviewStep extends StatelessWidget {
+  const _ReviewStep({
+    required this.icon,
+    required this.color,
+    required this.label,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: color),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(label, style: Theme.of(context).textTheme.bodyLarge),
+        ),
+      ],
     );
   }
 }

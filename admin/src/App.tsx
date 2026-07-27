@@ -70,12 +70,12 @@ export default function App() {
     ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
     : [['overview', 'Overview'], ['drivers', 'My drivers'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
   return <div className="shell">
-    <aside className="sidebar"><div className="brand"><img src="/images/logo.png" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
-      <nav>{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} key={key} onClick={() => setPage(key)}>{text}</button>)}</nav>
+    <aside className="sidebar"><div className="brand"><img src="/images/logo.png" alt="VolTrike" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
+      <nav aria-label="Admin sections">{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => setPage(key)}>{text}</button>)}</nav>
       <div className="sidebar-footer"><span>{session.displayName}</span><button onClick={() => signOut(auth)}>Sign out</button></div>
     </aside>
-    <main className="content"><header><div><p className="eyebrow">Bacolod City TNVS operations</p><h1>{visiblePages.find(([key]) => key === page)?.[1]}</h1></div><div className="status">● Secure Firebase session</div></header>
-      {message && <div className="notice">{message}<button onClick={() => setMessage('')}>×</button></div>}
+    <main className="content"><header><div><p className="eyebrow">Bacolod City TNVS operations</p><h1>{visiblePages.find(([key]) => key === page)?.[1]}</h1></div><div className="status">{isDeveloper ? 'Platform-wide access' : 'TODA-scoped access'}</div></header>
+      {message && <div className="notice" role="status">{message}<button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
       {page === 'overview' && <Overview session={session} />}
       {page === 'todas' && isDeveloper && <Todas onMessage={setMessage} />}
       {page === 'fares' && isDeveloper && <Fares onMessage={setMessage} />}
@@ -108,7 +108,7 @@ function Login({ message, onMessage }: { message: string; onMessage: (value: str
     finally { setBusy(false); }
   }
   if (registering) return <TodaSignUp onBack={() => setRegistering(false)} onMessage={onMessage} />;
-  return <main className="auth"><section><img src="/images/logo.png" className="auth-logo" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized TODA and developer operations only.</p>{message && <div className="notice">{message}</div>}<form onSubmit={submit}><input type="email" placeholder="Email address" value={email} onChange={(event) => setEmail(event.target.value)} required /><input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required /><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" onClick={() => { onMessage(''); setRegistering(true); }}>Register a TODA</button></form></section></main>;
+  return <main className="auth"><section><img src="/images/logo.png" className="auth-logo" alt="VolTrike" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized TODA and developer operations only.</p>{message && <div className="notice" role="alert">{message}</div>}<form onSubmit={submit}><label>Email address<input type="email" placeholder="admin@example.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" placeholder="Enter your password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" onClick={() => { onMessage(''); setRegistering(true); }}>Register a TODA</button></form></section></main>;
 }
 
 function TodaSignUp({ onBack, onMessage }: { onBack: () => void; onMessage: (value: string) => void }) {

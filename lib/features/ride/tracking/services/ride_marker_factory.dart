@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 /// Produces cached, branded marker bitmaps shared by ride maps.
 class RideMarkerFactory {

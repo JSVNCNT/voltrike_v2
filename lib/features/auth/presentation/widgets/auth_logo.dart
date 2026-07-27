@@ -8,7 +8,7 @@ import '../../../../core/theme/app_text_styles.dart';
 class AuthLogo extends StatelessWidget {
   const AuthLogo({
     super.key,
-    this.logoSize = 120,
+    this.logoSize = 84,
     this.textColor = AppColors.textPrimary,
     this.taglineColor = AppColors.textSecondary,
   });
@@ -28,17 +28,17 @@ class AuthLogo extends StatelessWidget {
           fit: BoxFit.contain,
         ),
 
-        const SizedBox(height: 28),
+        const SizedBox(height: 16),
 
         Text(
           AppStrings.appName,
-          style: AppTextStyles.headlineLarge.copyWith(
+          style: AppTextStyles.headlineMedium.copyWith(
             color: textColor,
             letterSpacing: 1.2,
           ),
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: 5),
 
         Text(
           AppStrings.appTagline,

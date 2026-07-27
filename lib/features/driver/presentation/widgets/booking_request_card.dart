@@ -34,30 +34,60 @@ class BookingRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Card(
-      elevation: 3,
+      elevation: 6,
       margin: EdgeInsets.zero,
+      color: colorScheme.surface,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
+                Icon(
+                  Icons.notifications_active_outlined,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'New ride request',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
                 CircleAvatar(
+                  radius: 24,
+                  backgroundColor: colorScheme.primaryContainer,
                   backgroundImage: passengerPhotoUrl?.trim().isNotEmpty == true
                       ? NetworkImage(passengerPhotoUrl!)
                       : null,
                   child: passengerPhotoUrl?.trim().isNotEmpty == true
                       ? null
-                      : const Icon(Icons.person),
+                      : const Icon(Icons.person_rounded),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     passengerName,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+                ),
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 20,
+                  color: colorScheme.primary,
                 ),
               ],
             ),
@@ -80,13 +110,12 @@ class BookingRequestCard extends StatelessWidget {
 
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    estimatedFare,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                _RequestMetric(
+                  icon: Icons.payments_outlined,
+                  value: estimatedFare,
                 ),
-                Expanded(child: Text(distance, textAlign: TextAlign.end)),
+                const SizedBox(width: 8),
+                _RequestMetric(icon: Icons.route_outlined, value: distance),
               ],
             ),
 
@@ -95,24 +124,58 @@ class BookingRequestCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
+                  child: OutlinedButton.icon(
                     onPressed: onDecline,
-                    child: const Text('Decline'),
+                    icon: const Icon(Icons.close_rounded),
+                    label: const Text('Decline'),
                   ),
                 ),
 
                 const SizedBox(width: 12),
 
                 Expanded(
-                  child: ElevatedButton(
+                  child: FilledButton.icon(
                     onPressed: onAccept,
-                    child: const Text('Accept'),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Accept'),
                   ),
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RequestMetric extends StatelessWidget {
+  const _RequestMetric({required this.icon, required this.value});
+
+  final IconData icon;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            value,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

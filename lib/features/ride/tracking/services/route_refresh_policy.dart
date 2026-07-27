@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 /// Throttles live route refreshes while still reacting to meaningful movement,
 /// destination changes, stale ETAs, and previous request failures.

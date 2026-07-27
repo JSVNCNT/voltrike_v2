@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:http/http.dart' as http;
 
 import '../../data/models/route_info.dart';

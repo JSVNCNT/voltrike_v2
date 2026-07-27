@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../app/routes.dart';
 import '../../../../../core/constants/app_strings.dart';
+import '../../../../../core/errors/domain_error_mapper.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/utils/validators.dart';
 import '../../../../../core/widgets/buttons/primary_button.dart';
@@ -21,19 +22,15 @@ class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() =>
-      _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState
-    extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _emailController =
-      TextEditingController();
+  final _emailController = TextEditingController();
 
-  final _passwordController =
-      TextEditingController();
+  final _passwordController = TextEditingController();
 
   String? _error;
 
@@ -81,22 +78,18 @@ class _LoginScreenState
       // ==========================================================
 
       if (appUser.isDriver) {
-  context.go(
-    AppRoutes.splash,
-  );
-  return;
-}
+        context.go(AppRoutes.splash);
+        return;
+      }
 
       // ==========================================================
       // Admin Accounts
       // (Handled by the Web Portal)
       // ==========================================================
 
-      if (appUser.isDeveloperAdmin ||
-          appUser.isTodaAdmin) {
+      if (appUser.isDeveloperAdmin || appUser.isTodaAdmin) {
         setState(() {
-          _error =
-              'Administrator accounts use the VolTrike Web Portal.';
+          _error = 'Administrator accounts use the VolTrike Web Portal.';
         });
         return;
       }
@@ -106,25 +99,18 @@ class _LoginScreenState
       // ==========================================================
 
       setState(() {
-        _error =
-            'Your account does not have a valid role.';
+        _error = 'Your account does not have a valid role.';
       });
     } catch (e) {
       if (!mounted) return;
 
-      setState(() {
-        _error = e.toString().replaceFirst(
-              'Exception: ',
-              '',
-            );
-      });
+      setState(() => _error = DomainErrorMapper.message(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state =
-        ref.watch(loginControllerProvider);
+    final state = ref.watch(loginControllerProvider);
 
     return LoadingOverlay(
       isLoading: state.isLoading,
@@ -133,128 +119,83 @@ class _LoginScreenState
           key: _formKey,
           child: Column(
             children: [
-              const SizedBox(
-                height: AppSpacing.lg,
-              ),
+              const AuthLogo(logoSize: 76),
 
-              const AuthLogo(
-                logoSize: 100,
-              ),
-
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
+              const SizedBox(height: AppSpacing.xl),
 
               const AuthHeader(
                 title: AppStrings.welcomeBack,
-                subtitle:
-                    AppStrings.loginSubtitle,
+                subtitle: 'Sign in to manage your VolTrike rides.',
               ),
 
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
+              const SizedBox(height: AppSpacing.xl),
 
               if (_error != null) ...[
-                ValidationMessage(
-                  message: _error!,
-                ),
-                const SizedBox(
-                  height: AppSpacing.md,
-                ),
+                ValidationMessage(message: _error!),
+                const SizedBox(height: AppSpacing.md),
               ],
 
               AppTextField(
                 controller: _emailController,
                 label: AppStrings.email,
                 hint: 'example@email.com',
-                prefixIcon:
-                    Icons.email_outlined,
-                keyboardType:
-                    TextInputType.emailAddress,
-                textInputAction:
-                    TextInputAction.next,
-                validator:
-                    Validators.validateEmail,
+                prefixIcon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                validator: Validators.validateEmail,
               ),
 
-              const SizedBox(
-                height: AppSpacing.md,
-              ),
+              const SizedBox(height: AppSpacing.md),
 
               PasswordField(
-                controller:
-                    _passwordController,
+                controller: _passwordController,
                 label: AppStrings.password,
-                hint:
-                    'Enter your password',
-                textInputAction:
-                    TextInputAction.done,
-                validator:
-                    Validators.validatePassword,
+                hint: 'Enter your password',
+                textInputAction: TextInputAction.done,
+                validator: Validators.validatePassword,
                 onFieldSubmitted: (_) {
                   _login();
                 },
               ),
 
               Align(
-                alignment:
-                    Alignment.centerRight,
+                alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    context.go(
-                      AppRoutes
-                          .forgotPassword,
-                    );
+                    context.go(AppRoutes.forgotPassword);
                   },
-                  child: const Text(
-                    AppStrings
-                        .forgotPassword,
-                  ),
+                  child: const Text(AppStrings.forgotPassword),
                 ),
               ),
 
-              const SizedBox(
-                height: AppSpacing.md,
-              ),
+              const SizedBox(height: AppSpacing.md),
 
               PrimaryButton(
-                text: AppStrings.login,
+                text: 'Sign in',
+                icon: Icons.login_rounded,
                 onPressed: _login,
-                isLoading:
-                    state.isLoading,
+                isLoading: state.isLoading,
               ),
 
-              const SizedBox(
-                height: AppSpacing.xl,
-              ),
+              const SizedBox(height: AppSpacing.xl),
 
+              const Divider(),
+              const SizedBox(height: AppSpacing.md),
               AuthFooter(
-                text: AppStrings
-                    .dontHaveAccount,
-                actionText: AppStrings
-                    .registerPassenger,
+                text: 'New passenger?',
+                actionText: 'Create passenger account',
                 onPressed: () {
-                  context.go(
-                    AppRoutes
-                        .passengerRegister,
-                  );
+                  context.go(AppRoutes.passengerRegister);
                 },
               ),
 
-              const SizedBox(
-                height: AppSpacing.sm,
-              ),
+              const SizedBox(height: AppSpacing.sm),
 
               AuthFooter(
-                text: '',
-                actionText: AppStrings
-                    .registerDriver,
+                text: 'Want to drive?',
+                actionText: 'Apply as a driver',
                 onPressed: () {
-                  context.go(
-                    AppRoutes
-                        .driverRegister,
-                  );
+                  context.go(AppRoutes.driverRegister);
                 },
               ),
             ],

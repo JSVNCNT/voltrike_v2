@@ -10,6 +10,7 @@ class AuthHeader extends StatelessWidget {
     required this.subtitle,
     this.titleColor = AppColors.textPrimary,
     this.subtitleColor = AppColors.textSecondary,
+    this.textAlign = TextAlign.left,
   });
 
   final String title;
@@ -17,27 +18,27 @@ class AuthHeader extends StatelessWidget {
 
   final Color titleColor;
   final Color subtitleColor;
+  final TextAlign textAlign;
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: textAlign == TextAlign.center
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.stretch,
       children: [
         Text(
           title,
-          textAlign: TextAlign.center,
-          style: AppTextStyles.headlineMedium.copyWith(
-            color: titleColor,
-          ),
+          textAlign: textAlign,
+          style: AppTextStyles.titleLarge.copyWith(color: titleColor),
         ),
 
-        const SizedBox(height: 10),
+        const SizedBox(height: 7),
 
         Text(
           subtitle,
-          textAlign: TextAlign.center,
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: subtitleColor,
-          ),
+          textAlign: textAlign,
+          style: AppTextStyles.bodyMedium.copyWith(color: subtitleColor),
         ),
       ],
     );

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../app/routes.dart';
 import '../../../../../core/constants/app_strings.dart';
+import '../../../../../core/errors/domain_error_mapper.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/theme/app_text_styles.dart';
@@ -16,100 +17,80 @@ import '../../widgets/auth_scaffold.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../widgets/validation_message.dart';
 
-class PassengerRegistrationSuccessScreen
-    extends ConsumerStatefulWidget {
-  const PassengerRegistrationSuccessScreen({
-    super.key,
-  });
+class PassengerRegistrationSuccessScreen extends ConsumerStatefulWidget {
+  const PassengerRegistrationSuccessScreen({super.key});
 
   @override
-  ConsumerState<PassengerRegistrationSuccessScreen>
-      createState() =>
-          _PassengerRegistrationSuccessScreenState();
+  ConsumerState<PassengerRegistrationSuccessScreen> createState() =>
+      _PassengerRegistrationSuccessScreenState();
 }
 
 class _PassengerRegistrationSuccessScreenState
-    extends ConsumerState<
-        PassengerRegistrationSuccessScreen> {
+    extends ConsumerState<PassengerRegistrationSuccessScreen> {
   String? _message;
+  bool _messageIsError = false;
 
   Future<void> _resendVerification() async {
     setState(() {
       _message = null;
+      _messageIsError = false;
     });
 
     try {
       await ref
-          .read(
-            emailVerificationControllerProvider
-                .notifier,
-          )
+          .read(emailVerificationControllerProvider.notifier)
           .resendVerificationEmail();
 
       if (!mounted) return;
 
       setState(() {
-        _message =
-            'Verification email has been sent again.';
+        _message = 'Verification email has been sent again.';
       });
     } catch (e) {
       setState(() {
-        _message = e
-            .toString()
-            .replaceFirst(
-              'Exception: ',
-              '',
-            );
+        _message = DomainErrorMapper.message(e);
+        _messageIsError = true;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(
-      emailVerificationControllerProvider,
-    );
+    final state = ref.watch(emailVerificationControllerProvider);
 
     return LoadingOverlay(
       isLoading: state.isLoading,
       child: AuthScaffold(
         child: Column(
           children: [
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const AuthLogo(logoSize: 68),
 
-            const AuthLogo(
-              logoSize: 90,
-            ),
+            const SizedBox(height: AppSpacing.xl),
 
-            const SizedBox(
-              height: AppSpacing.xl,
-            ),
-
-            const CircleAvatar(
-              radius: 42,
-              backgroundColor: AppColors.success,
-              child: Icon(
-                Icons.check,
-                color: Colors.white,
-                size: 48,
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle_outline_rounded,
+                color: AppColors.success,
+                size: 38,
               ),
             ),
 
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const SizedBox(height: AppSpacing.lg),
 
             const AuthHeader(
-              title: 'Account Created!',
+              title: 'Passenger account created',
               subtitle:
-                  'Your passenger account has been created successfully.',
+                  'Verify your email before signing in to request a ride.',
+              textAlign: TextAlign.center,
             ),
 
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const SizedBox(height: AppSpacing.lg),
 
             Text(
               'A verification email has been sent to your email address.\n\nPlease verify your email before logging in.',
@@ -117,50 +98,40 @@ class _PassengerRegistrationSuccessScreenState
               style: AppTextStyles.bodyMedium,
             ),
 
-            const SizedBox(
-              height: AppSpacing.lg,
-            ),
+            const SizedBox(height: AppSpacing.lg),
 
             if (_message != null) ...[
               ValidationMessage(
                 message: _message!,
+                type: _messageIsError
+                    ? ValidationType.error
+                    : ValidationType.success,
               ),
-              const SizedBox(
-                height: AppSpacing.md,
-              ),
+              const SizedBox(height: AppSpacing.md),
             ],
 
             PrimaryButton(
-              text: 'Continue',
+              text: 'Continue to verification',
+              icon: Icons.mark_email_read_outlined,
               onPressed: () {
-                context.go(
-                  AppRoutes.emailVerification,
-                );
+                context.go(AppRoutes.emailVerification);
               },
             ),
 
-            const SizedBox(
-              height: AppSpacing.md,
-            ),
+            const SizedBox(height: AppSpacing.md),
 
             TextButton(
               onPressed: _resendVerification,
-              child: const Text(
-                'Resend Verification Email',
-              ),
+              child: const Text('Resend Verification Email'),
             ),
 
-            const SizedBox(
-              height: AppSpacing.md,
-            ),
+            const SizedBox(height: AppSpacing.md),
 
             AuthFooter(
               text: '',
               actionText: AppStrings.login,
               onPressed: () {
-                context.go(
-                  AppRoutes.login,
-                );
+                context.go(AppRoutes.login);
               },
             ),
           ],

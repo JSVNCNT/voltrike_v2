@@ -34,10 +34,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
 
-        // Required by flutter_local_notifications; this is the standard
-        // Android desugaring flavor, not the removed Navigation SDK NIO one.
+        // Required by Google Navigation on Android API levels below 34.
         isCoreLibraryDesugaringEnabled = true
-
     }
 
     kotlinOptions {
@@ -47,7 +45,7 @@ android {
     defaultConfig {
         applicationId = "com.example.voltrike_v2"
 
-        minSdk = flutter.minSdkVersion
+        minSdk = 24
 
         targetSdk = flutter.targetSdkVersion
 
@@ -64,7 +62,7 @@ android {
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 }
 
 flutter {

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:voltrike_v2/app/routes.dart';
 
 import '../../../../core/services/navigation_service.dart';
@@ -407,7 +407,9 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
       await controller.confirmDropOff(booking);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Drop-off confirmed. Confirm cash next.')),
+          const SnackBar(
+            content: Text('Drop-off confirmed. Confirm cash next.'),
+          ),
         );
       }
       return;
@@ -502,75 +504,80 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
           //------------------------------------------------------------------
           if (hasIncomingBooking &&
               tripStatus == DriverTripStatus.bookingReceived)
-            Positioned(
-              top: 16,
-              left: 16,
-              right: 16,
-              child: BookingRequestCard(
-                passengerName: incomingBooking.passengerName ?? 'Passenger',
-                passengerPhotoUrl: incomingBooking.passengerPhotoUrl,
-                pickupAddress: incomingBooking.pickupAddress,
-                destinationAddress: incomingBooking.destinationAddress,
-                estimatedFare:
-                    '₱${incomingBooking.estimatedFare.toStringAsFixed(2)}',
-                distance: '${incomingBooking.distanceMeters} m',
-                onAccept: canRespondToOffer ? _acceptBooking : null,
-                onDecline: canRespondToOffer ? _declineBooking : null,
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.all(16),
+                child: BookingRequestCard(
+                  passengerName: incomingBooking.passengerName ?? 'Passenger',
+                  passengerPhotoUrl: incomingBooking.passengerPhotoUrl,
+                  pickupAddress: incomingBooking.pickupAddress,
+                  destinationAddress: incomingBooking.destinationAddress,
+                  estimatedFare:
+                      '₱${incomingBooking.estimatedFare.toStringAsFixed(2)}',
+                  distance:
+                      '${(incomingBooking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                  onAccept: canRespondToOffer ? _acceptBooking : null,
+                  onDecline: canRespondToOffer ? _declineBooking : null,
+                ),
               ),
             ),
 
           //------------------------------------------------------------------
           // Bottom Sheet
           //------------------------------------------------------------------
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: DriverBottomSheet(
-              isOnline: driverStatus != DriverStatus.offline,
+          if (!hasIncomingBooking ||
+              tripStatus != DriverTripStatus.bookingReceived)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: DriverBottomSheet(
+                isOnline: driverStatus != DriverStatus.offline,
 
-              offerCooldownSeconds: offerCooldown.secondsRemaining,
+                offerCooldownSeconds: offerCooldown.secondsRemaining,
 
-              // Keep the idle sheet truly empty. A fallback name here made
-              // the sheet look as though an offer existed before one had
-              // been received, including blank pickup and destination rows.
-              passengerName: hasIncomingBooking
-                  ? (incomingBooking.passengerName ?? 'Passenger')
-                  : activeBooking?.passengerName,
+                // Keep the idle sheet truly empty. A fallback name here made
+                // the sheet look as though an offer existed before one had
+                // been received, including blank pickup and destination rows.
+                passengerName: hasIncomingBooking
+                    ? (incomingBooking.passengerName ?? 'Passenger')
+                    : activeBooking?.passengerName,
 
-              pickupAddress: hasIncomingBooking
-                  ? incomingBooking.pickupAddress
-                  : activeBooking?.pickupAddress,
+                pickupAddress: hasIncomingBooking
+                    ? incomingBooking.pickupAddress
+                    : activeBooking?.pickupAddress,
 
-              destinationAddress: hasIncomingBooking
-                  ? incomingBooking.destinationAddress
-                  : activeBooking?.destinationAddress,
+                destinationAddress: hasIncomingBooking
+                    ? incomingBooking.destinationAddress
+                    : activeBooking?.destinationAddress,
 
-              estimatedFare: displayBooking == null || offerCooldown.isActive
-                  ? null
-                  : '₱${displayBooking.estimatedFare.toStringAsFixed(2)}',
+                estimatedFare: displayBooking == null || offerCooldown.isActive
+                    ? null
+                    : '₱${displayBooking.estimatedFare.toStringAsFixed(2)}',
 
-              distance: displayBooking == null || offerCooldown.isActive
-                  ? null
-                  : '${displayBooking.distanceMeters} m',
+                distance: displayBooking == null || offerCooldown.isActive
+                    ? null
+                    : '${displayBooking.distanceMeters} m',
 
-              bookingStatus: activeBooking?.status,
+                bookingStatus: activeBooking?.status,
 
-              onOnlineChanged: _toggleOnline,
+                onOnlineChanged: _toggleOnline,
 
-              onAcceptBooking: canRespondToOffer ? _acceptBooking : null,
+                onAcceptBooking: canRespondToOffer ? _acceptBooking : null,
 
-              onDeclineBooking: canRespondToOffer ? _declineBooking : null,
+                onDeclineBooking: canRespondToOffer ? _declineBooking : null,
 
-              onNavigate: hasCurrentBooking ? _navigateToPickup : null,
+                onNavigate: hasCurrentBooking ? _navigateToPickup : null,
 
-              onArrived: hasCurrentBooking ? _arrived : null,
+                onArrived: hasCurrentBooking ? _arrived : null,
 
-              onStartTrip: hasCurrentBooking ? _startTrip : null,
+                onStartTrip: hasCurrentBooking ? _startTrip : null,
 
-              onCompleteTrip: hasCurrentBooking ? _completeTrip : null,
+                onCompleteTrip: hasCurrentBooking ? _completeTrip : null,
 
-              onCancelTrip: hasCurrentBooking ? _cancelTrip : null,
+                onCancelTrip: hasCurrentBooking ? _cancelTrip : null,
+              ),
             ),
-          ),
         ],
       ),
     );

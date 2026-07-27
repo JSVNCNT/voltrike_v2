@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
 import '../../theme/app_text_styles.dart';
 
 class PasswordField extends StatefulWidget {
@@ -40,12 +39,10 @@ class PasswordField extends StatefulWidget {
   final bool enabled;
 
   @override
-  State<PasswordField> createState() =>
-      _PasswordFieldState();
+  State<PasswordField> createState() => _PasswordFieldState();
 }
 
-class _PasswordFieldState
-    extends State<PasswordField> {
+class _PasswordFieldState extends State<PasswordField> {
   bool _obscure = true;
 
   @override
@@ -66,14 +63,9 @@ class _PasswordFieldState
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hint,
-        prefixIcon: Icon(
-          widget.prefixIcon,
-          color: AppColors.primary,
-        ),
+        prefixIcon: Icon(widget.prefixIcon, color: AppColors.primary),
         suffixIcon: IconButton(
-          tooltip: _obscure
-              ? 'Show password'
-              : 'Hide password',
+          tooltip: _obscure ? 'Show password' : 'Hide password',
           icon: Icon(
             _obscure
                 ? Icons.visibility_off_outlined
@@ -84,35 +76,6 @@ class _PasswordFieldState
               _obscure = !_obscure;
             });
           },
-        ),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 18,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            AppRadius.lg,
-          ),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            AppRadius.lg,
-          ),
-          borderSide: BorderSide(
-            color: Colors.grey.shade300,
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            AppRadius.lg,
-          ),
-          borderSide: const BorderSide(
-            color: AppColors.primary,
-            width: 2,
-          ),
         ),
       ),
     );

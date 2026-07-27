@@ -7,9 +7,11 @@ class AppColors {
   // Brand
   // ---------------------------------------------------------------------------
 
-  static const Color primary = Color(0xFF008B8B);
-  static const Color primaryDark = Color(0xFF006F6F);
+  static const Color primary = Color(0xFF006F73);
+  static const Color primaryDark = Color(0xFF063B3C);
   static const Color primaryLight = Color(0xFF35B9B9);
+  static const Color brandAccent = Color(0xFF008B8B);
+  static const Color primaryContainer = Color(0xFFD8EFEF);
 
   // ---------------------------------------------------------------------------
   // Background
@@ -23,9 +25,9 @@ class AppColors {
   // Text
   // ---------------------------------------------------------------------------
 
-  static const Color textPrimary = Color(0xFF1B1B1B);
-  static const Color textSecondary = Color(0xFF666666);
-  static const Color textHint = Color(0xFF9E9E9E);
+  static const Color textPrimary = Color(0xFF173234);
+  static const Color textSecondary = Color(0xFF557072);
+  static const Color textHint = Color(0xFF789092);
   static const Color textWhite = Colors.white;
 
   // ---------------------------------------------------------------------------
@@ -41,13 +43,13 @@ class AppColors {
   // Border
   // ---------------------------------------------------------------------------
 
-  static const Color border = Color(0xFFE0E0E0);
+  static const Color border = Color(0xFFD8E4E4);
 
   // ---------------------------------------------------------------------------
   // Misc
   // ---------------------------------------------------------------------------
 
-  static const Color divider = Color(0xFFEAEAEA);
+  static const Color divider = Color(0xFFE5EEEE);
   static const Color disabled = Color(0xFFBDBDBD);
 
   static const Color online = Color(0xFF4CAF50);

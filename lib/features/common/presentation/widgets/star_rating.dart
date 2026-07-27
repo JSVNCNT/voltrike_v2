@@ -55,6 +55,28 @@ class StarRating extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (onRatingChanged == null) {
+      return Semantics(
+        label: 'Rating ${rating.toStringAsFixed(1)} out of $maxRating',
+        child: ExcludeSemantics(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(
+              maxRating,
+              (index) => Padding(
+                padding: EdgeInsets.symmetric(horizontal: spacing / 2),
+                child: Icon(
+                  _iconFor(index + 1),
+                  size: size,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(
@@ -62,38 +84,36 @@ class StarRating extends StatelessWidget {
         (index) {
           final star = index + 1;
 
-          IconData icon;
-
-          if (rating >= star) {
-            icon = Icons.star;
-          } else if (rating >= star - 0.5) {
-            icon = Icons.star_half;
-          } else {
-            icon = Icons.star_border;
-          }
-
           return Padding(
             padding: EdgeInsets.symmetric(
               horizontal: spacing / 2,
             ),
-            child: IconButton(
-              onPressed: onRatingChanged == null
-                  ? null
-                  : () => onRatingChanged!(
-                        star.toDouble(),
-                      ),
-              splashRadius: size * 0.7,
-              iconSize: size,
-              icon: Icon(
-                icon,
-                color: color,
+            child: Semantics(
+              button: true,
+              selected: rating.round() == star,
+              label: '$star out of $maxRating stars',
+              child: IconButton(
+                onPressed: () => onRatingChanged!(star.toDouble()),
+                splashRadius: size * 0.7,
+                iconSize: size,
+                icon: ExcludeSemantics(
+                  child: Icon(
+                    _iconFor(star),
+                    color: color,
+                  ),
+                ),
+                tooltip: '$star Star${star > 1 ? 's' : ''}',
               ),
-              tooltip:
-                  '$star Star${star > 1 ? 's' : ''}',
             ),
           );
         },
       ),
     );
+  }
+
+  IconData _iconFor(int star) {
+    if (rating >= star) return Icons.star;
+    if (rating >= star - 0.5) return Icons.star_half;
+    return Icons.star_border;
   }
 }
