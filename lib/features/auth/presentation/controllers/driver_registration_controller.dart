@@ -55,21 +55,15 @@ class DriverRegistrationController extends StateNotifier<AsyncValue<void>> {
 
       debugPrint('1. Creating Firebase Authentication account...');
 
-      final credential = await _authRepository.register(
+      final (firebaseUser, created) = await _createOrResumeAccount(
         email: registration.email,
         password: registration.password,
       );
-      accountCreated = true;
+      accountCreated = created;
 
       debugPrint('2. Firebase Authentication SUCCESS');
 
-      final firebaseUser = credential.user;
-
-      debugPrint('3. UID: ${firebaseUser?.uid}');
-
-      if (firebaseUser == null) {
-        throw Exception('Unable to create account.');
-      }
+      debugPrint('3. UID: ${firebaseUser.uid}');
 
       final uid = firebaseUser.uid;
       final vehicleId = _uuid.v4();
@@ -180,8 +174,11 @@ class DriverRegistrationController extends StateNotifier<AsyncValue<void>> {
 
       state = const AsyncData(null);
     } on FirebaseAuthException catch (e, stackTrace) {
-      if (accountCreated && !registrationCommitted) {
-        await _rollBackNewAccount(uploadedUrls);
+      if (!registrationCommitted) {
+        await _rollBackIncompleteRegistration(
+          uploadedUrls,
+          deleteAccount: accountCreated,
+        );
       }
       debugPrint('========== FIREBASE AUTH ERROR ==========');
       debugPrint('Code: ${e.code}');
@@ -191,8 +188,11 @@ class DriverRegistrationController extends StateNotifier<AsyncValue<void>> {
       state = AsyncError(e, stackTrace);
       rethrow;
     } catch (e, stackTrace) {
-      if (accountCreated && !registrationCommitted) {
-        await _rollBackNewAccount(uploadedUrls);
+      if (!registrationCommitted) {
+        await _rollBackIncompleteRegistration(
+          uploadedUrls,
+          deleteAccount: accountCreated,
+        );
       }
       debugPrint('========== DRIVER REGISTRATION ERROR ==========');
       debugPrint(e.toString());
@@ -203,7 +203,10 @@ class DriverRegistrationController extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  Future<void> _rollBackNewAccount(List<String> uploadedUrls) async {
+  Future<void> _rollBackIncompleteRegistration(
+    List<String> uploadedUrls, {
+    required bool deleteAccount,
+  }) async {
     for (final url in uploadedUrls.reversed) {
       if (url.isEmpty) continue;
       try {
@@ -213,11 +216,48 @@ class DriverRegistrationController extends StateNotifier<AsyncValue<void>> {
       }
     }
 
+    if (deleteAccount) {
+      try {
+        await _authRepository.deleteAccount();
+        debugPrint('Rolled back incomplete Firebase Authentication account.');
+      } catch (error) {
+        debugPrint('Could not roll back incomplete account: $error');
+      }
+    }
+  }
+
+  Future<(User, bool)> _createOrResumeAccount({
+    required String email,
+    required String password,
+  }) async {
     try {
-      await _authRepository.deleteAccount();
-      debugPrint('Rolled back incomplete Firebase Authentication account.');
-    } catch (error) {
-      debugPrint('Could not roll back incomplete account: $error');
+      final credential = await _authRepository.register(
+        email: email,
+        password: password,
+      );
+      final user = credential.user;
+      if (user == null) {
+        throw Exception('Unable to create account.');
+      }
+      return (user, true);
+    } on FirebaseAuthException catch (error) {
+      final currentUser = _authRepository.currentUser;
+      final sameSignedInAccount =
+          currentUser != null &&
+          currentUser.email?.trim().toLowerCase() == email.trim().toLowerCase();
+
+      if (error.code != 'email-already-in-use' || !sameSignedInAccount) {
+        rethrow;
+      }
+
+      final registrationExists = await _registrationRepository
+          .driverRegistrationExists(currentUser.uid);
+      if (registrationExists) {
+        rethrow;
+      }
+
+      debugPrint('Resuming incomplete driver registration.');
+      return (currentUser, false);
     }
   }
 }

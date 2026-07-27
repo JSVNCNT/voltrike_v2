@@ -32,21 +32,15 @@ class PassengerRegistrationController extends StateNotifier<AsyncValue<void>> {
 
       debugPrint('1. Creating Firebase Authentication account...');
 
-      final credential = await _authRepository.register(
+      final (firebaseUser, created) = await _createOrResumeAccount(
         email: user.email,
         password: password,
       );
-      accountCreated = true;
+      accountCreated = created;
 
       debugPrint('2. Firebase Authentication SUCCESS');
 
-      final firebaseUser = credential.user;
-
-      debugPrint('3. Current UID: ${firebaseUser?.uid}');
-
-      if (firebaseUser == null) {
-        throw Exception('Unable to create account.');
-      }
+      debugPrint('3. Current UID: ${firebaseUser.uid}');
 
       final appUser = user.copyWith(uid: firebaseUser.uid);
 
@@ -109,6 +103,41 @@ class PassengerRegistrationController extends StateNotifier<AsyncValue<void>> {
       debugPrint('Rolled back incomplete Firebase Authentication account.');
     } catch (error) {
       debugPrint('Could not roll back incomplete account: $error');
+    }
+  }
+
+  Future<(User, bool)> _createOrResumeAccount({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final credential = await _authRepository.register(
+        email: email,
+        password: password,
+      );
+      final user = credential.user;
+      if (user == null) {
+        throw Exception('Unable to create account.');
+      }
+      return (user, true);
+    } on FirebaseAuthException catch (error) {
+      final currentUser = _authRepository.currentUser;
+      final sameSignedInAccount =
+          currentUser != null &&
+          currentUser.email?.trim().toLowerCase() == email.trim().toLowerCase();
+
+      if (error.code != 'email-already-in-use' || !sameSignedInAccount) {
+        rethrow;
+      }
+
+      final registrationExists = await _registrationRepository
+          .passengerRegistrationExists(currentUser.uid);
+      if (registrationExists) {
+        rethrow;
+      }
+
+      debugPrint('Resuming incomplete passenger registration.');
+      return (currentUser, false);
     }
   }
 }

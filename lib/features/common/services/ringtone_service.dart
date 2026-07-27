@@ -12,6 +12,7 @@ class RingtoneService {
   final AudioPlayer _insideChat = AudioPlayer();
   final AudioPlayer _call = AudioPlayer();
   final Map<String, DateTime> _lastPlayedAt = {};
+  Future<void> _callOperation = Future<void>.value();
 
   Future<void> playBooking() => _play(
     _booking,
@@ -30,16 +31,26 @@ class RingtoneService {
     volume: .45,
   );
 
-  Future<void> startIncomingCall() async {
+  Future<void> startIncomingCall() => _queueCallOperation(() async {
     await _call.stop();
     await _call.setReleaseMode(ReleaseMode.loop);
     await _call.setVolume(.7);
     await _call.play(AssetSource('ringtones/call_ringtone.mp3'));
-  }
+  });
 
-  Future<void> stopIncomingCall() async {
-    await _call.stop();
-    await _call.setReleaseMode(ReleaseMode.release);
+  Future<void> stopIncomingCall() => _queueCallOperation(() async {
+    // stop() resets playback but retains the native player. release() also
+    // relinquishes its audio resources before LiveKit takes audio focus.
+    await _call.release();
+  });
+
+  Future<void> _queueCallOperation(Future<void> Function() operation) {
+    final queued = _callOperation.then<void>((_) => operation());
+    _callOperation = queued.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return queued;
   }
 
   Future<void> _play(
@@ -62,6 +73,7 @@ class RingtoneService {
   }
 
   Future<void> dispose() async {
+    await stopIncomingCall();
     await _booking.dispose();
     await _chat.dispose();
     await _insideChat.dispose();

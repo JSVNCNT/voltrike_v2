@@ -61,7 +61,7 @@ class NotificationService {
     importance: Importance.max,
     sound: RawResourceAndroidNotificationSound('call_ringtone'),
   );
-  Timer? _callStopTimer;
+  int? _activeIncomingNotificationId;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -126,19 +126,20 @@ class NotificationService {
       unawaited(RingtoneService.instance.playBooking());
     } else if (type == 'chat_message') {
       unawaited(RingtoneService.instance.playChat());
-    } else if (type == 'incoming_call') {
-      unawaited(RingtoneService.instance.startIncomingCall());
-      _callStopTimer?.cancel();
-      _callStopTimer = Timer(
-        const Duration(seconds: 30),
-        () => RingtoneService.instance.stopIncomingCall(),
-      );
     }
     final notification = message.notification;
     final title = notification?.title ?? 'VolTrike update';
     final body = notification?.body ?? 'You have a ride update.';
+    final notificationId = _notificationId++;
+    if (type == 'incoming_call') {
+      final previousId = _activeIncomingNotificationId;
+      if (previousId != null) {
+        await _localNotifications.cancel(id: previousId);
+      }
+      _activeIncomingNotificationId = notificationId;
+    }
     await _localNotifications.show(
-      id: _notificationId++,
+      id: notificationId,
       title: title,
       body: body,
       notificationDetails: NotificationDetails(
@@ -175,6 +176,7 @@ class NotificationService {
           (session) {
             if (session == null ||
                 session.effectiveStatus() != BookingCallStatus.ringing) {
+              unawaited(_stopIncomingCallAlert());
               return;
             }
             _scheduleData({
@@ -193,6 +195,7 @@ class NotificationService {
     final userId = _userId;
     await _incomingCallSubscription?.cancel();
     _incomingCallSubscription = null;
+    await _stopIncomingCallAlert();
     _lastOpenedCallId = null;
     _pendingIncomingData = null;
     final token = await _messaging.getToken();
@@ -229,8 +232,6 @@ class NotificationService {
   }
 
   void _navigateData(Map<Object?, Object?> data) {
-    _callStopTimer?.cancel();
-    unawaited(RingtoneService.instance.stopIncomingCall());
     final bookingId = data['bookingId'] as String?;
     if (bookingId == null || bookingId.isEmpty) return;
     final target = data['target'] as String?;
@@ -240,6 +241,7 @@ class NotificationService {
       return;
     }
     if (type == 'incoming_call') {
+      unawaited(_cancelIncomingCallNotification());
       if (_userId == null) {
         _pendingIncomingData = Map<Object?, Object?>.from(data);
         return;
@@ -267,8 +269,21 @@ class NotificationService {
     await _tapSubscription?.cancel();
     await _authSubscription?.cancel();
     await _incomingCallSubscription?.cancel();
-    _callStopTimer?.cancel();
+    await _stopIncomingCallAlert();
     await RingtoneService.instance.dispose();
+  }
+
+  Future<void> _cancelIncomingCallNotification() async {
+    final notificationId = _activeIncomingNotificationId;
+    _activeIncomingNotificationId = null;
+    if (notificationId != null) {
+      await _localNotifications.cancel(id: notificationId);
+    }
+  }
+
+  Future<void> _stopIncomingCallAlert() async {
+    await RingtoneService.instance.stopIncomingCall();
+    await _cancelIncomingCallNotification();
   }
 
   AndroidNotificationChannel _channelFor(Object? type) {

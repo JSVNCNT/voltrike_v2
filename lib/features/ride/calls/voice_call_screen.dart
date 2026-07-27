@@ -150,6 +150,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     if (_joining || _service.isConnected) return;
     _joining = true;
     try {
+      // The incoming ringtone owns the same device audio focus. Fully release
+      // it before LiveKit enables the microphone and WebRTC audio processing.
+      await RingtoneService.instance.stopIncomingCall();
       final permission = await Permission.microphone.request();
       if (!permission.isGranted) {
         throw StateError(

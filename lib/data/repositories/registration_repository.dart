@@ -16,6 +16,22 @@ class RegistrationRepository {
 
   final FirebaseFirestore _firestore;
 
+  Future<bool> passengerRegistrationExists(String uid) async {
+    final snapshot = await _firestore
+        .collection(FirestoreConstants.passengers)
+        .doc(uid)
+        .get();
+    return snapshot.exists;
+  }
+
+  Future<bool> driverRegistrationExists(String uid) async {
+    final snapshot = await _firestore
+        .collection(FirestoreConstants.drivers)
+        .doc(uid)
+        .get();
+    return snapshot.exists;
+  }
+
   Future<void> createPassengerRegistration({
     required AppUser user,
     required Passenger passenger,
