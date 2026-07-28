@@ -500,6 +500,129 @@ textarea {
   font-size: 14px;
 }
 
+.input-with-unit {
+  position: relative;
+  display: block;
+}
+
+.input-with-unit input {
+  padding-right: 76px;
+}
+
+.input-with-unit small {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+.license-review {
+  flex: 1 1 100%;
+  display: grid;
+  gap: 8px;
+}
+
+.license-review label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.commission-form {
+  max-width: 760px;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 120px auto auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.commission-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.commission-number {
+  position: relative;
+}
+
+.commission-number span {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+}
+
+.commission-number input {
+  padding-right: 34px;
+}
+
+.live-layout {
+  align-items: start;
+}
+
+.live-driver {
+  width: 100%;
+  margin-top: 8px;
+  display: grid;
+  text-align: left;
+}
+
+.live-driver.selected {
+  border-color: var(--brand);
+  background: var(--brand-container);
+}
+
+.safety-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #f1bab6;
+  border-radius: 14px;
+  background: var(--danger-container);
+}
+
+.safety-actions span {
+  color: #6b312e;
+  font-size: 13px;
+}
+
+.safety-email-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(260px, 1fr);
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+  background: #f7fafa;
+}
+
+.safety-email-card > div {
+  align-self: center;
+}
+
+.safety-email-card small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.safety-email-card input[readonly] {
+  background: #edf3f3;
+  color: var(--muted);
+}
+
+.danger-button {
+  flex: 0 0 auto;
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
 .map-shell {
   height: 430px;
   overflow: hidden;
@@ -645,6 +768,10 @@ summary {
     grid-template-columns: 1fr;
   }
 
+  .safety-email-card {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .row,
   .row.driver,
   .row.report,
@@ -715,6 +842,19 @@ summary {
 
   .cards,
   .fare-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .commission-form {
+    grid-template-columns: 1fr;
+  }
+
+  .safety-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .safety-email-card {
     grid-template-columns: 1fr;
   }
 

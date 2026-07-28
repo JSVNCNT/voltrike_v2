@@ -9,7 +9,6 @@ const {
   FieldPath,
   FieldValue,
   Timestamp,
-  AggregateField,
 } = require('firebase-admin/firestore');
 const { ServerValue } = require('firebase-admin/database');
 const {
@@ -39,6 +38,21 @@ const {
   calculateFare,
   fareSnapshot,
 } = require('./fare-policy');
+const {
+  SAFETY_RESPONSE_STATUS,
+  SOS_ACKNOWLEDGEMENT_MS,
+  SOS_UNRESPONSIVE_MS,
+  escalationLevel: safetyEscalationLevel,
+  nextAdminResponseStatus,
+  normalizedResponseStatus,
+} = require('./safety-policy');
+const {
+  safetyAlertEmail,
+  sendBrevoEmail,
+  todaApplicationEmail,
+  validEmail,
+  verificationEmail,
+} = require('./brevo-communications');
 const functionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 const runtimeProjectId =
   process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
@@ -60,6 +74,16 @@ const liveKitApiSecret = defineSecret('LIVEKIT_API_SECRET');
 const liveKitUrl = defineString('LIVEKIT_URL');
 const adminBootstrapCode = defineSecret('ADMIN_BOOTSTRAP_CODE');
 const googleRoutesApiKey = defineSecret('GOOGLE_ROUTES_API_KEY');
+const brevoApiKey = defineSecret('BREVO_API_KEY');
+const brevoSenderEmail = defineString('BREVO_SENDER_EMAIL', {
+  default: 'no-reply@voltrike.ph',
+});
+const brevoSenderName = defineString('BREVO_SENDER_NAME', {
+  default: 'VolTrike',
+});
+const adminPortalUrl = defineString('ADMIN_PORTAL_URL', {
+  default: 'https://voltrike-v2.web.app',
+});
 const bacolodBarangayCodes = new Set([
   '064501001', '064501002', '064501003', '064501004', '064501005', '064501006',
   '064501007', '064501008', '064501009', '064501010', '064501011', '064501012',
@@ -111,6 +135,13 @@ async function requireAdmin(request) {
     throw new HttpsError(
       'permission-denied',
       'Administrator permissions changed. Sign out and sign in again.',
+    );
+  }
+  if (profile.requiresEmailVerification === true &&
+      request.auth.token.email_verified !== true) {
+    throw new HttpsError(
+      'permission-denied',
+      'Verify the administrator email address before using the admin panel.',
     );
   }
   return { uid: request.auth.uid, ...profile };
@@ -196,6 +227,19 @@ function snapshotDateMillis(value) {
     return Number.isNaN(parsed) ? null : parsed;
   }
   return null;
+}
+
+function isAtLeast18(value, now = Date.now()) {
+  const birthMillis = snapshotDateMillis(value);
+  if (birthMillis == null) return false;
+  const birth = new Date(birthMillis);
+  const today = new Date(now);
+  const eighteenthBirthday = new Date(
+    birth.getUTCFullYear() + 18,
+    birth.getUTCMonth(),
+    birth.getUTCDate(),
+  );
+  return eighteenthBirthday.getTime() <= today.getTime();
 }
 
 async function trustedRoute(pickup, destination) {
@@ -296,6 +340,22 @@ const dispatchBatchSize = 5;
 // on the backend, but provide a practical response window.
 const offerDurationMs = 120000;
 
+function vehicleCanServeBooking(vehicle, booking) {
+  const requiredSeats = Number(booking.additionalPassengers || 0) + 1;
+  const capacity = Number(vehicle.capacity);
+  if (!Number.isInteger(requiredSeats) || requiredSeats < 1 ||
+      requiredSeats > 4 || !Number.isInteger(capacity) ||
+      capacity < requiredSeats) {
+    return false;
+  }
+  const type = String(vehicle.vehicleNumber || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+  const electricTuktuk = type === 'electrictuktuk' || type === 'etuktuk';
+  return requiredSeats <= 2 || electricTuktuk;
+}
+
 async function rankedDispatchDrivers(booking) {
   const pickup = normalizeCoordinate(booking.pickup, 'Pickup');
   const [drivers, locations] = await Promise.all([
@@ -351,6 +411,7 @@ async function rankedDispatchDrivers(booking) {
       toda.exists && toda.data().isActive === true &&
       vehicle.exists &&
       vehicle.data().isVerified === true &&
+      vehicleCanServeBooking(vehicle.data(), booking) &&
       typeof driver.data().licenseNumber === 'string' &&
       driver.data().licenseNumber.trim().length > 0 &&
       licenseExpiry != null &&
@@ -530,12 +591,14 @@ async function sendToUser(userId, title, body, data) {
     .map((doc) => ({ doc, token: doc.data().token }))
     .filter((entry) => typeof entry.token === 'string' && entry.token.length > 0);
   const tokens = deviceTokens.map((entry) => entry.token);
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) return { attempted: 0, succeeded: 0 };
   const type = data.type;
   const channelId = type === 'chat_message'
     ? 'chat_messages'
     : type === 'incoming_call'
       ? 'incoming_calls_v2'
+      : type === 'safety_incident'
+        ? 'safety_incidents'
       : 'booking_updates';
   const sound = type === 'chat_message'
     ? 'chat_ringtone'
@@ -557,6 +620,202 @@ async function sendToUser(userId, title, body, data) {
     }
     return null;
   }));
+  return {
+    attempted: tokens.length,
+    succeeded: response.successCount,
+  };
+}
+
+async function safetyAdminRecipients(todaId) {
+  const [developers, todaCandidates] = await Promise.all([
+    db.collection('users')
+      .where('role', '==', 'developer_admin')
+      .limit(100)
+      .get(),
+    todaId
+      ? db.collection('users').where('todaId', '==', todaId).limit(100).get()
+      : Promise.resolve({ docs: [] }),
+  ]);
+  const recipients = new Map();
+  for (const entry of [...developers.docs, ...todaCandidates.docs]) {
+    const data = entry.data();
+    if (data.isActive === false ||
+        !['developer_admin', 'toda_admin'].includes(data.role) ||
+        (data.role === 'toda_admin' && data.todaId !== todaId)) {
+      continue;
+    }
+    let email = data.safetyContactEmail || data.email || '';
+    if (!validEmail(email)) {
+      const authUser = await admin.auth().getUser(entry.id).catch(() => null);
+      email = authUser?.email || '';
+    }
+    recipients.set(entry.id, {
+      uid: entry.id,
+      name: [data.firstName, data.lastName].filter(Boolean).join(' ') ||
+        'Administrator',
+      email,
+    });
+  }
+  return [...recipients.values()];
+}
+
+function communicationDeliveryId({
+  incidentId,
+  recipientId,
+  channel,
+  stage,
+}) {
+  return createHash('sha256')
+    .update(`${incidentId}:${recipientId}:${channel}:${stage}`)
+    .digest('hex');
+}
+
+async function deliverSafetyCommunication({
+  recipient,
+  channel,
+  provider,
+  stage,
+  incidentId,
+  bookingId,
+  send,
+}) {
+  const deliveryId = communicationDeliveryId({
+    incidentId,
+    recipientId: recipient.uid,
+    channel,
+    stage,
+  });
+  const deliveryRef = db.collection('communicationDeliveries').doc(deliveryId);
+  const claimed = await db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(deliveryRef);
+    if (existing.exists) return false;
+    transaction.create(deliveryRef, {
+      deliveryId,
+      incidentId,
+      bookingId,
+      recipientId: recipient.uid,
+      channel,
+      stage,
+      purpose: 'administrator_safety_alert',
+      status: 'sending',
+      createdAt: timestamp(),
+      updatedAt: timestamp(),
+    });
+    return true;
+  });
+  if (!claimed) return { deduplicated: true, sent: false };
+  try {
+    const response = await send();
+    await deliveryRef.update({
+      status: 'accepted',
+      provider,
+      providerMessageId: String(
+        response?.messageId ||
+        response?.messageIds?.[0] ||
+        response?.[0]?.message_id ||
+        '',
+      ),
+      acceptedAt: timestamp(),
+      updatedAt: timestamp(),
+    });
+    return { deduplicated: false, sent: true };
+  } catch (error) {
+    await deliveryRef.update({
+      status: 'failed',
+      errorCode: String(error?.status || error?.code || 'provider_error'),
+      failedAt: timestamp(),
+      updatedAt: timestamp(),
+    });
+    logger.error('Could not deliver administrator safety communication', {
+      incidentId,
+      recipientId: recipient.uid,
+      channel,
+      provider,
+      stage,
+      error,
+    });
+    return { deduplicated: false, sent: false };
+  }
+}
+
+async function notifySafetyAdmins({
+  incidentId,
+  bookingId,
+  todaId,
+  title,
+  body,
+  escalationLevel = 0,
+  stage = 'initial',
+  incident = {},
+}) {
+  const recipients = await safetyAdminRecipients(todaId);
+  const pushDeliveries = await Promise.all(recipients.map((recipient) =>
+    sendToUser(recipient.uid, title, body, {
+      type: 'safety_incident',
+      incidentId,
+      bookingId,
+      escalationLevel,
+    }).catch((error) => {
+      logger.error('Could not deliver an SOS administrator notification', {
+        incidentId,
+        userId: recipient.uid,
+        error,
+      });
+      return { attempted: 0, succeeded: 0 };
+    })));
+  const emailApiKey = brevoApiKey.value();
+  const emailMessage = safetyAlertEmail({
+    recipientName: '',
+    eventLabel: title,
+    adminPortalUrl: adminPortalUrl.value(),
+    incident: {
+      ...incident,
+      bookingId,
+      escalationLevel,
+    },
+  });
+  const emailDeliveries = await Promise.all(recipients.map((recipient) => {
+    if (validEmail(recipient.email)) {
+      return deliverSafetyCommunication({
+        recipient,
+        channel: 'email',
+        provider: 'brevo',
+        stage,
+        incidentId,
+        bookingId,
+        send: () => sendBrevoEmail({
+          apiKey: emailApiKey,
+          senderEmail: brevoSenderEmail.value(),
+          senderName: brevoSenderName.value(),
+          to: recipient.email,
+          name: recipient.name,
+          ...emailMessage,
+          htmlContent: safetyAlertEmail({
+            recipientName: recipient.name,
+            eventLabel: title,
+            adminPortalUrl: adminPortalUrl.value(),
+            incident: {
+              ...incident,
+              bookingId,
+              escalationLevel,
+            },
+          }).htmlContent,
+        }),
+      });
+    }
+    return { deduplicated: false, sent: false };
+  }));
+  const pushSummary = pushDeliveries.reduce((summary, delivery) => ({
+    recipients: summary.recipients + 1,
+    attempted: summary.attempted + delivery.attempted,
+    succeeded: summary.succeeded + delivery.succeeded,
+  }), { recipients: 0, attempted: 0, succeeded: 0 });
+  return {
+    ...pushSummary,
+    emailSent: emailDeliveries.filter((entry) => entry.sent).length,
+    emailDeduplicated: emailDeliveries
+      .filter((entry) => entry.deduplicated).length,
+  };
 }
 
 exports.notifyRideChatMessage = onDocumentCreated(
@@ -578,6 +837,203 @@ exports.notifyRideChatMessage = onDocumentCreated(
       message.text.slice(0, 120),
       { bookingId, type: 'chat_message' },
     );
+  },
+);
+
+exports.requestBrandedVerificationEmail = onCall(
+  { region: 'asia-southeast1', secrets: [brevoApiKey] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        'unauthenticated',
+        'Sign in before requesting email verification.',
+      );
+    }
+    const authUser = await admin.auth().getUser(request.auth.uid);
+    if (!authUser.email || !validEmail(authUser.email)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'The account does not have a valid email address.',
+      );
+    }
+    if (authUser.emailVerified) return { sent: false, alreadyVerified: true };
+    const userRef = db.collection('users').doc(request.auth.uid);
+    const now = Date.now();
+    await db.runTransaction(async (transaction) => {
+      const profile = await transaction.get(userRef);
+      const lastSent = snapshotDateMillis(
+        profile.data()?.verificationEmailRequestedAt,
+      );
+      if (lastSent != null && now - lastSent < 60 * 1000) {
+        throw new HttpsError(
+          'resource-exhausted',
+          'Wait one minute before requesting another verification email.',
+        );
+      }
+      transaction.set(userRef, {
+        verificationEmailRequestedAt: timestamp(),
+        updatedAt: timestamp(),
+      }, { merge: true });
+    });
+    const profile = await userRef.get();
+    const profileData = profile.data() || {};
+    const name = [
+      profileData.firstName,
+      profileData.middleName,
+      profileData.lastName,
+    ].filter(Boolean).join(' ') || authUser.displayName || 'VolTrike user';
+    const verificationLink = await admin.auth()
+      .generateEmailVerificationLink(authUser.email);
+    const message = verificationEmail({ name, verificationLink });
+    try {
+      const response = await sendBrevoEmail({
+        apiKey: brevoApiKey.value(),
+        senderEmail: brevoSenderEmail.value(),
+        senderName: brevoSenderName.value(),
+        to: authUser.email,
+        name,
+        ...message,
+      });
+      await db.collection('communicationDeliveries').add({
+        recipientId: request.auth.uid,
+        channel: 'email',
+        purpose: 'account_verification',
+        status: 'accepted',
+        provider: 'brevo',
+        providerMessageId: String(response?.messageId || ''),
+        acceptedAt: timestamp(),
+        createdAt: timestamp(),
+        updatedAt: timestamp(),
+      });
+      return { sent: true, alreadyVerified: false };
+    } catch (error) {
+      await userRef.set({
+        verificationEmailLastFailureAt: timestamp(),
+        updatedAt: timestamp(),
+      }, { merge: true });
+      logger.error('Could not send branded verification email', {
+        uid: request.auth.uid,
+        error,
+      });
+      throw new HttpsError(
+        'unavailable',
+        'The branded verification email is temporarily unavailable.',
+      );
+    }
+  },
+);
+
+async function sendTodaRegistrationStatusEmail({
+  todaId,
+  status,
+  application,
+}) {
+  const adminUid = application.adminUid;
+  if (!adminUid) return;
+  const deliveryId = createHash('sha256')
+    .update(`toda-registration:${todaId}:${adminUid}:${status}`)
+    .digest('hex');
+  const deliveryRef = db.collection('communicationDeliveries').doc(deliveryId);
+  const claimed = await db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(deliveryRef);
+    if (existing.exists) return false;
+    transaction.create(deliveryRef, {
+      deliveryId,
+      recipientId: adminUid,
+      todaId,
+      channel: 'email',
+      purpose: 'toda_registration_status',
+      stage: status,
+      status: 'sending',
+      createdAt: timestamp(),
+      updatedAt: timestamp(),
+    });
+    return true;
+  });
+  if (!claimed) return;
+  try {
+    const [authUser, profile, toda] = await Promise.all([
+      admin.auth().getUser(adminUid),
+      db.collection('users').doc(adminUid).get(),
+      db.collection('todas').doc(todaId).get(),
+    ]);
+    if (!authUser.email || !validEmail(authUser.email)) {
+      throw new Error('The TODA administrator email is invalid.');
+    }
+    const data = profile.data() || {};
+    const name = [data.firstName, data.lastName].filter(Boolean).join(' ') ||
+      authUser.displayName || 'Administrator';
+    const message = todaApplicationEmail({
+      administratorName: name,
+      todaName: toda.data()?.name || todaId,
+      status,
+      adminPortalUrl: adminPortalUrl.value(),
+    });
+    const response = await sendBrevoEmail({
+      apiKey: brevoApiKey.value(),
+      senderEmail: brevoSenderEmail.value(),
+      senderName: brevoSenderName.value(),
+      to: authUser.email,
+      name,
+      ...message,
+    });
+    await deliveryRef.update({
+      status: 'accepted',
+      provider: 'brevo',
+      providerMessageId: String(response?.messageId || ''),
+      acceptedAt: timestamp(),
+      updatedAt: timestamp(),
+    });
+  } catch (error) {
+    await deliveryRef.update({
+      status: 'failed',
+      errorCode: String(error?.status || error?.code || 'provider_error'),
+      failedAt: timestamp(),
+      updatedAt: timestamp(),
+    });
+    logger.error('Could not send TODA registration status email', {
+      todaId,
+      status,
+      error,
+    });
+  }
+}
+
+exports.notifyTodaRegistrationSubmitted = onDocumentCreated(
+  {
+    document: 'todaApplications/{todaId}',
+    region: 'asia-southeast1',
+    secrets: [brevoApiKey],
+  },
+  async (event) => {
+    const application = event.data?.data();
+    if (!application || application.status !== 'pending') return;
+    await sendTodaRegistrationStatusEmail({
+      todaId: event.params.todaId,
+      status: 'submitted',
+      application,
+    });
+  },
+);
+
+exports.notifyTodaRegistrationDecision = onDocumentUpdated(
+  {
+    document: 'todaApplications/{todaId}',
+    region: 'asia-southeast1',
+    secrets: [brevoApiKey],
+  },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after || before?.status === after.status ||
+        !['approved', 'declined'].includes(after.status)) {
+      return;
+    }
+    await sendTodaRegistrationStatusEmail({
+      todaId: event.params.todaId,
+      status: after.status,
+      application: after,
+    });
   },
 );
 
@@ -671,6 +1127,9 @@ exports.registerToda = onCall({ region: 'asia-southeast1' }, async (request) => 
   });
   batch.set(userRef, {
     uid: request.auth.uid, email: user.email || '', role: 'toda_admin_pending', todaId: id,
+    safetyContactEmail: user.email || '',
+    safetyEmailEnabled: true,
+    requiresEmailVerification: true,
     isActive: true, todaApplicationStatus: 'pending', createdAt: timestamp(), updatedAt: timestamp(),
   }, { merge: true });
   await batch.commit();
@@ -873,6 +1332,78 @@ exports.adminUpdateFare = onCall({ region: 'asia-southeast1' }, async (request) 
   return { updated: true };
 });
 
+exports.adminGetTodaCommission = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    if (actor.role !== 'toda_admin' || !actor.todaId) {
+      throw new HttpsError(
+        'permission-denied',
+        'TODA administrator access is required.',
+      );
+    }
+    const toda = await db.collection('todas').doc(actor.todaId).get();
+    if (!toda.exists) throw new HttpsError('not-found', 'TODA not found.');
+    return {
+      percent: Number(toda.data().driverCommissionPercent || 0),
+      recommendedPercent: 10,
+      maximumPercent: 30,
+      updatedAt: adminDate(toda.data().commissionUpdatedAt),
+    };
+  },
+);
+
+exports.adminSetTodaCommission = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    if (actor.role !== 'toda_admin' || !actor.todaId) {
+      throw new HttpsError(
+        'permission-denied',
+        'TODA administrator access is required.',
+      );
+    }
+    const percent = validCurrency(
+      request.data?.percent,
+      'Commission percentage',
+      0,
+      30,
+    );
+    const todaRef = db.collection('todas').doc(actor.todaId);
+    const toda = await todaRef.get();
+    if (!toda.exists || toda.data().isActive === false) {
+      throw new HttpsError(
+        'failed-precondition',
+        'An active TODA is required to change commission.',
+      );
+    }
+    await todaRef.update({
+      driverCommissionPercent: percent,
+      commissionUpdatedAt: timestamp(),
+      commissionUpdatedBy: actor.uid,
+    });
+    await adminAudit(db.collection('auditLogs').doc(), {
+      actor,
+      action: 'update_driver_commission',
+      targetType: 'toda',
+      targetId: actor.todaId,
+      details: {
+        previousPercent: Number(
+          toda.data().driverCommissionPercent || 0,
+        ),
+        percent,
+        appliesTo: 'future_booking_assignments',
+      },
+    });
+    return {
+      percent,
+      recommendedPercent: 10,
+      maximumPercent: 30,
+      updatedAt: new Date().toISOString(),
+    };
+  },
+);
+
 exports.adminSetDriverStatus = onCall({ region: 'asia-southeast1' }, async (request) => {
   const profile = await requireAdmin(request);
   const uid = requiredString(request.data?.uid, 'Driver ID');
@@ -890,12 +1421,34 @@ exports.adminSetDriverStatus = onCall({ region: 'asia-southeast1' }, async (requ
   const driver = await driverRef.get();
   if (!driver.exists) throw new HttpsError('not-found', 'Driver not found.');
   await assertTodaScope(profile, driver.data().todaId);
+  let verifiedLicenseNumber = driver.data().licenseNumber;
+  let verifiedLicenseExpiry = driver.data().licenseExpiry;
+  const suppliedLicenseNumber = String(
+    request.data?.licenseNumber || '',
+  ).trim();
+  const suppliedLicenseExpiry = snapshotDateMillis(
+    request.data?.licenseExpiry,
+  );
+  if (suppliedLicenseNumber || suppliedLicenseExpiry != null) {
+    if (!suppliedLicenseNumber || suppliedLicenseExpiry == null ||
+        suppliedLicenseExpiry < Date.now()) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Enter the current licence number and a future expiry date.',
+      );
+    }
+    verifiedLicenseNumber = suppliedLicenseNumber;
+    verifiedLicenseExpiry = Timestamp.fromMillis(suppliedLicenseExpiry);
+  }
   if (status === 'approved') {
-    const vehicle = await db.collection('vehicles')
-      .doc(driver.data().vehicleId || '_missing')
-      .get();
-    const licenseExpiry = snapshotDateMillis(driver.data().licenseExpiry);
-    if (!driver.data().licenseNumber || licenseExpiry == null ||
+    const [vehicle, applicant] = await Promise.all([
+      db.collection('vehicles')
+        .doc(driver.data().vehicleId || '_missing')
+        .get(),
+      db.collection('users').doc(uid).get(),
+    ]);
+    const licenseExpiry = snapshotDateMillis(verifiedLicenseExpiry);
+    if (!verifiedLicenseNumber || licenseExpiry == null ||
         licenseExpiry < Date.now()) {
       throw new HttpsError(
         'failed-precondition',
@@ -908,6 +1461,13 @@ exports.adminSetDriverStatus = onCall({ region: 'asia-southeast1' }, async (requ
         'Verify the registered vehicle before approving this driver.',
       );
     }
+    if (applicant.exists && applicant.data().dateOfBirth != null &&
+        !isAtLeast18(applicant.data().dateOfBirth)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'The driver applicant must be at least 18 years old.',
+      );
+    }
   }
   if (status !== 'approved' && await activeDriverBooking(driver.data())) {
     throw new HttpsError(
@@ -916,7 +1476,12 @@ exports.adminSetDriverStatus = onCall({ region: 'asia-southeast1' }, async (requ
     );
   }
   const update = { driverStatus: status, updatedAt: timestamp() };
-  if (status === 'approved') Object.assign(update, { approvedAt: timestamp(), approvedBy: profile.uid });
+  if (status === 'approved') Object.assign(update, {
+    approvedAt: timestamp(),
+    approvedBy: profile.uid,
+    licenseNumber: verifiedLicenseNumber,
+    licenseExpiry: verifiedLicenseExpiry,
+  });
   if (status !== 'approved') Object.assign(update, { isOnline: false, isAvailable: false });
   await driverRef.update(update);
   await adminAudit(db.collection('auditLogs').doc(), {
@@ -1250,18 +1815,12 @@ exports.adminGetMetrics = onCall(
         .where('reviewAudience', 'array-contains', 'toda_admin')
       : reports.where('status', '==', 'open');
     const [driverCount, openReports, pendingZones, completedTrips,
-      driverEarnings, tripRevenue, bookingCount, openSafetyIncidents] =
+      bookingCount, openSafetyIncidents] =
       await Promise.all([
       drivers.count().get(),
       openReportsQuery.count().get(),
       zones.where('status', '==', 'pending').count().get(),
       bookings.where('status', '==', BOOKING_STATUS.completed).count().get(),
-      drivers.aggregate({
-        value: AggregateField.sum('totalEarnings'),
-      }).get(),
-      bookings.where('status', '==', BOOKING_STATUS.completed).aggregate({
-        value: AggregateField.sum('amountDue'),
-      }).get(),
       bookings.count().get(),
       safetyIncidents.where('status', '==', 'open').count().get(),
     ]);
@@ -1270,8 +1829,6 @@ exports.adminGetMetrics = onCall(
       reports: openReports.data().count,
       zones: pendingZones.data().count,
       trips: completedTrips.data().count,
-      earnings: Number(driverEarnings.data().value || 0),
-      tripRevenue: Number(tripRevenue.data().value || 0),
       bookings: bookingCount.data().count,
       safetyIncidents: openSafetyIncidents.data().count,
       scope: actor.role === 'toda_admin' ? actor.todaId : 'platform',
@@ -1552,16 +2109,364 @@ exports.adminListSafetyIncidents = onCall(
     }
     const snapshot = await query.limit(pageSize + 1).get();
     const page = snapshot.docs.slice(0, pageSize);
+    const driverIds = [...new Set(page
+      .map((entry) => entry.data().driverId)
+      .filter((value) => typeof value === 'string' && value.length > 0))];
+    const liveLocations = new Map(await Promise.all(driverIds.map(async (id) => {
+      const location = await realtime.ref(`driver_locations/${id}`).get();
+      return [id, location.exists() ? location.val() : null];
+    })));
+    const now = Date.now();
     return {
-      items: page.map((entry) => ({
-        id: entry.id,
-        ...entry.data(),
-        createdAt: adminDate(entry.data().createdAt),
-      })),
+      items: page.map((entry) => {
+        const incident = entry.data();
+        const live = liveLocations.get(incident.driverId);
+        const liveTimestamp = Number(live?.timestamp || live?.updatedAt);
+        const liveLocation = live &&
+          Number.isFinite(Number(live.latitude)) &&
+          Number.isFinite(Number(live.longitude)) &&
+          Number.isFinite(liveTimestamp) &&
+          now - liveTimestamp <= driverLocationMaxAgeMs
+          ? {
+            latitude: Number(live.latitude),
+            longitude: Number(live.longitude),
+            accuracy: Number(live.accuracy || 0),
+            bearing: Number(live.bearing || 0),
+            speed: Number(live.speed || 0),
+            timestamp: liveTimestamp,
+            online: live.online === true,
+          }
+          : null;
+        return {
+          id: entry.id,
+          ...incident,
+          responseStatus: normalizedResponseStatus(incident),
+          driverLocation: liveLocation || incident.driverLocation || null,
+          locationSource: liveLocation ? 'live_driver_location' : 'sos_snapshot',
+          createdAt: adminDate(incident.createdAt),
+          updatedAt: adminDate(incident.updatedAt),
+          acknowledgedAt: adminDate(incident.acknowledgedAt),
+          respondingAt: adminDate(incident.respondingAt),
+          resolvedAt: adminDate(incident.resolvedAt),
+          deliveredAt: adminDate(incident.deliveredAt),
+          escalatedAt: adminDate(incident.escalatedAt),
+        };
+      }),
       nextCursor: snapshot.docs.length > pageSize
         ? page.at(-1)?.id || null
         : null,
     };
+  },
+);
+
+exports.adminUpdateSafetyIncidentResponse = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const incidentId = requiredString(request.data?.incidentId, 'Incident ID');
+    const action = requiredString(request.data?.action, 'Response action');
+    if (!['acknowledge', 'responding', 'resolve'].includes(action)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Choose acknowledge, responding, or resolve.',
+      );
+    }
+    const note = String(request.data?.note || '').trim().slice(0, 1000);
+    if (action === 'resolve' && note.length === 0) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Add a short resolution note before closing an SOS.',
+      );
+    }
+    const incidentRef = db.collection('safetyIncidents').doc(incidentId);
+    const result = await db.runTransaction(async (transaction) => {
+      const incident = await transaction.get(incidentRef);
+      if (!incident.exists) {
+        throw new HttpsError('not-found', 'Safety incident not found.');
+      }
+      const data = incident.data();
+      await assertTodaScope(actor, data.todaId);
+      if (data.status === 'accidental') {
+        throw new HttpsError(
+          'failed-precondition',
+          'Accidental presses do not require an emergency response.',
+        );
+      }
+      const current = normalizedResponseStatus(data);
+      const next = nextAdminResponseStatus(current, action);
+      if (!next) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This SOS is already resolved.',
+        );
+      }
+      const update = {
+        responseStatus: next,
+        lastResponseNote: note || null,
+        lastRespondedBy: actor.uid,
+        updatedAt: timestamp(),
+      };
+      if (action === 'acknowledge' && current === 'reported') {
+        update.acknowledgedAt = timestamp();
+        update.acknowledgedBy = actor.uid;
+      }
+      if (action === 'responding') {
+        update.respondingAt = timestamp();
+        update.respondingBy = actor.uid;
+      }
+      if (action === 'resolve') {
+        update.status = 'resolved';
+        update.resolvedAt = timestamp();
+        update.resolvedBy = actor.uid;
+        update.resolutionNote = note;
+      }
+      transaction.update(incidentRef, update);
+      transaction.create(db.collection('auditLogs').doc(), {
+        type: 'admin_action',
+        actorId: actor.uid,
+        actorRole: actor.role,
+        actorTodaId: actor.todaId || null,
+        action: `safety_incident_${action}`,
+        targetType: 'safety_incident',
+        targetId: incidentId,
+        details: { note },
+        createdAt: timestamp(),
+      });
+      return {
+        responseStatus: next,
+        reportedBy: data.reportedBy,
+        reporterRole: data.reporterRole,
+        bookingId: data.bookingId,
+      };
+    });
+    const messages = {
+      acknowledge: [
+        'Your SOS was acknowledged',
+        'An administrator has seen your SOS and is reviewing it.',
+      ],
+      responding: [
+        'Safety response started',
+        'An administrator marked your SOS as actively being handled.',
+      ],
+      resolve: [
+        'Safety incident resolved',
+        'An administrator recorded a resolution. Reopen the SOS if you still need help.',
+      ],
+    };
+    const message = messages[action];
+    if (result.reportedBy && message) {
+      await sendToUser(
+        result.reportedBy,
+        message[0],
+        message[1],
+        {
+          type: 'safety_incident',
+          bookingId: result.bookingId,
+          target: result.reporterRole,
+          incidentId,
+        },
+      );
+    }
+    return { responseStatus: result.responseStatus };
+  },
+);
+
+exports.adminListLiveDrivers = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    let query = db.collection('drivers')
+      .where('driverStatus', '==', 'approved')
+      .where('isOnline', '==', true)
+      .limit(200);
+    if (actor.role === 'toda_admin') {
+      query = db.collection('drivers')
+        .where('todaId', '==', actor.todaId)
+        .where('driverStatus', '==', 'approved')
+        .where('isOnline', '==', true)
+        .limit(200);
+    }
+    const [drivers, locations] = await Promise.all([
+      query.get(),
+      realtime.ref('driver_locations').get(),
+    ]);
+    const locationMap = locations.val() || {};
+    const now = Date.now();
+    const candidates = drivers.docs.filter((entry) => {
+      const location = locationMap[entry.id];
+      return location &&
+        location.online === true &&
+        Number.isFinite(Number(location.latitude)) &&
+        Number.isFinite(Number(location.longitude)) &&
+        Number.isFinite(Number(location.timestamp)) &&
+        now - Number(location.timestamp) <= driverLocationMaxAgeMs;
+    });
+    if (candidates.length === 0) return { items: [] };
+    const [profiles, vehicles] = await Promise.all([
+      db.getAll(
+        ...candidates.map((entry) => db.collection('users').doc(entry.id)),
+      ),
+      db.getAll(
+        ...candidates.map((entry) => db.collection('vehicles')
+          .doc(entry.data().vehicleId || '_missing')),
+      ),
+    ]);
+    const bookingIds = [...new Set(candidates
+      .map((entry) => entry.data().currentBookingId)
+      .filter((value) => typeof value === 'string' && value.length > 0))];
+    const bookingSnapshots = bookingIds.length > 0
+      ? await db.getAll(
+        ...bookingIds.map((id) => db.collection('bookings').doc(id)),
+      )
+      : [];
+    const bookingById = new Map(
+      bookingSnapshots.map((entry) => [entry.id, entry.data() || {}]),
+    );
+    return {
+      items: candidates.map((entry, index) => {
+        const driver = entry.data();
+        const profile = profiles[index]?.data() || {};
+        const vehicle = vehicles[index]?.data() || {};
+        const location = locationMap[entry.id];
+        const bookingId = driver.currentBookingId || null;
+        const booking = bookingId ? bookingById.get(bookingId) : null;
+        return {
+          uid: entry.id,
+          name: [
+            profile.firstName,
+            profile.middleName,
+            profile.lastName,
+          ].filter(Boolean).join(' ') || 'Driver',
+          todaId: driver.todaId || '',
+          latitude: Number(location.latitude),
+          longitude: Number(location.longitude),
+          accuracy: Number(location.accuracy || 0),
+          timestamp: Number(location.timestamp),
+          bookingId,
+          bookingStatus: booking?.status || (
+            driver.isAvailable === true ? 'available' : 'online'
+          ),
+          vehicleType: vehicle.vehicleType || vehicle.type ||
+            vehicle.vehicleNumber || null,
+          plateNumber: vehicle.plateNumber || null,
+        };
+      }),
+    };
+  },
+);
+
+exports.adminCancelBookingForSafety = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const incidentId = requiredString(request.data?.incidentId, 'Incident ID');
+    const incidentRef = db.collection('safetyIncidents').doc(incidentId);
+    const result = await db.runTransaction(async (transaction) => {
+      const incident = await transaction.get(incidentRef);
+      if (!incident.exists) {
+        throw new HttpsError('not-found', 'Safety incident not found.');
+      }
+      const incidentData = incident.data();
+      await assertTodaScope(actor, incidentData.todaId);
+      if (incidentData.status !== 'open') {
+        throw new HttpsError(
+          'failed-precondition',
+          'This safety incident is no longer open.',
+        );
+      }
+      const createdAt = snapshotDateMillis(incidentData.createdAt);
+      if (createdAt == null ||
+          Date.now() - createdAt < SOS_UNRESPONSIVE_MS) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Wait five minutes and attempt contact before cancelling the ride.',
+        );
+      }
+      const bookingRef = db.collection('bookings').doc(
+        incidentData.bookingId,
+      );
+      const booking = await transaction.get(bookingRef);
+      if (!booking.exists) {
+        throw new HttpsError('not-found', 'Booking not found.');
+      }
+      const data = booking.data();
+      if (data.status === BOOKING_STATUS.passengerOnBoard ||
+          data.status === BOOKING_STATUS.paymentConfirmation) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Do not remotely cancel an onboard ride. Contact 911 and continue monitoring.',
+        );
+      }
+      if (![BOOKING_STATUS.pending, BOOKING_STATUS.driverAssigned,
+        BOOKING_STATUS.driverArriving].includes(data.status)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This booking has already closed or changed state.',
+        );
+      }
+      const driverRef = data.driverId
+        ? db.collection('drivers').doc(data.driverId)
+        : null;
+      const passengerLockRef = db.collection('activePassengerBookings')
+        .doc(data.passengerId);
+      const [driver, passengerLock] = await Promise.all([
+        driverRef ? transaction.get(driverRef) : Promise.resolve(null),
+        transaction.get(passengerLockRef),
+      ]);
+      transaction.update(bookingRef, {
+        status: BOOKING_STATUS.cancelled,
+        cancelledAt: timestamp(),
+        cancelledBy: actor.uid,
+        cancellationCode: 'admin_safety_unresponsive',
+        cancellationDetail:
+          'Cancelled by an administrator after an open SOS remained unresponsive for at least five minutes.',
+        updatedAt: timestamp(),
+      });
+      if (driverRef && driver?.exists &&
+          driver.data().currentBookingId === booking.id) {
+        transaction.update(driverRef, {
+          currentBookingId: null,
+          isAvailable: driver.data().isOnline === true &&
+            driver.data().driverStatus === 'approved',
+          updatedAt: timestamp(),
+        });
+      }
+      if (passengerLock.exists &&
+          passengerLock.data().bookingId === booking.id) {
+        transaction.delete(passengerLockRef);
+      }
+      transaction.update(incidentRef, {
+        bookingStatus: BOOKING_STATUS.cancelled,
+        bookingSafetyAction: 'admin_cancelled_unresponsive',
+        bookingCancelledForSafety: true,
+        cancelledBookingAt: timestamp(),
+        cancelledBookingBy: actor.uid,
+        updatedAt: timestamp(),
+      });
+      transaction.create(db.collection('auditLogs').doc(), {
+        type: 'admin_action',
+        actorId: actor.uid,
+        actorRole: actor.role,
+        actorTodaId: actor.todaId || null,
+        action: 'cancel_booking_after_sos_timeout',
+        targetType: 'booking',
+        targetId: booking.id,
+        details: { incidentId },
+        createdAt: timestamp(),
+      });
+      return {
+        bookingId: booking.id,
+        passengerId: data.passengerId,
+        driverId: data.driverId || null,
+      };
+    });
+    await expireBookingOffers(result.bookingId, 'closed');
+    if (result.driverId) {
+      await realtime
+        .ref(`driver_tracking_access/${result.passengerId}/${result.driverId}`)
+        .remove();
+    }
+    return { cancelled: true };
   },
 );
 
@@ -1716,12 +2621,12 @@ exports.createBookingLifecycle = onCall(
     const additionalPassengers = validNonNegativeInteger(
       request.data?.additionalPassengers,
       'Additional passengers',
-      20,
+      3,
     );
     const baggageCount = validNonNegativeInteger(
       request.data?.baggageCount,
       'Baggage count',
-      20,
+      1,
     );
     if (typeof request.data?.isOutsideToda !== 'boolean') {
       throw new HttpsError('invalid-argument', 'TODA boundary state is required.');
@@ -1957,6 +2862,12 @@ exports.acceptBookingLifecycle = onCall(
       if (vehicle.data().isVerified !== true) {
         throw new HttpsError('failed-precondition', 'Driver vehicle is not verified.');
       }
+      if (!vehicleCanServeBooking(vehicle.data(), bookingData)) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This vehicle does not have the required passenger capacity.',
+        );
+      }
       if (!toda.exists || toda.data().isActive !== true) {
         throw new HttpsError('failed-precondition', 'The assigned TODA is not active.');
       }
@@ -1977,6 +2888,15 @@ exports.acceptBookingLifecycle = onCall(
         profile.middleName,
         profile.lastName,
       ].filter((value) => typeof value === 'string' && value.trim()).join(' ');
+      const configuredCommission = Number(
+        toda.data().driverCommissionPercent || 0,
+      );
+      const commissionPercent =
+        Number.isFinite(configuredCommission) &&
+        configuredCommission >= 0 &&
+        configuredCommission <= 30
+          ? configuredCommission
+          : 0;
       transaction.update(bookingRef, {
         driverId: uid,
         driverName: driverName || request.auth.token.name || 'Driver',
@@ -1986,6 +2906,7 @@ exports.acceptBookingLifecycle = onCall(
         plateNumber: vehicle.data().plateNumber || '',
         todaId: driver.data().todaId,
         todaName: toda.data().name || '',
+        commissionPercent,
         status: BOOKING_STATUS.driverAssigned,
         assignedAt: timestamp(),
         updatedAt: timestamp(),
@@ -2342,6 +3263,23 @@ exports.transitionBookingLifecycle = onCall(
       if (action === 'start') lifecycleUpdate.startedAt = timestamp();
       if (action === 'dropOff') lifecycleUpdate.droppedOffAt = timestamp();
       if (action === 'complete') {
+        const grossFare = Number(
+          data.amountDue ?? data.estimatedFare ?? 0,
+        );
+        const configuredCommission = Number(data.commissionPercent || 0);
+        const commissionPercent =
+          Number.isFinite(configuredCommission) &&
+          configuredCommission >= 0 &&
+          configuredCommission <= 30
+            ? configuredCommission
+            : 0;
+        const commissionAmount = Math.round(
+          grossFare * commissionPercent,
+        ) / 100;
+        const driverNetEarnings = Math.max(
+          0,
+          Math.round((grossFare - commissionAmount) * 100) / 100,
+        );
         const receiptNumber = data.receiptNumber ||
           `VT-${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()}`;
         lifecycleUpdate.completedAt = timestamp();
@@ -2350,6 +3288,10 @@ exports.transitionBookingLifecycle = onCall(
         lifecycleUpdate.settlementStatus = 'settled';
         lifecycleUpdate.settlementTimestamp = timestamp();
         lifecycleUpdate.receiptNumber = receiptNumber;
+        lifecycleUpdate.grossFare = grossFare;
+        lifecycleUpdate.commissionPercent = commissionPercent;
+        lifecycleUpdate.commissionAmount = commissionAmount;
+        lifecycleUpdate.driverNetEarnings = driverNetEarnings;
       }
       if (nextStatus === BOOKING_STATUS.cancelled) {
         lifecycleUpdate.cancelledAt = timestamp();
@@ -2372,7 +3314,7 @@ exports.transitionBookingLifecycle = onCall(
           driverUpdate.pendingReceiptBookingId = bookingId;
           driverUpdate.completedTrips = FieldValue.increment(1);
           driverUpdate.totalEarnings = FieldValue.increment(
-            Number(data.amountDue ?? data.estimatedFare ?? 0),
+            lifecycleUpdate.driverNetEarnings,
           );
         }
         transaction.update(driverRef, driverUpdate);
@@ -2381,7 +3323,7 @@ exports.transitionBookingLifecycle = onCall(
           pendingReceiptBookingId: bookingId,
           completedTrips: FieldValue.increment(1),
           totalEarnings: FieldValue.increment(
-            Number(data.amountDue ?? data.estimatedFare ?? 0),
+            lifecycleUpdate.driverNetEarnings,
           ),
           updatedAt: timestamp(),
         });
@@ -2401,7 +3343,11 @@ exports.transitionBookingLifecycle = onCall(
           driverId: data.driverId,
           todaId: data.todaId || null,
           paymentMethod: 'cash',
-          amountDue: Number(data.amountDue ?? data.estimatedFare ?? 0),
+          amountDue: lifecycleUpdate.grossFare,
+          grossFare: lifecycleUpdate.grossFare,
+          commissionPercent: lifecycleUpdate.commissionPercent,
+          commissionAmount: lifecycleUpdate.commissionAmount,
+          driverNetEarnings: lifecycleUpdate.driverNetEarnings,
           currency: 'PHP',
           status: 'settled',
           driverReceivedAt: data.driverReceivedAt || timestamp(),
@@ -2561,7 +3507,10 @@ exports.createRideReport = onCall(
 // It does not claim to contact emergency services; that external integration
 // remains an explicit development stub.
 exports.createSafetyIncident = onCall(
-  { region: 'asia-southeast1' },
+  {
+    region: 'asia-southeast1',
+    secrets: [brevoApiKey],
+  },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in before using ride SOS.');
@@ -2591,6 +3540,9 @@ exports.createSafetyIncident = onCall(
         'SOS is available after a driver is assigned and before the ride closes.',
       );
     }
+    const acknowledgement = request.data?.acknowledgement === 'accidental'
+      ? 'accidental'
+      : 'needs_review';
 
     const incidentId = `sos_${createHash('sha256')
       .update(`${bookingId}:${request.auth.uid}`)
@@ -2632,7 +3584,22 @@ exports.createSafetyIncident = onCall(
       if (existing.exists) {
         if (existing.data().bookingId === bookingId &&
             existing.data().reportedBy === request.auth.uid) {
-          return { idempotent: true };
+          if (acknowledgement === 'needs_review' &&
+              (existing.data().acknowledgement === 'accidental' ||
+                ['resolved', 'reporter_safe'].includes(
+                  existing.data().status,
+                ))) {
+            transaction.update(incidentRef, {
+              acknowledgement,
+              status: 'open',
+              responseStatus: SAFETY_RESPONSE_STATUS.reported,
+              escalationLevel: 0,
+              escalatedAt: timestamp(),
+              updatedAt: timestamp(),
+            });
+            return { idempotent: false, escalated: true };
+          }
+          return { idempotent: true, escalated: false };
         }
         throw new HttpsError(
           'already-exists',
@@ -2640,7 +3607,7 @@ exports.createSafetyIncident = onCall(
         );
       }
       transaction.create(incidentRef, {
-        schemaVersion: 2,
+        schemaVersion: 3,
         incidentId,
         bookingId,
         category: 'sos',
@@ -2658,8 +3625,16 @@ exports.createSafetyIncident = onCall(
         destination: data.destination,
         destinationAddress: data.destinationAddress || null,
         driverLocation,
-        status: 'open',
-        emergencyDispatch: 'development_placeholder',
+        acknowledgement,
+        status: acknowledgement === 'accidental' ? 'accidental' : 'open',
+        responseStatus: acknowledgement === 'accidental'
+          ? SAFETY_RESPONSE_STATUS.resolved
+          : SAFETY_RESPONSE_STATUS.reported,
+        deliveryStatus: acknowledgement === 'accidental'
+          ? 'not_required'
+          : 'pending',
+        escalationLevel: 0,
+        emergencyDispatch: 'manual_911_call_available',
         requiresManualEmergencyContact: true,
         createdAt: timestamp(),
         updatedAt: timestamp(),
@@ -2675,13 +3650,275 @@ exports.createSafetyIncident = onCall(
         details: { incidentId },
         createdAt: timestamp(),
       });
-      return { idempotent: false };
+      return { idempotent: false, escalated: false };
     });
+    let delivery = null;
+    if (acknowledgement === 'needs_review' &&
+        (!result.idempotent || result.escalated)) {
+      delivery = await notifySafetyAdmins({
+        incidentId,
+        bookingId,
+        todaId,
+        title: `Urgent SOS from a ${reporterRole}`,
+        body: `Booking ${bookingId} needs acknowledgement. Open Safety Incidents and verify the location.`,
+        stage: result.escalated ? 'reopened' : 'initial',
+        incident: {
+          reporterRole,
+          todaName,
+          bookingStatus: data.status,
+          pickupAddress: data.pickupAddress,
+          destinationAddress: data.destinationAddress,
+        },
+      });
+      await incidentRef.set({
+        deliveryStatus: delivery.succeeded > 0
+          ? 'delivered'
+          : delivery.attempted > 0
+            ? 'delivery_failed'
+            : 'no_registered_admin_device',
+        deliveryRecipientCount: delivery.recipients,
+        deliveryAttemptCount: delivery.attempted,
+        deliverySuccessCount: delivery.succeeded,
+        ...(delivery.succeeded > 0 ? { deliveredAt: timestamp() } : {}),
+        lastAlertAt: timestamp(),
+        updatedAt: timestamp(),
+      }, { merge: true });
+    }
     return {
       incidentId,
       idempotent: result.idempotent,
-      emergencyDispatch: 'development_placeholder',
+      acknowledgement,
+      escalated: result.escalated,
+      deliveryStatus: delivery?.succeeded > 0
+        ? 'delivered'
+        : delivery?.attempted > 0
+          ? 'delivery_failed'
+          : delivery
+            ? 'no_registered_admin_device'
+            : null,
+      emergencyDispatch: 'manual_911_call_available',
     };
+  },
+);
+
+function safetyIncidentId(bookingId, userId) {
+  return `sos_${createHash('sha256')
+    .update(`${bookingId}:${userId}`)
+    .digest('hex')
+    .slice(0, 40)}`;
+}
+
+exports.getMySafetyIncident = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in to view your SOS.');
+    }
+    const bookingId = request.data?.bookingId;
+    if (!validBookingId(bookingId)) {
+      throw new HttpsError('invalid-argument', 'A valid booking ID is required.');
+    }
+    const booking = await db.collection('bookings').doc(bookingId).get();
+    if (!booking.exists ||
+        ![booking.data().passengerId, booking.data().driverId]
+          .includes(request.auth.uid)) {
+      throw new HttpsError(
+        'permission-denied',
+        'You are not part of this ride.',
+      );
+    }
+    const incident = await db.collection('safetyIncidents')
+      .doc(safetyIncidentId(bookingId, request.auth.uid))
+      .get();
+    if (!incident.exists) return { incident: null };
+    const data = incident.data();
+    return {
+      incident: {
+        incidentId: incident.id,
+        status: data.status,
+        responseStatus: normalizedResponseStatus(data),
+        deliveryStatus: data.deliveryStatus || null,
+        escalationLevel: Number(data.escalationLevel || 0),
+        updatedAt: adminDate(data.updatedAt),
+      },
+    };
+  },
+);
+
+exports.updateMySafetyIncident = onCall(
+  {
+    region: 'asia-southeast1',
+    secrets: [brevoApiKey],
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in to update your SOS.');
+    }
+    const bookingId = request.data?.bookingId;
+    if (!validBookingId(bookingId)) {
+      throw new HttpsError('invalid-argument', 'A valid booking ID is required.');
+    }
+    const action = requiredString(request.data?.action, 'Safety update');
+    if (!['safe', 'still_need_help', 'emergency_call_attempted']
+      .includes(action)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Choose safe, still need help, or emergency call attempted.',
+      );
+    }
+    const incidentId = safetyIncidentId(bookingId, request.auth.uid);
+    const incidentRef = db.collection('safetyIncidents').doc(incidentId);
+    const result = await db.runTransaction(async (transaction) => {
+      const incident = await transaction.get(incidentRef);
+      if (!incident.exists ||
+          incident.data().reportedBy !== request.auth.uid) {
+        throw new HttpsError('not-found', 'Your SOS incident was not found.');
+      }
+      const data = incident.data();
+      const update = { updatedAt: timestamp() };
+      if (action === 'safe') {
+        update.status = 'reporter_safe';
+        update.responseStatus = SAFETY_RESPONSE_STATUS.resolved;
+        update.reporterMarkedSafeAt = timestamp();
+        update.resolvedAt = timestamp();
+        update.resolvedBy = request.auth.uid;
+        update.resolutionNote = 'SOS reporter marked themselves safe.';
+      } else if (action === 'still_need_help') {
+        update.status = 'open';
+        update.responseStatus = SAFETY_RESPONSE_STATUS.reported;
+        update.acknowledgement = 'needs_review';
+        update.escalationLevel = Math.max(
+          Number(data.escalationLevel || 0),
+          2,
+        );
+        update.reporterRequestedMoreHelpAt = timestamp();
+      } else {
+        update.emergencyCallAttemptedAt = timestamp();
+        update.emergencyCallAttemptedBy = request.auth.uid;
+      }
+      transaction.update(incidentRef, update);
+      transaction.create(db.collection('auditLogs').doc(), {
+        type: 'safety_action',
+        actorId: request.auth.uid,
+        actorRole: data.reporterRole,
+        actorTodaId: data.todaId || null,
+        action: `reporter_${action}`,
+        targetType: 'safety_incident',
+        targetId: incidentId,
+        details: { bookingId },
+        createdAt: timestamp(),
+      });
+      return {
+        todaId: data.todaId || null,
+        reporterRole: data.reporterRole,
+        incident: {
+          reporterRole: data.reporterRole,
+          todaName: data.todaName || null,
+          bookingStatus: data.bookingStatus || null,
+          pickupAddress: data.pickupAddress || null,
+          destinationAddress: data.destinationAddress || null,
+        },
+      };
+    });
+    if (action === 'still_need_help') {
+      await notifySafetyAdmins({
+        incidentId,
+        bookingId,
+        todaId: result.todaId,
+        title: `SOS escalation: ${result.reporterRole} still needs help`,
+        body: `Booking ${bookingId} was escalated by the reporter. Acknowledge it immediately.`,
+        escalationLevel: 2,
+        stage: 'reporter_still_needs_help',
+        incident: result.incident,
+      });
+    } else if (action === 'safe') {
+      await notifySafetyAdmins({
+        incidentId,
+        bookingId,
+        todaId: result.todaId,
+        title: 'SOS reporter marked safe',
+        body: `The ${result.reporterRole} for booking ${bookingId} marked themselves safe. Verify and record any follow-up notes.`,
+        stage: 'reporter_marked_safe',
+        incident: result.incident,
+      });
+    }
+    return {
+      incidentId,
+      status: action === 'safe' ? 'reporter_safe' : 'open',
+      responseStatus: action === 'safe' ? 'resolved' : 'reported',
+    };
+  },
+);
+
+exports.escalateUnacknowledgedSafetyIncidents = onSchedule(
+  {
+    region: 'asia-southeast1',
+    schedule: 'every 1 minutes',
+    secrets: [brevoApiKey],
+  },
+  async () => {
+    const open = await db.collection('safetyIncidents')
+      .where('status', '==', 'open')
+      .limit(200)
+      .get();
+    let escalated = 0;
+    await Promise.all(open.docs.map(async (entry) => {
+      const data = entry.data();
+      const createdAtMs = snapshotDateMillis(data.createdAt);
+      const currentLevel = Number(data.escalationLevel || 0);
+      const targetLevel = safetyEscalationLevel({
+        createdAtMs,
+        responseStatus: normalizedResponseStatus(data),
+        currentLevel,
+      });
+      if (targetLevel <= currentLevel) return;
+      const claimed = await db.runTransaction(async (transaction) => {
+        const current = await transaction.get(entry.ref);
+        if (!current.exists || current.data().status !== 'open' ||
+            normalizedResponseStatus(current.data()) !==
+              SAFETY_RESPONSE_STATUS.reported ||
+            Number(current.data().escalationLevel || 0) >= targetLevel) {
+          return false;
+        }
+        transaction.update(entry.ref, {
+          escalationLevel: targetLevel,
+          escalatedAt: timestamp(),
+          updatedAt: timestamp(),
+        });
+        return true;
+      });
+      if (!claimed) return;
+      escalated += 1;
+      const threshold = targetLevel >= 2 ? 'five minutes' : 'two minutes';
+      const delivery = await notifySafetyAdmins({
+        incidentId: entry.id,
+        bookingId: data.bookingId,
+        todaId: data.todaId || null,
+        title: 'Unacknowledged VolTrike SOS',
+        body: `Booking ${data.bookingId} has not been acknowledged for ${threshold}.`,
+        escalationLevel: targetLevel,
+        stage: `unacknowledged_${targetLevel}`,
+        incident: data,
+      });
+      await entry.ref.set({
+        lastAlertAt: timestamp(),
+        deliveryStatus: delivery.succeeded > 0
+          ? 'delivered'
+          : delivery.attempted > 0
+            ? 'delivery_failed'
+            : 'no_registered_admin_device',
+        deliveryRecipientCount: delivery.recipients,
+        deliveryAttemptCount: delivery.attempted,
+        deliverySuccessCount: delivery.succeeded,
+        ...(delivery.succeeded > 0 ? { deliveredAt: timestamp() } : {}),
+        updatedAt: timestamp(),
+      }, { merge: true });
+    }));
+    logger.info('Unacknowledged SOS escalation check completed', {
+      open: open.size,
+      escalated,
+      acknowledgementWindowMs: SOS_ACKNOWLEDGEMENT_MS,
+    });
   },
 );
 

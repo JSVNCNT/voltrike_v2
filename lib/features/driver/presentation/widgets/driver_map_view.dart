@@ -111,20 +111,6 @@ class _DriverMapViewState extends State<DriverMapView> {
               ),
           },
         ),
-        Positioned(
-          right: 16,
-          bottom: 220,
-          child: FloatingActionButton.small(
-            heroTag: 'driver_current_location',
-            tooltip: 'My location',
-            onPressed: widget.driverLocation == null
-                ? null
-                : () => _controller?.animateCamera(
-                    CameraUpdate.newLatLngZoom(widget.driverLocation!, 16),
-                  ),
-            child: const Icon(Icons.my_location),
-          ),
-        ),
       ],
     );
   }

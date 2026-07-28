@@ -31,11 +31,11 @@ import '../features/driver/presentation/screens/driver_shell_screen.dart';
 import '../features/driver/presentation/screens/driver_home_screen.dart';
 import '../features/driver/presentation/screens/driver_earnings_screen.dart';
 import '../features/driver/presentation/screens/edit_driver_profile_screen.dart';
-import '../features/driver/presentation/screens/about_voltrike_screen.dart'
+import '../features/common/presentation/screens/about/about_voltrike_screen.dart'
     as about;
-import '../features/driver/presentation/screens/privacy_policy_screen.dart'
+import '../features/common/presentation/screens/legal/privacy_policy_screen.dart'
     as privacy;
-import '../features/driver/presentation/screens/terms_and_conditions_screen.dart';
+import '../features/common/presentation/screens/legal/terms_and_conditions_screen.dart';
 import '../features/passenger/presentation/screens/passenger_settings_screen.dart';
 import '../features/passenger/presentation/screens/edit_passenger_profile_screen.dart';
 import '../features/driver/presentation/screens/driver_booking_tracking_screen.dart';
@@ -284,12 +284,18 @@ final GoRouter appRouter = GoRouter(
 
     GoRoute(
       path: AppRoutes.privacyPolicy,
-      builder: (context, state) => const privacy.PrivacyPolicyScreen(),
+      builder: (context, state) => privacy.PrivacyPolicyScreen(
+        acknowledgementRequired:
+            state.uri.queryParameters['acknowledge'] == 'true',
+      ),
     ),
 
     GoRoute(
       path: AppRoutes.termsAndConditions,
-      builder: (context, state) => const TermsAndConditionsScreen(),
+      builder: (context, state) => TermsAndConditionsScreen(
+        acknowledgementRequired:
+            state.uri.queryParameters['acknowledge'] == 'true',
+      ),
     ),
 
     GoRoute(

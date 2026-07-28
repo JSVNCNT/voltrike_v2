@@ -249,6 +249,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
   void _increasePassengers() {
     final session = ref.read(bookingSessionProvider);
+    if (session.additionalPassengers >= 3) return;
 
     ref
         .read(bookingSessionProvider.notifier)
@@ -285,6 +286,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
   void _increaseBaggage() {
     final session = ref.read(bookingSessionProvider);
+    if (session.baggageCount >= 1) return;
 
     ref
         .read(bookingSessionProvider.notifier)
@@ -353,6 +355,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
                 estimatedFare: '₱${session.estimatedFare.toStringAsFixed(2)}',
 
+                baseFare: '₱${session.baseFare.toStringAsFixed(2)}',
+
+                distanceFare: '₱${session.distanceFare.toStringAsFixed(2)}',
+
                 distance: session.distanceMeters == 0
                     ? '--'
                     : '${(session.distanceMeters / 1000).toStringAsFixed(2)} km',
@@ -365,16 +371,23 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
                 baggageFee: '₱${session.baggageFee.toStringAsFixed(2)}',
 
+                additionalPassengerFee:
+                    '₱${session.additionalPassengerFee.toStringAsFixed(2)}',
+
                 boundarySurcharge:
                     '₱${session.boundarySurcharge.toStringAsFixed(2)}',
 
                 hasRoute: session.hasRoute,
 
-                onIncreasePassengers: _increasePassengers,
+                onIncreasePassengers: session.additionalPassengers < 3
+                    ? _increasePassengers
+                    : null,
 
                 onDecreasePassengers: _decreasePassengers,
 
-                onIncreaseBaggage: _increaseBaggage,
+                onIncreaseBaggage: session.baggageCount < 1
+                    ? _increaseBaggage
+                    : null,
 
                 onDecreaseBaggage: _decreaseBaggage,
 

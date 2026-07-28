@@ -3,7 +3,7 @@ import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from '
 import { db, functions } from './firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
-import type { AdminMetrics, BookingOperation, Driver, DriverRatingRecord, FareConfig, PageResult, Report, RouteRestriction, SafetyIncident, Toda, ZoneRequest } from './types';
+import type { AdminMetrics, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, PageResult, Report, RouteRestriction, SafetyIncident, Toda, TodaCommission, ZoneRequest } from './types';
 
 async function call<T>(name: string, data: Record<string, unknown>): Promise<T> {
   return (await httpsCallable<Record<string, unknown>, T>(functions, name)(data)).data;
@@ -14,6 +14,11 @@ const mapDocument = <T>(id: string, value: unknown) => ({ id, ...(value as objec
 export const adminApi = {
   metrics: () => call<AdminMetrics>('adminGetMetrics', {}),
   bootstrap: (code: string) => call<{ role: string }>('bootstrapDeveloperAdmin', { code }),
+  requestBrandedVerificationEmail: () =>
+    call<{ sent: boolean; alreadyVerified: boolean }>(
+      'requestBrandedVerificationEmail',
+      {},
+    ),
   registerToda: (data: Record<string, unknown>) => call<{ todaId: string }>('registerToda', data),
   createToda: (data: Record<string, unknown>) => call<{ todaId: string }>('adminCreateToda', data),
   reviewTodaRegistration: (todaId: string, status: 'approved' | 'declined') => call<{ updated: boolean }>('adminReviewTodaRegistration', { todaId, status }),
@@ -22,7 +27,13 @@ export const adminApi = {
   attachTodaDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('adminAttachTodaDocuments', { todaId, documents }),
   attachTodaRegistrationDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('attachTodaRegistrationDocuments', { todaId, documents }),
   updateFare: (fare: FareConfig) => call<{ updated: boolean }>('adminUpdateFare', { fare }),
-  setDriverStatus: (uid: string, status: string) => call<{ updated: boolean }>('adminSetDriverStatus', { uid, status }),
+  setDriverStatus: (uid: string, status: string, license?: { number: string; expiry: string }) =>
+    call<{ updated: boolean }>('adminSetDriverStatus', {
+      uid,
+      status,
+      licenseNumber: license?.number || '',
+      licenseExpiry: license?.expiry || '',
+    }),
   setVehicleVerification: (driverId: string, isVerified: boolean) => call<{ updated: boolean }>('adminSetVehicleVerification', { driverId, isVerified }),
   setUserStatus: (uid: string, isActive: boolean, sourceReportId = '') => call<{ updated: boolean }>('adminSetUserStatus', { uid, isActive, sourceReportId }),
   resolveReport: (reportId: string, status: string, action: string) => call<{ updated: boolean }>('adminResolveReport', { reportId, status, action }),
@@ -83,6 +94,20 @@ export const adminApi = {
       cursor: cursor || '',
       pageSize: 50,
     }),
+  liveDrivers: () => call<{ items: LiveDriver[] }>('adminListLiveDrivers', {}).then((result) => result.items),
+  todaCommission: () => call<TodaCommission>('adminGetTodaCommission', {}),
+  setTodaCommission: (percent: number) =>
+    call<TodaCommission>('adminSetTodaCommission', { percent }),
+  cancelBookingForSafety: (incidentId: string) =>
+    call<{ cancelled: boolean }>('adminCancelBookingForSafety', { incidentId }),
+  updateSafetyIncidentResponse: (
+    incidentId: string,
+    action: 'acknowledge' | 'responding' | 'resolve',
+    note = '',
+  ) => call<{ responseStatus: SafetyIncident['responseStatus'] }>(
+    'adminUpdateSafetyIncidentResponse',
+    { incidentId, action, note },
+  ),
   async zones(todaId?: string): Promise<ZoneRequest[]> {
     const source = collection(db, 'zoneRequests');
     const snapshot = await getDocs(todaId ? query(source, where('todaId', '==', todaId), limit(100)) : query(source, limit(100)));
@@ -94,11 +119,20 @@ export const adminApi = {
   },
   async fare(): Promise<FareConfig> {
     const snapshot = await getDoc(doc(db, 'settings', 'fare_config'));
-    return (snapshot.exists() ? snapshot.data() : {
+    const source = snapshot.exists() ? snapshot.data() : {
       baseFare: 20, includedMeters: 1000, distanceStepMeters: 500,
       distanceStepPrice: 5, additionalPassengerFee: 40, baggageFee: 20,
       outsideTodaSurcharge: 20,
-    }) as FareConfig;
+    };
+    return {
+      baseFare: Number(source.baseFare ?? 20),
+      includedMeters: Number(source.includedMeters ?? 1000),
+      distanceStepMeters: Number(source.distanceStepMeters ?? 500),
+      distanceStepPrice: Number(source.distanceStepPrice ?? 5),
+      additionalPassengerFee: Number(source.additionalPassengerFee ?? 40),
+      baggageFee: Number(source.baggageFee ?? 20),
+      outsideTodaSurcharge: Number(source.outsideTodaSurcharge ?? 20),
+    };
   },
   async uploadTodaDocuments(todaId: string, files: Record<string, File>): Promise<void> {
     const documents = await Promise.all(Object.entries(files).map(async ([key, file]) => {

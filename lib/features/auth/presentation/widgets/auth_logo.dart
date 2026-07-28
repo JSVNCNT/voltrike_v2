@@ -19,10 +19,12 @@ class AuthLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final useLightLogo = textColor.computeLuminance() > 0.5;
+
     return Column(
       children: [
         Image.asset(
-          AppAssets.logo,
+          useLightLogo ? AppAssets.logoLight : AppAssets.logoDark,
           width: logoSize,
           height: logoSize,
           fit: BoxFit.contain,

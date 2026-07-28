@@ -14,12 +14,16 @@ class DocumentPickerCard extends StatelessWidget {
     required this.icon,
     this.file,
     required this.onTap,
+    this.instruction = 'Tap to add photo',
+    this.cameraOnly = false,
   });
 
   final String title;
   final IconData icon;
   final File? file;
   final VoidCallback onTap;
+  final String instruction;
+  final bool cameraOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +60,7 @@ class DocumentPickerCard extends StatelessWidget {
 
                       Text(
                         file == null
-                            ? 'Choose photo or PDF'
+                            ? instruction
                             : file!.path.split(Platform.pathSeparator).last,
                         style: AppTextStyles.bodyMedium,
                       ),
@@ -66,7 +70,11 @@ class DocumentPickerCard extends StatelessWidget {
 
                 file != null
                     ? const Icon(Icons.check_circle, color: Colors.green)
-                    : const Icon(Icons.upload_file),
+                    : Icon(
+                        cameraOnly
+                            ? Icons.photo_camera_outlined
+                            : Icons.add_photo_alternate_outlined,
+                      ),
               ],
             ),
           ),

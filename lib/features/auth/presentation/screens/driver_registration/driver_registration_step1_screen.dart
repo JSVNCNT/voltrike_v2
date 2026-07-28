@@ -46,8 +46,6 @@ class _DriverRegistrationStep1ScreenState
 
   final _confirmPasswordController = TextEditingController();
 
-  bool _acceptedTerms = false;
-
   DateTime? _dateOfBirth;
 
   String? _error;
@@ -95,17 +93,18 @@ class _DriverRegistrationStep1ScreenState
       return;
     }
 
-    if (!_acceptedTerms) {
-      setState(() {
-        _error = 'Please accept the Terms and Conditions.';
-      });
-
-      return;
-    }
-
     if (_dateOfBirth == null) {
       setState(() {
         _error = 'Please select your date of birth.';
+      });
+      return;
+    }
+
+    if (!_isAtLeast18(_dateOfBirth!)) {
+      setState(() {
+        _error =
+            'Driver applicants must be at least 18 years old on the date of '
+            'registration.';
       });
       return;
     }
@@ -127,6 +126,16 @@ class _DriverRegistrationStep1ScreenState
         );
 
     context.go(AppRoutes.driverRegisterStep2);
+  }
+
+  bool _isAtLeast18(DateTime birthDate) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final eighteenthBirthday = DateTime(
+      birthDate.year + 18,
+      birthDate.month,
+      birthDate.day,
+    );
+    return !eighteenthBirthday.isAfter(today);
   }
 
   String _formatDate(DateTime? value) {
@@ -174,6 +183,19 @@ class _DriverRegistrationStep1ScreenState
               const RegistrationStepIndicator(currentStep: 1, totalSteps: 4),
               const SizedBox(height: AppSpacing.xl),
 
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.verified_user_outlined),
+                  title: const Text('Drivers must be 18 or older'),
+                  subtitle: const Text(
+                    'Date of birth is collected to confirm the minimum age for '
+                    'professional driving and will be reviewed with your ID.',
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: AppSpacing.lg),
+
               if (_error != null) ...[
                 ValidationMessage(message: _error!),
                 const SizedBox(height: AppSpacing.md),
@@ -188,24 +210,6 @@ class _DriverRegistrationStep1ScreenState
                 textInputAction: TextInputAction.next,
                 validator: (value) =>
                     Validators.validateRequired(value, fieldName: 'First Name'),
-              ),
-
-              const SizedBox(height: AppSpacing.md),
-
-              GestureDetector(
-                onTap: _selectBirthDate,
-                child: AbsorbPointer(
-                  child: AppTextField(
-                    controller: _birthDateController,
-                    label: 'Date of Birth',
-                    hint: 'YYYY-MM-DD',
-                    prefixIcon: Icons.cake_outlined,
-                    readOnly: true,
-                    validator: (value) => value == null || value.isEmpty
-                        ? 'Date of birth is required.'
-                        : null,
-                  ),
-                ),
               ),
 
               const SizedBox(height: AppSpacing.md),
@@ -233,6 +237,25 @@ class _DriverRegistrationStep1ScreenState
               ),
 
               const SizedBox(height: AppSpacing.md),
+
+              GestureDetector(
+                onTap: _selectBirthDate,
+                child: AbsorbPointer(
+                  child: AppTextField(
+                    controller: _birthDateController,
+                    label: 'Date of Birth',
+                    hint: 'YYYY-MM-DD',
+                    prefixIcon: Icons.cake_outlined,
+                    readOnly: true,
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Date of birth is required.'
+                        : null,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: AppSpacing.md),
+
               AppTextField(
                 controller: _phoneController,
                 label: AppStrings.phoneNumber,
@@ -280,22 +303,6 @@ class _DriverRegistrationStep1ScreenState
                 onFieldSubmitted: (_) {
                   _continue();
                 },
-              ),
-
-              const SizedBox(height: AppSpacing.lg),
-
-              CheckboxListTile(
-                value: _acceptedTerms,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                onChanged: (value) {
-                  setState(() {
-                    _acceptedTerms = value ?? false;
-                  });
-                },
-                title: const Text(
-                  'I agree to the Terms & Conditions and Privacy Policy.',
-                ),
               ),
 
               const SizedBox(height: AppSpacing.lg),

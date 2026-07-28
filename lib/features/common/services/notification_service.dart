@@ -61,6 +61,13 @@ class NotificationService {
     importance: Importance.max,
     sound: RawResourceAndroidNotificationSound('call_ringtone'),
   );
+  static const _safetyChannel = AndroidNotificationChannel(
+    'safety_incidents',
+    'Safety incidents',
+    description: 'Urgent SOS and safety escalation alerts',
+    importance: Importance.max,
+    sound: RawResourceAndroidNotificationSound('booking_ringtone'),
+  );
   int? _activeIncomingNotificationId;
 
   Future<void> initialize() async {
@@ -109,6 +116,7 @@ class NotificationService {
     await android?.createNotificationChannel(_bookingChannel);
     await android?.createNotificationChannel(_chatChannel);
     await android?.createNotificationChannel(_callChannel);
+    await android?.createNotificationChannel(_safetyChannel);
     final launchDetails = await _localNotifications
         .getNotificationAppLaunchDetails();
     final payload = launchDetails?.notificationResponse?.payload;
@@ -122,7 +130,9 @@ class NotificationService {
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {
     final type = message.data['type'];
-    if (type == 'booking_offer' || type == 'driverAssigned') {
+    if (type == 'booking_offer' ||
+        type == 'driverAssigned' ||
+        type == 'safety_incident') {
       unawaited(RingtoneService.instance.playBooking());
     } else if (type == 'chat_message') {
       unawaited(RingtoneService.instance.playChat());
@@ -290,6 +300,7 @@ class NotificationService {
     return switch (type) {
       'chat_message' => _chatChannel,
       'incoming_call' => _callChannel,
+      'safety_incident' => _safetyChannel,
       _ => _bookingChannel,
     };
   }

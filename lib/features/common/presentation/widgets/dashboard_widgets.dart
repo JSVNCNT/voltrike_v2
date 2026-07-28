@@ -105,13 +105,15 @@ class DashboardMetricGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const spacing = 12.0;
-        final itemWidth = (constraints.maxWidth - spacing) / 2;
+        final columns = constraints.maxWidth >= 320 ? 2 : 1;
+        final itemWidth =
+            (constraints.maxWidth - (spacing * (columns - 1))) / columns;
         return Wrap(
           spacing: spacing,
           runSpacing: spacing,
           children: [
             for (final child in children)
-              SizedBox(width: itemWidth, child: child),
+              SizedBox(width: itemWidth, height: 116, child: child),
           ],
         );
       },
@@ -163,11 +165,14 @@ class DashboardMetricCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
                 ],
               ),
@@ -278,10 +283,7 @@ class DashboardTripCard extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child: Row(
             children: [
-              const Icon(
-                Icons.route_outlined,
-                color: AppColors.textSecondary,
-              ),
+              const Icon(Icons.route_outlined, color: AppColors.textSecondary),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -322,9 +324,9 @@ class DashboardTripCard extends StatelessWidget {
                 const Spacer(),
                 Text(
                   '₱${trip.amountDue.toStringAsFixed(2)}',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.success,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: AppColors.success),
                 ),
               ],
             ),

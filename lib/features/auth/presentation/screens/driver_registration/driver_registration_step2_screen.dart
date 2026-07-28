@@ -6,9 +6,7 @@ import '../../../../../app/routes.dart';
 import '../../../../../core/errors/domain_error_mapper.dart';
 import '../../../../../core/services/psgc_service.dart';
 import '../../../../../core/theme/app_spacing.dart';
-import '../../../../../core/utils/validators.dart';
 import '../../../../../core/widgets/buttons/primary_button.dart';
-import '../../../../../core/widgets/inputs/app_text_field.dart';
 
 import '../../../../../data/models/toda.dart';
 
@@ -34,15 +32,11 @@ class _DriverRegistrationStep2ScreenState
     extends ConsumerState<DriverRegistrationStep2Screen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _licenseController = TextEditingController();
-
   final PSGCService _locationService = PSGCService();
 
   bool _loading = true;
 
   String? _error;
-
-  DateTime? _licenseExpiry;
 
   String? _selectedRegion;
   String? _selectedProvince;
@@ -65,10 +59,6 @@ class _DriverRegistrationStep2ScreenState
     super.initState();
 
     final registration = ref.read(driverRegistrationDataProvider);
-
-    _licenseController.text = registration.licenseNumber;
-
-    _licenseExpiry = registration.licenseExpiry;
 
     _selectedRegion = registration.region!.isEmpty ? null : registration.region;
 
@@ -125,23 +115,6 @@ class _DriverRegistrationStep2ScreenState
         _error = DomainErrorMapper.message(e);
       });
     }
-  }
-
-  Future<void> _pickExpiryDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _licenseExpiry ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-    );
-
-    if (picked == null) {
-      return;
-    }
-
-    setState(() {
-      _licenseExpiry = picked;
-    });
   }
 
   void _onRegionChanged(String? value) {
@@ -205,14 +178,6 @@ class _DriverRegistrationStep2ScreenState
       return;
     }
 
-    if (_licenseExpiry == null) {
-      setState(() {
-        _error = 'Please select your license expiration date.';
-      });
-
-      return;
-    }
-
     if (_selectedRegion == null ||
         _selectedProvince == null ||
         _selectedCity == null ||
@@ -232,8 +197,6 @@ class _DriverRegistrationStep2ScreenState
     ref
         .read(driverRegistrationDataProvider.notifier)
         .updateData(
-          licenseNumber: _licenseController.text.trim(),
-          licenseExpiry: _licenseExpiry,
           region: _selectedRegion!,
           province: _selectedProvince!,
           city: _selectedCity!,
@@ -242,12 +205,6 @@ class _DriverRegistrationStep2ScreenState
         );
 
     context.go(AppRoutes.driverRegisterStep3);
-  }
-
-  @override
-  void dispose() {
-    _licenseController.dispose();
-    super.dispose();
   }
 
   @override
@@ -267,7 +224,7 @@ class _DriverRegistrationStep2ScreenState
 
                 const AuthHeader(
                   title: 'Driver registration',
-                  subtitle: 'License, address, and TODA assignment',
+                  subtitle: 'Address and TODA assignment',
                 ),
 
                 const SizedBox(height: AppSpacing.lg),
@@ -278,27 +235,6 @@ class _DriverRegistrationStep2ScreenState
                   ValidationMessage(message: _error!),
                   const SizedBox(height: AppSpacing.md),
                 ],
-
-                AppTextField(
-                  controller: _licenseController,
-                  label: 'Driver License Number',
-                  validator: Validators.required,
-                ),
-
-                const SizedBox(height: AppSpacing.md),
-
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    _licenseExpiry == null
-                        ? 'Select License Expiration'
-                        : 'Expires: ${_licenseExpiry!.toLocal().toString().split(' ')[0]}',
-                  ),
-                  trailing: const Icon(Icons.calendar_month),
-                  onTap: _pickExpiryDate,
-                ),
-
-                const SizedBox(height: AppSpacing.lg),
 
                 DropdownButtonFormField<String>(
                   initialValue:

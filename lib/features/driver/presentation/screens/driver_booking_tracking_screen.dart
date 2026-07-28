@@ -25,6 +25,7 @@ import '../../../ride/tracking/widgets/trip_status_card.dart';
 import '../../../ride/tracking/models/ride_participant_role.dart';
 import '../../../ride/tracking/models/ride_action.dart';
 import '../../../ride/tracking/services/ride_action_service.dart';
+import '../../../ride/tracking/services/ride_safety_service.dart';
 import '../../../ride/tracking/services/ride_stage_presentation_service.dart';
 import '../../../ride/tracking/widgets/ride_actions_card.dart';
 import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
@@ -52,6 +53,8 @@ class _DriverBookingTrackingScreenState
   ProviderSubscription<Booking?>? _bookingSubscription;
   String? _finishingBookingId;
   bool _sosSubmitting = false;
+  MySafetyIncident? _safetyIncident;
+  final RideSafetyService _safetyService = RideSafetyService();
 
   @override
   void initState() {
@@ -83,6 +86,14 @@ class _DriverBookingTrackingScreenState
     final booking = await ref
         .read(driverBookingControllerProvider.notifier)
         .restoreCurrentBooking();
+    if (booking != null) {
+      try {
+        final incident = await _safetyService.load(booking.bookingId);
+        if (mounted) setState(() => _safetyIncident = incident);
+      } catch (_) {
+        // SOS remains usable even when a prior status cannot be loaded.
+      }
+    }
     if (mounted && booking == null) {
       context.go(AppRoutes.driverHome);
     }
@@ -348,48 +359,27 @@ class _DriverBookingTrackingScreenState
 
   Future<void> _triggerSos(Booking booking) async {
     if (_sosSubmitting) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Record an SOS incident?'),
-        content: const Text(
-          'VolTrike will save this ride and location snapshot for authorized '
-          'admins. This development feature does not contact emergency '
-          'services, so contact them directly if immediate help is needed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Record SOS'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
     setState(() => _sosSubmitting = true);
     try {
-      final alreadyRecorded = await SafetyRepository().triggerSos(
-        booking.bookingId,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            alreadyRecorded
-                ? 'This SOS incident is already recorded for review.'
-                : 'SOS incident recorded for review.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
+      final incident = await _safetyService.record(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not record SOS: $error')));
+        bookingId: booking.bookingId,
+      );
+      if (mounted) setState(() => _safetyIncident = incident);
+    } finally {
+      if (mounted) setState(() => _sosSubmitting = false);
+    }
+  }
+
+  Future<void> _updateSafetyStatus(Booking booking) async {
+    if (_sosSubmitting) return;
+    setState(() => _sosSubmitting = true);
+    try {
+      final incident = await _safetyService.showStatus(
+        context,
+        bookingId: booking.bookingId,
+      );
+      if (mounted) setState(() => _safetyIncident = incident);
     } finally {
       if (mounted) setState(() => _sosSubmitting = false);
     }
@@ -428,6 +418,12 @@ class _DriverBookingTrackingScreenState
         onReport: stage.allowReport ? () => _reportPassenger(booking) : null,
         onSos: stage.allowSos && !_sosSubmitting
             ? () => _triggerSos(booking)
+            : null,
+        onSafetyUpdate:
+            stage.allowSos &&
+                !_sosSubmitting &&
+                _safetyIncident?.isActive == true
+            ? () => _updateSafetyStatus(booking)
             : null,
         onNoShow: stage.allowNoShow ? () => _markNoShow(booking) : null,
         messageBadge: snapshot.data ?? 0,

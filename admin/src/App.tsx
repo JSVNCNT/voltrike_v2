@@ -1,18 +1,19 @@
-import { FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { adminApi } from './admin-api';
 import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
 import { bacolodBarangays } from './data/bacolodBarangays';
-import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaRegistration, ZoneRequest } from './types';
+import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaRegistration, ZoneRequest } from './types';
 import './registration.css';
 import './driver-review.css';
 
-// Mapbox is substantial; only load it when an administrator opens Coverage.
+// Mapbox is substantial; load it only when an administrator opens a map page.
 const PolygonEditor = lazy(() => import('./components/PolygonEditor').then((module) => ({ default: module.PolygonEditor })));
+const AdminLocationMap = lazy(() => import('./components/AdminLocationMap').then((module) => ({ default: module.AdminLocationMap })));
 
-type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'ratings' | 'operations' | 'safety' | 'reports' | 'coverage' | 'route_rules';
+type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'commission' | 'ratings' | 'operations' | 'safety' | 'reports' | 'coverage' | 'route_rules';
 const initialFare: FareConfig = { baseFare: 20, includedMeters: 1000, distanceStepMeters: 500, distanceStepPrice: 5, additionalPassengerFee: 40, baggageFee: 20, outsideTodaSurcharge: 20 };
 const registrationFields: Array<[keyof TodaRegistration, string]> = [
   ['secCertificateNumber', 'SEC registration certificate number'], ['spResolutionNumber', 'SP resolution number'], ['mayorsPermitNumber', "Bacolod Mayor's permit / BPLO license number"], ['barangayClearanceNumber', 'Barangay clearance and endorsement number'], ['presidentName', "TODA President's full name"], ['presidentLicenseNumber', "President's professional driver license number"], ['presidentTin', "President's TIN"],
@@ -49,7 +50,8 @@ export default function App() {
       (data?.role !== 'toda_admin' || claimTodaId === data.todaId);
     if (data && roleMatches &&
         (data.role === 'developer_admin' || data.role === 'toda_admin') &&
-        data.isActive !== false) {
+        data.isActive !== false &&
+        (data.requiresEmailVerification !== true || signedIn.emailVerified)) {
       setSession({ uid: signedIn.uid, email: signedIn.email, role: data.role, todaId: data.todaId || null, displayName: `${data.firstName || ''} ${data.lastName || ''}`.trim() || signedIn.email || 'Administrator' });
     } else {
       setSession(null);
@@ -67,10 +69,10 @@ export default function App() {
 
   const isDeveloper = session.role === 'developer_admin';
   const visiblePages: Array<[Page, string]> = isDeveloper
-    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
-    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
+    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['live_drivers', 'Live drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
+    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['live_drivers', 'Live drivers'], ['commission', 'Driver commission'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
   return <div className="shell">
-    <aside className="sidebar"><div className="brand"><img src="/images/logo.png" alt="VolTrike" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
+    <aside className="sidebar"><div className="brand"><img src="/images/VolTrikeLogo-Light.png" alt="VolTrike" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
       <nav aria-label="Admin sections">{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => setPage(key)}>{text}</button>)}</nav>
       <div className="sidebar-footer"><span>{session.displayName}</span><button onClick={() => signOut(auth)}>Sign out</button></div>
     </aside>
@@ -80,6 +82,8 @@ export default function App() {
       {page === 'todas' && isDeveloper && <Todas onMessage={setMessage} />}
       {page === 'fares' && isDeveloper && <Fares onMessage={setMessage} />}
       {page === 'drivers' && <DriversPage todaId={isDeveloper ? undefined : session.todaId!} onMessage={setMessage} />}
+      {page === 'live_drivers' && <LiveDriversPage />}
+      {page === 'commission' && !isDeveloper && <CommissionPage onMessage={setMessage} />}
       {page === 'ratings' && !isDeveloper && <RatingsPage />}
       {page === 'operations' && <OperationsPage session={session} />}
       {page === 'safety' && <SafetyIncidentsPage session={session} />}
@@ -108,7 +112,7 @@ function Login({ message, onMessage }: { message: string; onMessage: (value: str
     finally { setBusy(false); }
   }
   if (registering) return <TodaSignUp onBack={() => setRegistering(false)} onMessage={onMessage} />;
-  return <main className="auth"><section><img src="/images/logo.png" className="auth-logo" alt="VolTrike" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized TODA and developer operations only.</p>{message && <div className="notice" role="alert">{message}</div>}<form onSubmit={submit}><label>Email address<input type="email" placeholder="admin@example.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" placeholder="Enter your password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" onClick={() => { onMessage(''); setRegistering(true); }}>Register a TODA</button></form></section></main>;
+  return <main className="auth"><section><img src="/images/VolTrikeLogo-Dark.png" className="auth-logo" alt="VolTrike" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized TODA and developer operations only.</p>{message && <div className="notice" role="alert">{message}</div>}<form onSubmit={submit}><label>Email address<input type="email" placeholder="admin@example.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" placeholder="Enter your password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" onClick={() => { onMessage(''); setRegistering(true); }}>Register a TODA</button></form></section></main>;
 }
 
 function TodaSignUp({ onBack, onMessage }: { onBack: () => void; onMessage: (value: string) => void }) {
@@ -129,19 +133,24 @@ function TodaSignUp({ onBack, onMessage }: { onBack: () => void; onMessage: (val
       if (!region || !city || !barangay) throw new Error('Select a region, city/municipality, and barangay.');
       const result = await adminApi.registerToda({ name, regionCode, regionName: region.name, cityCode, cityName: city.name, barangayCode, barangayName: barangay.name, registration });
       await adminApi.uploadTodaRegistrationDocuments(result.todaId, documents);
-      await signOut(auth); onMessage('TODA application submitted. A developer administrator must approve it before you can sign in.'); onBack();
+      let verificationSent = true;
+      try { await adminApi.requestBrandedVerificationEmail(); } catch { verificationSent = false; }
+      await signOut(auth); onMessage(verificationSent ? 'TODA application submitted. Check your branded verification email while a Developer Admin reviews the application.' : 'TODA application submitted, but the verification email could not be delivered. Sign in later and request another verification email.'); onBack();
     } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to submit TODA registration.'); }
     finally { setBusy(false); }
   }
   if (step === 1) return <main className="auth"><section className="auth-wide"><p className="eyebrow">TODA onboarding · Step 1 of 2</p><h1>Organization and administrator</h1><p>Choose the official location. Legal details and evidence files are collected in Step 2.</p>{loadError && <div className="notice">{loadError}</div>}<form onSubmit={(event) => { event.preventDefault(); setStep(2); }}><input value={name} onChange={(event) => setName(event.target.value)} placeholder="TODA name" required /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Administrator email" required /><input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password (at least 6 characters)" required /><select value={regionCode} onChange={(event) => { setRegionCode(event.target.value); setCityCode(''); setBarangayCode(''); }} required><option value="">Select region</option>{regions.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}</select><select value={cityCode} onChange={(event) => { setCityCode(event.target.value); setBarangayCode(''); }} disabled={!regionCode} required><option value="">Select city / municipality</option>{cityOptions.map((city) => <option key={city.code} value={city.code}>{city.name}</option>)}</select><select value={barangayCode} onChange={(event) => setBarangayCode(event.target.value)} disabled={!cityCode} required><option value="">Select barangay</option>{barangayOptions.map((barangay) => <option key={barangay.code} value={barangay.code}>{barangay.name}</option>)}</select><button className="primary" disabled={Boolean(loadError)}>Continue to legal requirements</button><button type="button" onClick={onBack}>Back to sign in</button></form></section></main>;
-  if (step === 2) return <main className="auth"><section className="auth-wide"><p className="eyebrow">TODA onboarding · Step 2 of 2</p><h1>Legal registration requirements</h1><p>Provide the legal identifiers and clear photo or PDF evidence. A Developer Admin reviews every item before approval.</p><form onSubmit={submit}>{registrationFields.map(([key, title]) => <input key={key} value={registration[key]} onChange={(event) => setRegistration({ ...registration, [key]: event.target.value })} placeholder={title} required />)}{todaEvidenceFields.map(([key, title]) => <label className="file-label" key={key}>{title}<input type="file" accept="image/*,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) setDocuments({ ...documents, [key]: file }); }} required /><small>{documents[key]?.name || 'No file selected'}</small></label>)}<button className="primary" disabled={busy}>{busy ? 'Submitting…' : 'Submit TODA application'}</button><button type="button" onClick={() => setStep(1)} disabled={busy}>Back</button></form></section></main>;
+  if (step === 2) return <main className="auth"><section className="auth-wide"><p className="eyebrow">TODA onboarding · Step 2 of 2</p><h1>Legal registration requirements</h1><p>Provide the legal identifiers and clear photo or PDF evidence. The verified administrator email from Step 1 receives required account and safety notifications. A Developer Admin reviews every item before approval.</p><form onSubmit={submit}>{registrationFields.map(([key, title]) => <input key={key} type="text" autoComplete="off" value={registration[key]} onChange={(event) => setRegistration({ ...registration, [key]: event.target.value })} placeholder={title} required />)}{todaEvidenceFields.map(([key, title]) => <label className="file-label" key={key}>{title}<input type="file" accept="image/*,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) setDocuments({ ...documents, [key]: file }); }} required /><small>{documents[key]?.name || 'No file selected'}</small></label>)}<button className="primary" disabled={busy}>{busy ? 'Submitting…' : 'Submit TODA application'}</button><button type="button" onClick={() => setStep(1)} disabled={busy}>Back</button></form></section></main>;
   return <main className="auth"><section className="auth-wide"><p className="eyebrow">TODA onboarding</p><h1>Register a TODA</h1><p>For testing, legal documents are not required. Select locations only from the official PSGC list.</p>{loadError && <div className="notice">{loadError}</div>}<form onSubmit={submit}><input value={name} onChange={(event) => setName(event.target.value)} placeholder="TODA name" required /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Administrator email" required /><input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password (at least 6 characters)" required /><select value={regionCode} onChange={(event) => { setRegionCode(event.target.value); setCityCode(''); setBarangayCode(''); }} required><option value="">Select region</option>{regions.map((region) => <option key={region.code} value={region.code}>{region.name}</option>)}</select><select value={cityCode} onChange={(event) => { setCityCode(event.target.value); setBarangayCode(''); }} disabled={!regionCode} required><option value="">Select city / municipality</option>{cityOptions.map((city) => <option key={city.code} value={city.code}>{city.name}</option>)}</select><select value={barangayCode} onChange={(event) => setBarangayCode(event.target.value)} disabled={!cityCode} required><option value="">Select barangay</option>{barangayOptions.map((barangay) => <option key={barangay.code} value={barangay.code}>{barangay.name}</option>)}</select><button className="primary" disabled={busy || Boolean(loadError)}>{busy ? 'Submitting…' : 'Submit TODA registration'}</button><button type="button" onClick={onBack}>Back to sign in</button></form></section></main>;
 }
 
 function AccountGate({ user, reload, onMessage, message }: { user: User; reload: () => Promise<void>; onMessage: (value: string) => void; message: string }) {
-  const [applicationStatus, setApplicationStatus] = useState<string | null | undefined>(undefined);
-  useEffect(() => { getDoc(doc(db, 'users', user.uid)).then((snapshot) => { const profile = snapshot.data(); setApplicationStatus(profile?.role === 'toda_admin_pending' ? profile.todaApplicationStatus || 'pending' : null); }); }, [user.uid]);
-  if (applicationStatus === undefined) return <main className="centered">Checking administrator access…</main>;
+  const [gate, setGate] = useState<{ applicationStatus: string | null; requiresEmailVerification: boolean } | undefined>(undefined);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  useEffect(() => { getDoc(doc(db, 'users', user.uid)).then((snapshot) => { const profile = snapshot.data(); setGate({ applicationStatus: profile?.role === 'toda_admin_pending' ? profile.todaApplicationStatus || 'pending' : null, requiresEmailVerification: profile?.requiresEmailVerification === true }); }); }, [user.uid]);
+  if (gate === undefined) return <main className="centered">Checking administrator access…</main>;
+  if (gate.requiresEmailVerification && !user.emailVerified) return <main className="auth"><section><p className="eyebrow">Administrator verification</p><h1>Verify your email</h1><p>Open the branded VolTrike verification email sent to {user.email}. Verification is required for new TODA administrator accounts.</p>{message && <div className="notice">{message}</div>}<button className="primary" disabled={sendingVerification} onClick={async () => { setSendingVerification(true); try { await adminApi.requestBrandedVerificationEmail(); onMessage('Verification email sent. Check your inbox and spam folder.'); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to send verification email.'); } finally { setSendingVerification(false); } }}>{sendingVerification ? 'Sending…' : 'Resend verification email'}</button><button onClick={async () => { await user.reload(); await reload(); }}>I have verified my email</button><button onClick={() => signOut(auth)}>Sign out</button></section></main>;
+  const applicationStatus = gate.applicationStatus;
   if (applicationStatus) return <main className="auth"><section><p className="eyebrow">TODA registration</p><h1>{applicationStatus === 'declined' ? 'Application declined' : 'Approval pending'}</h1><p>{applicationStatus === 'declined' ? 'Your TODA application was declined. Contact the developer administrator before submitting another application.' : 'Your TODA registration has been submitted. A developer administrator must approve it before TODA-admin access is enabled.'}</p>{message && <div className="notice">{message}</div>}<button className="primary" onClick={() => signOut(auth)}>Sign out</button></section></main>;
   return <Bootstrap user={user} reload={reload} onMessage={onMessage} message={message} />;
 }
@@ -157,9 +166,7 @@ function Overview({ session }: { session: AdminSession }) {
     drivers: 0,
     reports: 0,
     zones: 0,
-    earnings: 0,
     trips: 0,
-    tripRevenue: 0,
     bookings: 0,
     safetyIncidents: 0,
     scope: session.role === 'toda_admin' ? session.todaId || '' : 'platform',
@@ -183,9 +190,102 @@ function Overview({ session }: { session: AdminSession }) {
     const timer = window.setInterval(() => void refresh(), 15000);
     return () => window.clearInterval(timer);
   }, [session]);
-  return <>{loading && <p className="muted">Loading Firebase overview…</p>}{error && <div className="notice">{error}</div>}<div className="cards"><Metric label="Registered drivers" value={String(stats.drivers)} /><Metric label="All bookings" value={String(stats.bookings)} /><Metric label="Completed rides" value={String(stats.trips)} /><Metric label="Completed ride value" value={peso(stats.tripRevenue)} /><Metric label="Open reports" value={String(stats.reports)} warning /><Metric label="Open safety incidents" value={String(stats.safetyIncidents)} warning /><Metric label="Pending zones" value={String(stats.zones)} /><Metric label={session.role === 'toda_admin' ? 'TODA driver earnings' : 'Platform driver earnings'} value={peso(stats.earnings)} /></div><section className="panel"><h2>Operational boundaries</h2><p>{session.role === 'developer_admin' ? 'These figures cover all Firebase bookings, drivers, reports, SOS incidents, earnings, and zone requests across the platform.' : 'These figures are restricted by Firebase to bookings, drivers, reports, SOS incidents, and earnings assigned to your authenticated TODA. City fares remain controlled by the developer administrator.'}</p></section></>;
+  return <>{loading && <p className="muted">Loading Firebase overview…</p>}{error && <div className="notice">{error}</div>}<div className="cards"><Metric label="Registered drivers" value={String(stats.drivers)} /><Metric label="All bookings" value={String(stats.bookings)} /><Metric label="Completed rides" value={String(stats.trips)} /><Metric label="Open reports" value={String(stats.reports)} warning /><Metric label="Open safety incidents" value={String(stats.safetyIncidents)} warning /><Metric label="Pending zones" value={String(stats.zones)} /></div><section className="panel"><h2>Operational boundaries</h2><p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures are restricted by Firebase to bookings, drivers, reports, SOS incidents, and zones assigned to your authenticated TODA. City fares remain controlled by the developer administrator; commission is managed on its own audited page.'}</p></section></>;
 }
 function Metric({ label: title, value, warning }: { label: string; value: string; warning?: boolean }) { return <div className="metric"><p>{title}</p><strong className={warning ? 'warning' : ''}>{value}</strong></div>; }
+
+function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
+  const [percent, setPercent] = useState(0);
+  const [recommended, setRecommended] = useState(10);
+  const [maximum, setMaximum] = useState(30);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void adminApi.todaCommission().then((value) => {
+      setPercent(value.percent);
+      setRecommended(value.recommendedPercent);
+      setMaximum(value.maximumPercent);
+      setUpdatedAt(value.updatedAt || null);
+    });
+  }, []);
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!window.confirm(`Set the TODA commission to ${percent}% for future ride assignments? Existing and completed rides will not be changed.`)) return;
+    setBusy(true);
+    try {
+      const value = await adminApi.setTodaCommission(percent);
+      setPercent(value.percent);
+      setUpdatedAt(value.updatedAt || null);
+      onMessage('Driver commission saved. It applies only when a future booking is assigned.');
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to update commission.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <section className="panel wide">
+    <h2>Driver commission</h2>
+    <p className="muted">Set the percentage retained by your TODA from future completed rides. The percentage is snapshotted when a driver accepts a booking, so later changes cannot rewrite existing ride earnings.</p>
+    <form className="commission-form" onSubmit={save}>
+      <label>Commission percentage<input type="range" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /></label>
+      <label className="commission-number"><input type="number" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /><span>%</span></label>
+      <button type="button" onClick={() => setPercent(recommended)}>Use recommended {recommended}%</button>
+      <button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save commission'}</button>
+    </form>
+    <div className="fare-summary">Guardrails: 0–{maximum}% only, explicit confirmation, an audit record for every change, and no retroactive recalculation. Example on a ₱100 fare: driver receives {peso(100 - percent)} and TODA commission is {peso(percent)}.</div>
+    {updatedAt && <p className="muted">Last changed {new Date(updatedAt).toLocaleString('en-PH')}.</p>}
+  </section>;
+}
+
+function LiveDriversPage() {
+  const [drivers, setDrivers] = useState<LiveDriver[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const refresh = useCallback(async () => {
+    try {
+      setDrivers(await adminApi.liveDrivers());
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load live drivers.');
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+  const points = drivers.map((driver) => ({
+    id: driver.uid,
+    latitude: driver.latitude,
+    longitude: driver.longitude,
+    title: driver.name,
+    details: [
+      `${driver.vehicleType || 'Vehicle'} · ${driver.plateNumber || 'No plate'}`,
+      `Status: ${driver.bookingStatus.split('_').join(' ')}`,
+      driver.bookingId ? `Booking: ${driver.bookingId}` : 'No active booking',
+    ],
+  }));
+  return <div className="two-column live-layout">
+    <section className="panel wide">
+      <h2>Online driver map</h2>
+      <p className="muted">Only approved drivers who are online and have a fresh location are shown. Select a driver to expand their marker and current booking status.</p>
+      {error && <div className="notice">{error}</div>}
+      <Suspense fallback={<div className="map-missing">Loading live-driver map…</div>}>
+        <AdminLocationMap points={points} selectedId={selectedId} />
+      </Suspense>
+    </section>
+    <section className="panel">
+      <h2>Online now ({drivers.length})</h2>
+      <div className="table">{drivers.map((driver) => <button className={selectedId === driver.uid ? 'live-driver selected' : 'live-driver'} onClick={() => setSelectedId(driver.uid)} key={driver.uid}>
+        <b>{driver.name}</b>
+        <small>{driver.vehicleType || 'Vehicle'} · {driver.plateNumber || 'No plate'}</small>
+        <small>{driver.bookingStatus.split('_').join(' ')}{driver.bookingId ? ` · ${driver.bookingId}` : ''}</small>
+      </button>)}{drivers.length === 0 && <p className="muted">No online driver has a fresh location.</p>}</div>
+    </section>
+  </div>;
+}
 
 function LegacyTodas({ onMessage }: { onMessage: (value: string) => void }) {
   const [todas, setTodas] = useState<Toda[]>([]); const [name, setName] = useState('Test TODA'); const [barangayCode, setBarangayCode] = useState('064501059'); const [registration, setRegistration] = useState<TodaRegistration>({ secCertificateNumber: '', spResolutionNumber: '', mayorsPermitNumber: '', barangayClearanceNumber: '', presidentName: '', presidentLicenseNumber: '', presidentTin: '' }); const [documents, setDocuments] = useState<Record<string, File>>({}); const [targetUid, setTargetUid] = useState(''); const [selectedToda, setSelectedToda] = useState('');
@@ -217,14 +317,23 @@ function Todas({ onMessage }: { onMessage: (value: string) => void }) {
     ['Barangay clearance', toda.documents?.barangayClearance],
     ["President's license", toda.documents?.presidentLicense],
   ].filter((entry): entry is [string, string] => Boolean(entry[1]));
-  return <section className="panel wide"><h2>TODA applications and registrations</h2><p className="muted">Review the organization details, legal identifiers, and secure evidence before approving a TODA administrator.</p><div className="table">{todas.map((toda) => <div className="row toda-row" key={toda.id}><span><b>{toda.name}</b><small>{location(toda)}</small><small>President: {toda.registration?.presidentName || 'Not supplied'} · License: {toda.registration?.presidentLicenseNumber || 'Not supplied'} · TIN: {toda.registration?.presidentTin || 'Not supplied'}</small><small>SEC: {toda.registration?.secCertificateNumber || 'Not supplied'} · SP: {toda.registration?.spResolutionNumber || 'Not supplied'} · BPLO: {toda.registration?.mayorsPermitNumber || 'Not supplied'} · Barangay: {toda.registration?.barangayClearanceNumber || 'Not supplied'}</small><details><summary>Legal evidence ({evidence(toda).length}/5)</summary><div className="document-links">{evidence(toda).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details></span><span className={toda.status === 'pending' ? 'warning' : toda.isActive ? 'ok' : ''}>{toda.status || (toda.isActive ? 'approved' : 'suspended')}</span><span className="actions">{toda.status === 'pending' && <><button className="primary" onClick={() => review(toda, 'approved')}>Approve</button><button onClick={() => review(toda, 'declined')}>Decline</button></>}{toda.status !== 'pending' && <button onClick={() => toggleToda(toda)}>{toda.isActive ? 'Suspend' : 'Restore'}</button>}</span></div>)}{todas.length === 0 && <p className="muted">No TODA applications yet.</p>}</div></section>;
+  return <section className="panel wide"><h2>TODA applications and registrations</h2><p className="muted">Review the organization details, legal identifiers, verified administrator email, and secure evidence before approving a TODA administrator.</p><div className="table">{todas.map((toda) => <div className="row toda-row" key={toda.id}><span><b>{toda.name}</b><small>{location(toda)}</small><small>President: {toda.registration?.presidentName || 'Not supplied'} · License: {toda.registration?.presidentLicenseNumber || 'Not supplied'} · TIN: {toda.registration?.presidentTin || 'Not supplied'}</small><small>SEC: {toda.registration?.secCertificateNumber || 'Not supplied'} · SP: {toda.registration?.spResolutionNumber || 'Not supplied'} · BPLO: {toda.registration?.mayorsPermitNumber || 'Not supplied'} · Barangay: {toda.registration?.barangayClearanceNumber || 'Not supplied'}</small><details><summary>Legal evidence ({evidence(toda).length}/5)</summary><div className="document-links">{evidence(toda).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details></span><span className={toda.status === 'pending' ? 'warning' : toda.isActive ? 'ok' : ''}>{toda.status || (toda.isActive ? 'approved' : 'suspended')}</span><span className="actions">{toda.status === 'pending' && <><button className="primary" onClick={() => review(toda, 'approved')}>Approve</button><button onClick={() => review(toda, 'declined')}>Decline</button></>}{toda.status !== 'pending' && <button onClick={() => toggleToda(toda)}>{toda.isActive ? 'Suspend' : 'Restore'}</button>}</span></div>)}{todas.length === 0 && <p className="muted">No TODA applications yet.</p>}</div></section>;
   return <section className="panel wide"><h2>TODA applications and registrations</h2><p className="muted">TODA administrators register through the sign-in page. Review their application here; testing applications do not require documents.</p><div className="table">{todas.map((toda) => <div className="row toda-row" key={toda.id}><span><b>{toda.name}</b><small>{location(toda)}</small></span><span className={toda.status === 'pending' ? 'warning' : toda.isActive ? 'ok' : ''}>{toda.status || (toda.isActive ? 'approved' : 'suspended')}</span><span className="actions">{toda.status === 'pending' && <><button className="primary" onClick={() => review(toda, 'approved')}>Approve</button><button onClick={() => review(toda, 'declined')}>Decline</button></>}{toda.status !== 'pending' && <button onClick={() => toggleToda(toda)}>{toda.isActive ? 'Suspend' : 'Restore'}</button>}</span></div>)}{todas.length === 0 && <p className="muted">No TODA applications yet.</p>}</div></section>;
 }
 
 function Fares({ onMessage }: { onMessage: (value: string) => void }) {
   const [fare, setFare] = useState<FareConfig>(initialFare); useEffect(() => { adminApi.fare().then(setFare); }, []);
   async function submit(event: FormEvent) { event.preventDefault(); try { await adminApi.updateFare(fare); onMessage('City fare configuration saved in Philippine pesos. New passenger estimates will use it.'); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update fares.'); } }
-  return <section className="panel wide"><h2>City-controlled passenger fares</h2><p className="muted">TODA administrators can view the city fares but cannot change them. All amounts are PHP.</p><form className="form-grid fare-grid" onSubmit={submit}>{(Object.keys(fare) as Array<keyof FareConfig>).map((key) => <label key={key}>{label(key)}<input type="number" min={key === 'baseFare' || key.includes('Meters') ? 1 : 0} max="9999" value={fare[key]} onChange={(e) => setFare({ ...fare, [key]: Number(e.target.value) })} required /></label>)}<button className="primary">Save city fare</button></form><div className="fare-summary">Example: base {peso(fare.baseFare)} includes {fare.includedMeters} m; then {peso(fare.distanceStepPrice)} every {fare.distanceStepMeters} m. Additional passenger, large baggage, and out-of-TODA fees are applied exactly once.</div></section>;
+  const fields: Array<[keyof FareConfig, string, string]> = [
+    ['baseFare', 'Base fare', 'PHP'],
+    ['includedMeters', 'Base fare distance', 'metres'],
+    ['distanceStepPrice', 'Distance surcharge', 'PHP'],
+    ['distanceStepMeters', 'Surcharge interval', 'metres'],
+    ['additionalPassengerFee', 'Additional passenger fee', 'PHP each'],
+    ['baggageFee', 'One-time baggage fee', 'PHP'],
+    ['outsideTodaSurcharge', 'Outside TODA surcharge', 'PHP'],
+  ];
+  return <section className="panel wide"><h2>City-controlled passenger fares</h2><p className="muted">Amounts are stored in PHP. Update metadata is recorded by the backend automatically and is not editable.</p><form className="form-grid fare-grid" onSubmit={submit}>{fields.map(([key, title, unit]) => <label key={key}>{title}<span className="input-with-unit"><input type="number" min={key === 'baseFare' || key.includes('Meters') ? 1 : 0} max="9999" step="0.01" value={fare[key]} onChange={(e) => setFare({ ...fare, [key]: Number(e.target.value) })} required /><small>{unit}</small></span></label>)}<button className="primary">Save city fare</button></form><div className="fare-summary">Fare = {peso(fare.baseFare)} for the first {fare.includedMeters} m, plus {peso(fare.distanceStepPrice)} per started {fare.distanceStepMeters} m after that. Passenger, baggage, and boundary charges appear separately in the passenger breakdown.</div></section>;
 }
 
 function LegacyDriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
@@ -237,8 +346,8 @@ function LegacyDriversPageV2({ todaId, onMessage }: { todaId?: string; onMessage
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const reload = useCallback(() => adminApi.drivers(todaId).then(setDrivers), [todaId]);
   useEffect(() => { reload(); }, [reload]);
-  async function update(uid: string, status: 'approved' | 'suspended' | 'rejected') {
-    try { await adminApi.setDriverStatus(uid, status); onMessage(`Driver ${status}.`); reload(); }
+  async function update(uid: string, status: 'approved' | 'suspended' | 'rejected', license?: { number: string; expiry: string }) {
+    try { await adminApi.setDriverStatus(uid, status, license); onMessage(`Driver ${status}.`); reload(); }
     catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update driver.'); }
   }
   async function verifyVehicle(driver: Driver, isVerified: boolean) {
@@ -254,7 +363,7 @@ function LegacyDriversPageV2({ todaId, onMessage }: { todaId?: string; onMessage
   return <section className="panel wide"><h2>{todaId ? 'Driver applications assigned to this TODA' : 'All driver registrations'}</h2><p className="muted">Pending drivers selected their TODA during Flutter registration. Review the profile and uploaded documents before approval.</p><div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}><span><b>{driver.uid}</b><small>TODA: {driver.todaId}</small><small>License: {driver.licenseNumber || 'Not provided'}{driver.licenseExpiry ? ` · expires ${driver.licenseExpiry}` : ''}</small><details><summary>Registration documents ({documentLinks(driver).length})</summary><div className="document-links">{documentLinks(driver).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details></span><span className={driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}>{driver.driverStatus}</span><span>★ {driver.rating || 0} · {driver.completedTrips || 0} trips<br /><small>{peso(driver.totalEarnings || 0)} earnings</small></span><span className="actions">{driver.driverStatus === 'pending' && <><button className="primary" onClick={() => update(driver.uid, 'approved')}>Approve</button><button onClick={() => update(driver.uid, 'rejected')}>Reject</button></>}{driver.driverStatus === 'approved' && <button onClick={() => update(driver.uid, 'suspended')}>Suspend</button>}{driver.driverStatus === 'suspended' && <button className="primary" onClick={() => update(driver.uid, 'approved')}>Restore</button>}</span></div>)}{drivers.length === 0 && <p className="muted">No driver applications are available in this scope.</p>}</div></section>;
 }
 
-function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
+function LegacyDriversPageV3({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const reload = useCallback(() => adminApi.drivers(todaId).then(setDrivers), [todaId]);
   useEffect(() => {
@@ -275,6 +384,89 @@ function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
   const fullName = (driver: Driver) => [driver.applicant?.firstName, driver.applicant?.middleName, driver.applicant?.lastName].filter(Boolean).join(' ') || 'Unnamed applicant';
   const documentLinks = (driver: Driver) => [['Profile photo', driver.profilePhotoUrl], ['License front', driver.driverLicenseFrontUrl], ['License back', driver.driverLicenseBackUrl], ['Government ID', driver.governmentIdUrl], ['OR document', driver.orDocumentUrl], ['CR document', driver.crDocumentUrl], ['Vehicle photo', driver.vehiclePhotoUrl]].filter((entry): entry is [string, string] => Boolean(entry[1]));
   return <section className="panel wide"><h2>{todaId ? 'Driver applications assigned to this TODA' : 'All driver registrations'}</h2><p className="muted">{todaId ? 'Review identity, vehicle, documents, and passenger feedback before a TODA decision.' : 'Developer oversight can suspend active accounts; routine approvals and driver ratings remain with each TODA.'}</p><div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}><span className="applicant"><b>{fullName(driver)}</b><small>{driver.applicant?.email || 'Email not available'} · {driver.applicant?.phoneNumber || 'Phone not available'}</small><small>Date of birth: {driver.applicant?.dateOfBirth ? new Date(driver.applicant.dateOfBirth).toLocaleDateString('en-PH') : 'Not supplied (legacy registration)'}</small><small>TODA: {driver.todaId} · License: {driver.licenseNumber || 'Not provided'}</small><small>Vehicle: {driver.vehicle?.vehicleNumber || driver.vehicle?.model || 'Not registered'} · {driver.vehicle?.plateNumber || 'No plate'} · {driver.vehicle?.isVerified ? 'verified' : 'not verified'}</small><details><summary>Registration documents ({documentLinks(driver).length})</summary><div className="document-links">{documentLinks(driver).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details><small className="technical-id">Firebase UID: {driver.uid}</small></span><span className={driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}>{driver.driverStatus}</span><span>{todaId && <>★ {driver.rating || 0} from {driver.ratingCount || 0} ratings<br /></>}<small>{driver.completedTrips || 0} trips · {peso(driver.totalEarnings || 0)} earnings</small></span><span className="actions">{todaId && driver.vehicle && <button onClick={() => verifyVehicle(driver, !driver.vehicle?.isVerified)}>{driver.vehicle.isVerified ? 'Remove vehicle verification' : 'Verify vehicle'}</button>}{todaId && driver.driverStatus === 'pending' && <><button className="primary" onClick={() => update(driver.uid, 'approved')} disabled={!driver.vehicle?.isVerified}>Approve</button><button onClick={() => update(driver.uid, 'rejected')}>Reject</button></>}{driver.driverStatus === 'approved' && <button onClick={() => update(driver.uid, 'suspended')}>Suspend</button>}{todaId && driver.driverStatus === 'suspended' && <button className="primary" onClick={() => update(driver.uid, 'approved')} disabled={!driver.vehicle?.isVerified}>Restore</button>}</span></div>)}{drivers.length === 0 && <p className="muted">No driver applications are available in this scope.</p>}</div></section>;
+}
+
+function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const reload = useCallback(() => adminApi.drivers(todaId).then(setDrivers), [todaId]);
+  useEffect(() => {
+    void reload();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void reload();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [reload]);
+  async function update(driver: Driver, status: 'approved' | 'suspended' | 'rejected', license?: { number: string; expiry: string }) {
+    try {
+      await adminApi.setDriverStatus(driver.uid, status, license);
+      onMessage(`Driver ${status}.`);
+      await reload();
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to update driver.');
+    }
+  }
+  async function verifyVehicle(driver: Driver, isVerified: boolean) {
+    try {
+      await adminApi.setVehicleVerification(driver.uid, isVerified);
+      onMessage(`Vehicle ${isVerified ? 'verified' : 'verification removed'}.`);
+      await reload();
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to update vehicle verification.');
+    }
+  }
+  const fullName = (driver: Driver) =>
+    [driver.applicant?.firstName, driver.applicant?.middleName, driver.applicant?.lastName]
+      .filter(Boolean).join(' ') || 'Unnamed applicant';
+  const documentLinks = (driver: Driver) => [
+    ['Profile photo', driver.profilePhotoUrl],
+    ['Licence front', driver.driverLicenseFrontUrl],
+    ['Licence back', driver.driverLicenseBackUrl],
+    ['Government ID', driver.governmentIdUrl],
+    ['OR document', driver.orDocumentUrl],
+    ['CR document', driver.crDocumentUrl],
+    ['Vehicle photo', driver.vehiclePhotoUrl],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return <section className="panel wide">
+    <h2>{todaId ? 'Driver applications assigned to this TODA' : 'All driver registrations'}</h2>
+    <p className="muted">{todaId ? 'Review the camera-captured identity and vehicle documents. Record the licence details shown in the images before approval.' : 'Developer oversight can suspend active accounts; routine approval and licence verification remain with each TODA.'}</p>
+    <div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}>
+      <span className="applicant">
+        <b>{fullName(driver)}</b>
+        <small>{driver.applicant?.email || 'Email unavailable'} · {driver.applicant?.phoneNumber || 'Phone unavailable'}</small>
+        <small>Date of birth: {driver.applicant?.dateOfBirth ? new Date(driver.applicant.dateOfBirth).toLocaleDateString('en-PH') : 'Not supplied (legacy registration)'}</small>
+        <small>TODA: {driver.todaId} · Licence: {driver.licenseNumber || 'Awaiting TODA verification'}</small>
+        <small>Vehicle: {driver.vehicle?.vehicleNumber || driver.vehicle?.model || 'Not registered'} · {driver.vehicle?.plateNumber || 'No plate'} · {driver.vehicle?.isVerified ? 'verified' : 'not verified'}</small>
+        <details><summary>Registration documents ({documentLinks(driver).length})</summary><div className="document-links">{documentLinks(driver).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details>
+        <small className="technical-id">Firebase UID: {driver.uid}</small>
+      </span>
+      <span className={driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}>{driver.driverStatus}</span>
+      <span>{todaId && <>★ {driver.rating || 0} from {driver.ratingCount || 0} ratings<br /></>}<small>{driver.completedTrips || 0} trips · {peso(driver.totalEarnings || 0)} net earnings</small></span>
+      <span className="actions">
+        {todaId && driver.vehicle && <button onClick={() => verifyVehicle(driver, !driver.vehicle?.isVerified)}>{driver.vehicle.isVerified ? 'Remove vehicle verification' : 'Verify vehicle'}</button>}
+        {todaId && (driver.driverStatus === 'pending' || driver.driverStatus === 'suspended') && <DriverReviewActions driver={driver} onApprove={(license) => update(driver, 'approved', license)} onReject={driver.driverStatus === 'pending' ? () => update(driver, 'rejected') : undefined} />}
+        {driver.driverStatus === 'approved' && <button onClick={() => update(driver, 'suspended')}>Suspend</button>}
+      </span>
+    </div>)}{drivers.length === 0 && <p className="muted">No driver applications are available in this scope.</p>}</div>
+  </section>;
+}
+
+function DriverReviewActions({ driver, onApprove, onReject }: {
+  driver: Driver;
+  onApprove: (license?: { number: string; expiry: string }) => void;
+  onReject?: () => void;
+}) {
+  const [number, setNumber] = useState(driver.licenseNumber || '');
+  const [expiry, setExpiry] = useState(driver.licenseExpiry ? driver.licenseExpiry.slice(0, 10) : '');
+  const existingLicenseIsCurrent = Boolean(driver.licenseNumber && driver.licenseExpiry && new Date(driver.licenseExpiry).getTime() > Date.now());
+  const suppliedLicenseIsComplete = Boolean(number.trim() && expiry && new Date(`${expiry}T23:59:59`).getTime() > Date.now());
+  return <>
+    {!existingLicenseIsCurrent && <div className="license-review">
+      <label>Licence number<input value={number} onChange={(event) => setNumber(event.target.value)} placeholder="From licence image" /></label>
+      <label>Licence expiry<input type="date" min={new Date().toISOString().slice(0, 10)} value={expiry} onChange={(event) => setExpiry(event.target.value)} /></label>
+    </div>}
+    <button className="primary" onClick={() => onApprove(existingLicenseIsCurrent ? undefined : { number: number.trim(), expiry })} disabled={!driver.vehicle?.isVerified || (!existingLicenseIsCurrent && !suppliedLicenseIsComplete)}>{driver.driverStatus === 'suspended' ? 'Restore' : 'Approve'}</button>
+    {onReject && <button onClick={onReject}>Reject</button>}
+  </>;
 }
 
 function RatingsPage() {
@@ -427,7 +619,7 @@ function OperationsPage({ session }: { session: AdminSession }) {
   </section>;
 }
 
-function SafetyIncidentsPage({ session }: { session: AdminSession }) {
+function LegacySafetyIncidentsPage({ session }: { session: AdminSession }) {
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -496,6 +688,168 @@ function SafetyIncidentsPage({ session }: { session: AdminSession }) {
     </div>
     {nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more incidents'}</button>}
   </section>;
+}
+
+function SafetyIncidentsPage({ session }: { session: AdminSession }) {
+  const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [browserAlertsEnabled, setBrowserAlertsEnabled] = useState(
+    typeof Notification !== 'undefined' && Notification.permission === 'granted',
+  );
+  const knownUrgentIds = useRef<Set<string> | null>(null);
+  const refresh = useCallback(async () => {
+    try {
+      const page = await adminApi.safetyIncidentPage();
+      setIncidents(page.items);
+      const urgent = page.items.filter((incident) =>
+        incident.status === 'open' &&
+        (incident.responseStatus || 'reported') === 'reported');
+      const previous = knownUrgentIds.current;
+      if (browserAlertsEnabled && previous) {
+        urgent
+          .filter((incident) => !previous.has(incident.id))
+          .forEach((incident) => {
+            const notification = new Notification(
+              'VolTrike SOS requires acknowledgement',
+              {
+                body: `${incident.reporterRole} · Booking ${incident.bookingId}`,
+                tag: incident.id,
+                requireInteraction: true,
+              },
+            );
+            notification.onclick = () => {
+              window.focus();
+              setSelectedId(incident.id);
+              notification.close();
+            };
+            window.navigator.vibrate?.([250, 100, 250]);
+          });
+      }
+      knownUrgentIds.current = new Set(urgent.map((incident) => incident.id));
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load safety incidents.');
+    } finally {
+      setLoading(false);
+    }
+  }, [browserAlertsEnabled]);
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+  const mappable = incidents.filter((incident) =>
+    Number.isFinite(incident.driverLocation?.latitude) &&
+    Number.isFinite(incident.driverLocation?.longitude));
+  const points = mappable.map((incident) => ({
+    id: incident.id,
+    latitude: incident.driverLocation!.latitude,
+    longitude: incident.driverLocation!.longitude,
+    title: `SOS · ${incident.driverName || incident.reporterRole}`,
+    details: [
+      `Booking: ${incident.bookingId}`,
+      `Status: ${incident.bookingStatus.split('_').join(' ')}`,
+      incident.todaName || incident.todaId || 'TODA unavailable',
+    ],
+    urgent: incident.status === 'open' &&
+      (incident.responseStatus || 'reported') === 'reported',
+  }));
+  async function enableBrowserAlerts() {
+    if (typeof Notification === 'undefined') {
+      setError('This browser does not support system notifications. Keep the Safety Incidents page open.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    const enabled = permission === 'granted';
+    setBrowserAlertsEnabled(enabled);
+    knownUrgentIds.current = enabled ? new Set() : null;
+    if (!enabled) {
+      setError('Browser notifications were not allowed. SOS records still update on this page every five seconds.');
+      return;
+    }
+    setError('');
+  }
+  function contact911() {
+    if (window.confirm('Call the Philippine Unified 911 emergency hotline now? This starts a phone call; it does not silently dispatch emergency services.')) {
+      window.location.href = 'tel:911';
+    }
+  }
+  async function cancelAfterTimeout(incident: SafetyIncident) {
+    if (!window.confirm('Cancel this booking because the SOS initiator is still unresponsive after at least five minutes? This action is audited and cannot be used while the passenger is onboard.')) return;
+    try {
+      await adminApi.cancelBookingForSafety(incident.id);
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to cancel this booking.');
+    }
+  }
+  async function updateResponse(
+    incident: SafetyIncident,
+    action: 'acknowledge' | 'responding' | 'resolve',
+  ) {
+    let note = '';
+    if (action === 'responding') {
+      note = window.prompt('Optional response note, for example “Calling passenger now”:') || '';
+    }
+    if (action === 'resolve') {
+      const resolution = window.prompt('Required resolution note. Explain what was verified and how the incident ended:');
+      if (!resolution?.trim()) return;
+      note = resolution.trim();
+    }
+    try {
+      await adminApi.updateSafetyIncidentResponse(incident.id, action, note);
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to update the SOS response.');
+    }
+  }
+  const timeoutReached = (incident: SafetyIncident) =>
+    Boolean(incident.createdAt &&
+      Date.now() - new Date(incident.createdAt).getTime() >= 5 * 60 * 1000);
+  return <>
+    <section className="panel wide">
+      <h2>{session.role === 'developer_admin' ? 'All TNVS safety incidents' : 'TODA safety incidents'}</h2>
+      <p className="muted">A real SOS stays active until the reporter marks themselves safe or an administrator records a resolution. New incidents escalate when they remain unacknowledged; cancelling transportation never closes the emergency by itself.</p>
+      <div className="safety-email-card">
+        <div>
+          <b>Administrator safety notifications</b>
+          <small>Required transactional SOS email uses the verified administrator account. The dashboard and browser alerts remain the primary live monitoring tools.</small>
+        </div>
+        <label>Verified administrator email<input type="email" value={session.email || ''} readOnly aria-readonly="true" /></label>
+      </div>
+      <div className="safety-actions">
+        <button className="danger-button" onClick={contact911}>Call Unified 911</button>
+        <button onClick={enableBrowserAlerts}>
+          {browserAlertsEnabled ? 'Browser SOS alerts enabled' : 'Enable browser SOS alerts'}
+        </button>
+        <span>For active danger, call first, acknowledge the record, attempt contact, and keep monitoring its latest available map location.</span>
+      </div>
+      {error && <div className="notice">{error}</div>}
+      <Suspense fallback={<div className="map-missing">Loading incident map…</div>}>
+        <AdminLocationMap points={points} selectedId={selectedId} />
+      </Suspense>
+    </section>
+    <section className="panel wide">
+      <div className="table">{incidents.map((incident) => <div className="row report" key={incident.id}>
+        <span><b>{incident.category.toUpperCase()} · {(incident.responseStatus || incident.status).split('_').join(' ')}</b><small>{incident.createdAt ? new Date(incident.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><small>Booking {incident.bookingId}</small><small>Alert: {(incident.deliveryStatus || 'legacy record').split('_').join(' ')} · escalation level {incident.escalationLevel || 0}</small></span>
+        <span><b>Reported by {incident.reporterRole}</b><small>Passenger: {incident.passengerName || incident.passengerId}</small><small>Driver: {incident.driverName || incident.driverId || 'Not assigned'}</small><small>TODA: {incident.todaName || incident.todaId || 'Not assigned'}</small></span>
+        <span className="warning">{incident.bookingStatus.split('_').join(' ')}<small>{incident.pickupAddress || 'Pickup unavailable'} → {incident.destinationAddress || 'Destination unavailable'}</small><small>{incident.locationSource === 'live_driver_location' ? 'Live driver location' : 'SOS location snapshot'}{incident.driverLocation?.timestamp ? ` · ${new Date(incident.driverLocation.timestamp).toLocaleTimeString('en-PH')}` : ''}</small>{incident.lastResponseNote && <small>Latest note: {incident.lastResponseNote}</small>}{incident.resolutionNote && <small>Resolution: {incident.resolutionNote}</small>}</span>
+        <span className="actions">
+          {incident.driverLocation && <button onClick={() => setSelectedId(incident.id)}>View location</button>}
+          <button onClick={contact911}>Call 911</button>
+          {!['accidental', 'resolved', 'reporter_safe'].includes(incident.status) && (incident.responseStatus || 'reported') === 'reported' && <button className="primary" onClick={() => updateResponse(incident, 'acknowledge')}>Acknowledge SOS</button>}
+          {!['accidental', 'resolved', 'reporter_safe'].includes(incident.status) && !['responding', 'resolved'].includes(incident.responseStatus || 'reported') && <button onClick={() => updateResponse(incident, 'responding')}>Start response</button>}
+          {!['accidental', 'resolved', 'reporter_safe'].includes(incident.status) && incident.responseStatus !== 'resolved' && <button onClick={() => updateResponse(incident, 'resolve')}>Resolve with note</button>}
+          {incident.status === 'open' && incident.bookingStatus !== 'cancelled' && !incident.bookingCancelledForSafety && <button onClick={() => cancelAfterTimeout(incident)} disabled={!timeoutReached(incident) || ['passenger_on_board', 'payment_confirmation'].includes(incident.bookingStatus)}>Cancel after 5 min unresponsive</button>}
+          {incident.status === 'open' && !timeoutReached(incident) && <small>Five-minute contact window still active.</small>}
+        </span>
+      </div>)}{loading && <p className="muted">Loading safety incidents…</p>}{!loading && incidents.length === 0 && <p className="muted">No safety incidents in this scope.</p>}</div>
+    </section>
+  </>;
 }
 
 function LegacyRouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => void }) {

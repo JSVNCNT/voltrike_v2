@@ -17,6 +17,10 @@ class AppUser extends Equatable {
     required this.updatedAt,
     this.todaId,
     this.dateOfBirth,
+    this.termsAcceptedAt,
+    this.privacyAcceptedAt,
+    this.termsVersion,
+    this.privacyVersion,
   });
 
   final String uid;
@@ -41,6 +45,12 @@ class AppUser extends Equatable {
 
   /// Collected for driver registration review; absent for legacy profiles.
   final DateTime? dateOfBirth;
+
+  /// Audit fields for the legal documents accepted during registration.
+  final DateTime? termsAcceptedAt;
+  final DateTime? privacyAcceptedAt;
+  final String? termsVersion;
+  final String? privacyVersion;
 
   final String profileImage;
 
@@ -77,6 +87,10 @@ class AppUser extends Equatable {
     String? role,
     String? todaId,
     DateTime? dateOfBirth,
+    DateTime? termsAcceptedAt,
+    DateTime? privacyAcceptedAt,
+    String? termsVersion,
+    String? privacyVersion,
     String? profileImage,
     bool? emailVerified,
     bool? isActive,
@@ -93,6 +107,10 @@ class AppUser extends Equatable {
       role: role ?? this.role,
       todaId: todaId ?? this.todaId,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      termsAcceptedAt: termsAcceptedAt ?? this.termsAcceptedAt,
+      privacyAcceptedAt: privacyAcceptedAt ?? this.privacyAcceptedAt,
+      termsVersion: termsVersion ?? this.termsVersion,
+      privacyVersion: privacyVersion ?? this.privacyVersion,
       profileImage: profileImage ?? this.profileImage,
       emailVerified: emailVerified ?? this.emailVerified,
       isActive: isActive ?? this.isActive,
@@ -112,13 +130,15 @@ class AppUser extends Equatable {
       role: map['role'] ?? 'passenger',
       todaId: map['todaId'],
       dateOfBirth: parseModelDate(map['dateOfBirth']),
+      termsAcceptedAt: parseModelDate(map['termsAcceptedAt']),
+      privacyAcceptedAt: parseModelDate(map['privacyAcceptedAt']),
+      termsVersion: map['termsVersion'] as String?,
+      privacyVersion: map['privacyVersion'] as String?,
       profileImage: map['profileImage'] ?? '',
       emailVerified: map['emailVerified'] ?? false,
       isActive: map['isActive'] ?? true,
-      createdAt: parseModelDate(map['createdAt']) ??
-          DateTime.now(),
-      updatedAt: parseModelDate(map['updatedAt']) ??
-          DateTime.now(),
+      createdAt: parseModelDate(map['createdAt']) ?? DateTime.now(),
+      updatedAt: parseModelDate(map['updatedAt']) ?? DateTime.now(),
     );
   }
 
@@ -133,6 +153,10 @@ class AppUser extends Equatable {
       'role': role,
       'todaId': todaId,
       'dateOfBirth': dateOfBirth?.toIso8601String(),
+      'termsAcceptedAt': termsAcceptedAt?.toIso8601String(),
+      'privacyAcceptedAt': privacyAcceptedAt?.toIso8601String(),
+      'termsVersion': termsVersion,
+      'privacyVersion': privacyVersion,
       'profileImage': profileImage,
       'emailVerified': emailVerified,
       'isActive': isActive,
@@ -143,19 +167,23 @@ class AppUser extends Equatable {
 
   @override
   List<Object?> get props => [
-        uid,
-        email,
-        firstName,
-        middleName,
-        lastName,
-        phoneNumber,
-        role,
-        todaId,
-        dateOfBirth,
-        profileImage,
-        emailVerified,
-        isActive,
-        createdAt,
-        updatedAt,
-      ];
+    uid,
+    email,
+    firstName,
+    middleName,
+    lastName,
+    phoneNumber,
+    role,
+    todaId,
+    dateOfBirth,
+    termsAcceptedAt,
+    privacyAcceptedAt,
+    termsVersion,
+    privacyVersion,
+    profileImage,
+    emailVerified,
+    isActive,
+    createdAt,
+    updatedAt,
+  ];
 }

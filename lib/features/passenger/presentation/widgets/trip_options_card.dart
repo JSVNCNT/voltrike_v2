@@ -36,36 +36,36 @@ class TripOptionsCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Trip Options',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
 
             const SizedBox(height: 16),
 
             _OptionRow(
               label: 'Additional Passengers',
+              helper:
+                  '${additionalPassengers + 1} total rider'
+                  '${additionalPassengers == 0 ? '' : 's'} • '
+                  '${additionalPassengers + 1 <= 2 ? 'E-Trike or Electric Tuktuk' : 'Electric Tuktuk required'}',
               value: additionalPassengers,
-              onDecrease:
-                  onDecreasePassengers,
-              onIncrease:
-                  onIncreasePassengers,
+              maxValue: 3,
+              onDecrease: onDecreasePassengers,
+              onIncrease: onIncreasePassengers,
             ),
 
             const Divider(height: 32),
 
             _OptionRow(
               label: 'Baggage',
+              helper: 'One baggage charge maximum',
               value: baggageCount,
-              onDecrease:
-                  onDecreaseBaggage,
-              onIncrease:
-                  onIncreaseBaggage,
+              maxValue: 1,
+              onDecrease: onDecreaseBaggage,
+              onIncrease: onIncreaseBaggage,
             ),
           ],
         ),
@@ -81,12 +81,16 @@ class _OptionRow extends StatelessWidget {
   const _OptionRow({
     required this.label,
     required this.value,
+    required this.maxValue,
+    this.helper,
     this.onIncrease,
     this.onDecrease,
   });
 
   final String label;
   final int value;
+  final int maxValue;
+  final String? helper;
 
   final VoidCallback? onIncrease;
   final VoidCallback? onDecrease;
@@ -96,20 +100,19 @@ class _OptionRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(
-            label,
-            style: Theme.of(context)
-                .textTheme
-                .bodyLarge,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.bodyLarge),
+              if (helper != null)
+                Text(helper!, style: Theme.of(context).textTheme.bodySmall),
+            ],
           ),
         ),
 
         IconButton(
-          onPressed:
-              value > 0 ? onDecrease : null,
-          icon: const Icon(
-            Icons.remove_circle_outline,
-          ),
+          onPressed: value > 0 ? onDecrease : null,
+          icon: const Icon(Icons.remove_circle_outline),
         ),
 
         SizedBox(
@@ -117,17 +120,13 @@ class _OptionRow extends StatelessWidget {
           child: Text(
             '$value',
             textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
 
         IconButton(
-          onPressed: onIncrease,
-          icon: const Icon(
-            Icons.add_circle_outline,
-          ),
+          onPressed: value < maxValue ? onIncrease : null,
+          icon: const Icon(Icons.add_circle_outline),
         ),
       ],
     );

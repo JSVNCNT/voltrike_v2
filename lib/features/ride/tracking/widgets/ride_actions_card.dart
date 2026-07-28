@@ -17,6 +17,7 @@ class RideActionsCard extends StatelessWidget {
     this.onReport,
     this.onCancel,
     this.onSos,
+    this.onSafetyUpdate,
     this.onNoShow,
     this.messageBadge = 0,
   });
@@ -26,6 +27,7 @@ class RideActionsCard extends StatelessWidget {
   final VoidCallback? onReport;
   final VoidCallback? onCancel;
   final VoidCallback? onSos;
+  final VoidCallback? onSafetyUpdate;
   final VoidCallback? onNoShow;
   final int messageBadge;
 
@@ -63,6 +65,14 @@ class RideActionsCard extends StatelessWidget {
           foregroundColor: theme.colorScheme.error,
           emphasis: _ActionEmphasis.errorTonal,
           onPressed: onSos!,
+        ),
+      if (onSafetyUpdate != null)
+        _ActionButton(
+          icon: Icons.health_and_safety_outlined,
+          label: 'Safety status',
+          foregroundColor: theme.colorScheme.error,
+          emphasis: _ActionEmphasis.outlined,
+          onPressed: onSafetyUpdate!,
         ),
       if (onCancel != null)
         _ActionButton(

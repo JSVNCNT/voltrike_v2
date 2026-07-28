@@ -37,9 +37,8 @@ class _DriverRegistrationStep3ScreenState
 
   final _colorController = TextEditingController();
 
-  final _capacityController = TextEditingController();
-
   String? _vehicleType;
+  int _seatingCapacity = 3;
 
   String? _error;
 
@@ -51,7 +50,9 @@ class _DriverRegistrationStep3ScreenState
 
     final registration = ref.read(driverRegistrationDataProvider);
 
-    _vehicleType = registration.vehicleType;
+    _vehicleType = _vehicleTypes.contains(registration.vehicleType)
+        ? registration.vehicleType
+        : null;
 
     _plateController.text = registration.plateNumber;
 
@@ -61,9 +62,9 @@ class _DriverRegistrationStep3ScreenState
 
     _colorController.text = registration.vehicleColor;
 
-    _capacityController.text = registration.seatingCapacity == 0
-        ? ''
-        : registration.seatingCapacity.toString();
+    _seatingCapacity = registration.vehicleType == 'E-Trike'
+        ? 2
+        : registration.seatingCapacity.clamp(3, 4);
   }
 
   @override
@@ -72,8 +73,6 @@ class _DriverRegistrationStep3ScreenState
     _brandController.dispose();
     _modelController.dispose();
     _colorController.dispose();
-    _capacityController.dispose();
-
     super.dispose();
   }
 
@@ -102,7 +101,7 @@ class _DriverRegistrationStep3ScreenState
           vehicleBrand: _brandController.text.trim(),
           vehicleModel: _modelController.text.trim(),
           vehicleColor: _colorController.text.trim(),
-          seatingCapacity: int.tryParse(_capacityController.text) ?? 0,
+          seatingCapacity: _vehicleType == 'E-Trike' ? 2 : _seatingCapacity,
         );
 
     context.go(AppRoutes.uploadDocuments);
@@ -153,6 +152,7 @@ class _DriverRegistrationStep3ScreenState
                   onChanged: (value) {
                     setState(() {
                       _vehicleType = value;
+                      _seatingCapacity = value == 'E-Trike' ? 2 : 3;
                     });
                   },
                   validator: (value) {
@@ -221,30 +221,69 @@ class _DriverRegistrationStep3ScreenState
 
                 const SizedBox(height: AppSpacing.md),
 
-                AppTextField(
-                  controller: _capacityController,
-                  label: 'Seating Capacity',
-                  hint: '4',
-                  prefixIcon: Icons.event_seat_outlined,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.done,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Seating capacity is required.';
-                    }
-
-                    final seats = int.tryParse(value);
-
-                    if (seats == null || seats <= 0) {
-                      return 'Enter a valid seating capacity.';
-                    }
-
-                    return null;
-                  },
-                  onFieldSubmitted: (_) {
-                    _continue();
-                  },
-                ),
+                if (_vehicleType != null)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _vehicleType == 'E-Trike'
+                                ? 'Passenger capacity: 2'
+                                : 'Passenger seating capacity',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _vehicleType == 'E-Trike'
+                                ? 'E-Trikes are registered with a fixed maximum '
+                                      'of 2 passenger seats.'
+                                : 'Electric tuktuks may register 3 or 4 '
+                                      'passenger seats. This limit controls '
+                                      'which bookings the driver may receive.',
+                          ),
+                          if (_vehicleType == 'Electric Tuktuk') ...[
+                            const SizedBox(height: AppSpacing.md),
+                            Row(
+                              children: [
+                                IconButton.outlined(
+                                  onPressed: _seatingCapacity > 3
+                                      ? () => setState(() => _seatingCapacity--)
+                                      : null,
+                                  icon: const Icon(Icons.remove),
+                                  tooltip: 'Reduce capacity',
+                                ),
+                                Expanded(
+                                  child: Slider(
+                                    value: _seatingCapacity.toDouble(),
+                                    min: 3,
+                                    max: 4,
+                                    divisions: 1,
+                                    label: '$_seatingCapacity seats',
+                                    onChanged: (value) => setState(
+                                      () => _seatingCapacity = value.round(),
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '$_seatingCapacity',
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                IconButton.outlined(
+                                  onPressed: _seatingCapacity < 4
+                                      ? () => setState(() => _seatingCapacity++)
+                                      : null,
+                                  icon: const Icon(Icons.add),
+                                  tooltip: 'Increase capacity',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
 
                 const SizedBox(height: AppSpacing.xl),
                 PrimaryButton(text: 'Continue', onPressed: _continue),

@@ -16,20 +16,26 @@ class FareCard extends StatelessWidget {
   const FareCard({
     super.key,
     this.estimatedFare = '₱0.00',
+    this.baseFare = '₱0.00',
+    this.distanceFare = '₱0.00',
     this.distance = '--',
     this.eta = '--',
     this.additionalPassengers = 0,
+    this.additionalPassengerFee = '₱0.00',
     this.baggageFee = '₱0.00',
     this.boundarySurcharge = '₱0.00',
   });
 
   final String estimatedFare;
+  final String baseFare;
+  final String distanceFare;
 
   final String distance;
 
   final String eta;
 
   final int additionalPassengers;
+  final String additionalPassengerFee;
 
   final String baggageFee;
 
@@ -39,9 +45,7 @@ class FareCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -54,29 +58,33 @@ class FareCard extends StatelessWidget {
 
             const Divider(),
 
-            _FareRow(
-              title: 'Distance',
-              value: distance,
-            ),
+            _FareRow(title: 'Base fare', value: baseFare),
+
+            _FareRow(title: 'Distance surcharge', value: distanceFare),
+
+            _FareRow(title: 'Distance', value: distance),
+
+            _FareRow(title: 'Estimated Time', value: eta),
 
             _FareRow(
-              title: 'Estimated Time',
-              value: eta,
-            ),
-
-            _FareRow(
-              title: 'Additional Passengers',
+              title: 'Additional riders',
               value: additionalPassengers.toString(),
             ),
 
             _FareRow(
-              title: 'Baggage Fee',
-              value: baggageFee,
+              title: 'Additional passenger fee',
+              value: additionalPassengerFee,
             ),
 
-            _FareRow(
-              title: 'Outside TODA Surcharge',
-              value: boundarySurcharge,
+            _FareRow(title: 'Baggage Fee', value: baggageFee),
+
+            _FareRow(title: 'Outside TODA Surcharge', value: boundarySurcharge),
+
+            const SizedBox(height: 8),
+            Text(
+              'Fare = base fare + distance surcharge + selected passenger, '
+              'baggage, and boundary charges.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -105,21 +113,11 @@ class _FareRow extends StatelessWidget {
         : Theme.of(context).textTheme.bodyMedium;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              title,
-              style: textStyle,
-            ),
-          ),
-          Text(
-            value,
-            style: textStyle,
-          ),
+          Expanded(child: Text(title, style: textStyle)),
+          Text(value, style: textStyle),
         ],
       ),
     );

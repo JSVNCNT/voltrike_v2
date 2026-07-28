@@ -27,6 +27,10 @@ class DriverRegistrationMapper {
       phoneNumber: registration.phoneNumber,
       role: 'driver',
       todaId: registration.todaId,
+      termsAcceptedAt: registration.termsAcceptedAt,
+      privacyAcceptedAt: registration.privacyAcceptedAt,
+      termsVersion: registration.termsVersion,
+      privacyVersion: registration.privacyVersion,
       profileImage: profilePhotoUrl,
       emailVerified: false,
       isActive: true,
@@ -62,8 +66,10 @@ class DriverRegistrationMapper {
       //======================================================================
       // License
       //======================================================================
-      licenseNumber: registration.licenseNumber,
-      licenseExpiry: registration.licenseExpiry!,
+      // The applicant no longer self-enters licence metadata. The assigned
+      // TODA records these values after reviewing the captured licence image.
+      licenseNumber: '',
+      licenseExpiry: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
 
       //======================================================================
       // Uploaded Documents

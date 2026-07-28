@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,6 +27,7 @@ import '../../../ride/tracking/widgets/trip_status_card.dart';
 import '../../../ride/tracking/models/ride_participant_role.dart';
 import '../../../ride/tracking/services/ride_marker_factory.dart';
 import '../../../ride/tracking/services/route_refresh_policy.dart';
+import '../../../ride/tracking/services/ride_safety_service.dart';
 import '../../../ride/tracking/services/ride_stage_presentation_service.dart';
 import '../../../ride/chat/ride_chat_alert_listener.dart';
 import '../../../ride/routing/booking_route_coordinator.dart';
@@ -71,6 +74,8 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   ProviderSubscription<AsyncValue<Booking?>>? _bookingSubscription;
   BookingStatus? _lastRoutedStatus;
   bool _sosSubmitting = false;
+  MySafetyIncident? _safetyIncident;
+  final RideSafetyService _safetyService = RideSafetyService();
 
   //==========================================================================
   // Helpers
@@ -94,10 +99,20 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   void initState() {
     super.initState();
     _loadDriverMarker();
+    unawaited(_loadSafetyIncident());
     _bookingSubscription = ref.listenManual<AsyncValue<Booking?>>(
       bookingListenerProvider(widget.bookingId),
       (_, next) => next.whenData(_handleBookingRoute),
     );
+  }
+
+  Future<void> _loadSafetyIncident() async {
+    try {
+      final incident = await _safetyService.load(widget.bookingId);
+      if (mounted) setState(() => _safetyIncident = incident);
+    } catch (_) {
+      // SOS remains usable even when a prior status cannot be loaded.
+    }
   }
 
   void _handleBookingRoute(Booking? booking) {
@@ -294,6 +309,12 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
         onSos: stage.allowSos && !_sosSubmitting
             ? () => _triggerSos(booking)
             : null,
+        onSafetyUpdate:
+            stage.allowSos &&
+                !_sosSubmitting &&
+                _safetyIncident?.isActive == true
+            ? () => _updateSafetyStatus(booking)
+            : null,
         messageBadge: snapshot.data ?? 0,
       ),
     );
@@ -310,48 +331,27 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
   Future<void> _triggerSos(Booking booking) async {
     if (_sosSubmitting) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Record an SOS incident?'),
-        content: const Text(
-          'VolTrike will save this ride and location snapshot for authorized '
-          'admins. This development feature does not contact emergency '
-          'services, so contact them directly if immediate help is needed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Record SOS'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
     setState(() => _sosSubmitting = true);
     try {
-      final alreadyRecorded = await SafetyRepository().triggerSos(
-        booking.bookingId,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            alreadyRecorded
-                ? 'This SOS incident is already recorded for review.'
-                : 'SOS incident recorded for review.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
+      final incident = await _safetyService.record(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not record SOS: $error')));
+        bookingId: booking.bookingId,
+      );
+      if (mounted) setState(() => _safetyIncident = incident);
+    } finally {
+      if (mounted) setState(() => _sosSubmitting = false);
+    }
+  }
+
+  Future<void> _updateSafetyStatus(Booking booking) async {
+    if (_sosSubmitting) return;
+    setState(() => _sosSubmitting = true);
+    try {
+      final incident = await _safetyService.showStatus(
+        context,
+        bookingId: booking.bookingId,
+      );
+      if (mounted) setState(() => _safetyIncident = incident);
     } finally {
       if (mounted) setState(() => _sosSubmitting = false);
     }

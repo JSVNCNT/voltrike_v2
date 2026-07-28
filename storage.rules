@@ -9,6 +9,17 @@ service firebase.storage {
     function developerAdmin() {
       return signedIn() && request.auth.token.adminRole == 'developer_admin';
     }
+    function todaAdminForDriver(uid) {
+      return signedIn() &&
+        request.auth.token.adminRole == 'toda_admin' &&
+        firestore.exists(/databases/(default)/documents/drivers/$(uid)) &&
+        firestore.get(/databases/(default)/documents/drivers/$(uid)).data.todaId ==
+          request.auth.token.todaId;
+    }
+    function isRegistrationImage() {
+      return request.resource.contentType.matches('image/jpeg') &&
+        request.resource.size <= 4 * 1024 * 1024;
+    }
     function isTodaDocument() {
       return request.resource.size < 10 * 1024 * 1024 &&
         (request.resource.contentType.matches('image/.*') ||
@@ -22,8 +33,10 @@ service firebase.storage {
     }
 
     match /drivers/{uid}/{fileName} {
-      allow read: if signedIn() && (request.auth.uid == uid || fileName == 'profile.jpg');
-      allow create, update: if signedIn() && request.auth.uid == uid && isImage();
+      allow read: if signedIn() && (request.auth.uid == uid ||
+        fileName == 'profile.jpg' || developerAdmin() || todaAdminForDriver(uid));
+      allow create, update: if signedIn() && request.auth.uid == uid &&
+        isRegistrationImage();
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 

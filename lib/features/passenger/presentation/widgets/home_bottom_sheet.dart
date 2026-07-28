@@ -30,6 +30,8 @@ class HomeBottomSheet extends StatelessWidget {
     this.onDecreaseBaggage,
 
     this.estimatedFare = '₱0.00',
+    this.baseFare = '₱0.00',
+    this.distanceFare = '₱0.00',
     this.distance = '--',
     this.eta = '--',
 
@@ -37,6 +39,7 @@ class HomeBottomSheet extends StatelessWidget {
     this.baggageCount = 0,
 
     this.baggageFee = '₱0.00',
+    this.additionalPassengerFee = '₱0.00',
     this.boundarySurcharge = '₱0.00',
 
     this.hasRoute = false,
@@ -57,6 +60,8 @@ class HomeBottomSheet extends StatelessWidget {
   final String destination;
 
   final String estimatedFare;
+  final String baseFare;
+  final String distanceFare;
   final String distance;
   final String eta;
 
@@ -64,6 +69,7 @@ class HomeBottomSheet extends StatelessWidget {
   final int baggageCount;
 
   final String baggageFee;
+  final String additionalPassengerFee;
   final String boundarySurcharge;
 
   final bool hasRoute;
@@ -77,17 +83,10 @@ class HomeBottomSheet extends StatelessWidget {
       child: Material(
         color: theme.colorScheme.surface,
         elevation: 10,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(24),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         child: SingleChildScrollView(
           controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(
-            20,
-            16,
-            20,
-            24,
-          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -104,10 +103,7 @@ class HomeBottomSheet extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              Text(
-                'Book a Ride',
-                style: theme.textTheme.titleLarge,
-              ),
+              Text('Book a Ride', style: theme.textTheme.titleLarge),
 
               const SizedBox(height: 6),
 
@@ -120,10 +116,7 @@ class HomeBottomSheet extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              Text(
-                'Pickup',
-                style: theme.textTheme.labelLarge,
-              ),
+              Text('Pickup', style: theme.textTheme.labelLarge),
 
               const SizedBox(height: 8),
 
@@ -135,10 +128,7 @@ class HomeBottomSheet extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              Text(
-                'Destination',
-                style: theme.textTheme.labelLarge,
-              ),
+              Text('Destination', style: theme.textTheme.labelLarge),
 
               const SizedBox(height: 8),
 
@@ -151,18 +141,18 @@ class HomeBottomSheet extends StatelessWidget {
               if (hasRoute) ...[
                 const SizedBox(height: 28),
 
-                Text(
-                  'Ride Summary',
-                  style: theme.textTheme.titleMedium,
-                ),
+                Text('Ride Summary', style: theme.textTheme.titleMedium),
 
                 const SizedBox(height: 12),
 
                 FareCard(
                   estimatedFare: estimatedFare,
+                  baseFare: baseFare,
+                  distanceFare: distanceFare,
                   distance: distance,
                   eta: eta,
                   additionalPassengers: additionalPassengers,
+                  additionalPassengerFee: additionalPassengerFee,
                   baggageFee: baggageFee,
                   boundarySurcharge: boundarySurcharge,
                 ),
@@ -170,19 +160,14 @@ class HomeBottomSheet extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 TripOptionsCard(
-                  additionalPassengers:
-                      additionalPassengers,
+                  additionalPassengers: additionalPassengers,
                   baggageCount: baggageCount,
 
-                  onIncreasePassengers:
-                      onIncreasePassengers,
-                  onDecreasePassengers:
-                      onDecreasePassengers,
+                  onIncreasePassengers: onIncreasePassengers,
+                  onDecreasePassengers: onDecreasePassengers,
 
-                  onIncreaseBaggage:
-                      onIncreaseBaggage,
-                  onDecreaseBaggage:
-                      onDecreaseBaggage,
+                  onIncreaseBaggage: onIncreaseBaggage,
+                  onDecreaseBaggage: onDecreaseBaggage,
                 ),
               ],
 
@@ -191,16 +176,11 @@ class HomeBottomSheet extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: hasRoute
-                      ? onBookRide
-                      : null,
+                  onPressed: hasRoute ? onBookRide : null,
                   style: FilledButton.styleFrom(
-                    minimumSize:
-                        const Size.fromHeight(56),
+                    minimumSize: const Size.fromHeight(56),
                   ),
-                  child: const Text(
-                    'Book Ride',
-                  ),
+                  child: const Text('Book Ride'),
                 ),
               ),
 

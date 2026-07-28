@@ -4,8 +4,7 @@ import '../../../../data/models/driver_registration_data.dart';
 
 class DriverRegistrationDataNotifier
     extends StateNotifier<DriverRegistrationData> {
-  DriverRegistrationDataNotifier()
-      : super(const DriverRegistrationData());
+  DriverRegistrationDataNotifier() : super(const DriverRegistrationData());
 
   /// Replace the whole object
   void update(DriverRegistrationData data) {
@@ -45,6 +44,10 @@ class DriverRegistrationDataNotifier
     String? crDocument,
     String? vehiclePhoto,
     String? profilePhoto,
+    DateTime? termsAcceptedAt,
+    DateTime? privacyAcceptedAt,
+    String? termsVersion,
+    String? privacyVersion,
   }) {
     state = state.copyWith(
       firstName: firstName,
@@ -78,6 +81,10 @@ class DriverRegistrationDataNotifier
       crDocument: crDocument,
       vehiclePhoto: vehiclePhoto,
       profilePhoto: profilePhoto,
+      termsAcceptedAt: termsAcceptedAt,
+      privacyAcceptedAt: privacyAcceptedAt,
+      termsVersion: termsVersion,
+      privacyVersion: privacyVersion,
     );
   }
 
@@ -89,7 +96,6 @@ class DriverRegistrationDataNotifier
 
 final driverRegistrationDataProvider =
     StateNotifierProvider<
-        DriverRegistrationDataNotifier,
-        DriverRegistrationData>(
-  (ref) => DriverRegistrationDataNotifier(),
-);
+      DriverRegistrationDataNotifier,
+      DriverRegistrationData
+    >((ref) => DriverRegistrationDataNotifier());

@@ -99,11 +99,11 @@ class AppRoutes {
 
   static const String driverSettings = '/driver/settings';
 
-  static const String aboutVoltrike = '/driver/aboutVoltrike';
+  static const String aboutVoltrike = '/about';
 
-  static const String privacyPolicy = '/driver/privacy-policy';
+  static const String privacyPolicy = '/legal/privacy-policy';
 
-  static const String termsAndConditions = '/driver/termsAndConditions';
+  static const String termsAndConditions = '/legal/terms-and-conditions';
   //==========================================================================
   // Driver Booking Flow
   //==========================================================================

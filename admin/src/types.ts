@@ -126,6 +126,27 @@ export interface FareConfig {
   outsideTodaSurcharge: number;
 }
 
+export interface TodaCommission {
+  percent: number;
+  recommendedPercent: number;
+  maximumPercent: number;
+  updatedAt?: string | null;
+}
+
+export interface LiveDriver {
+  uid: string;
+  name: string;
+  todaId: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  timestamp: number;
+  bookingId?: string | null;
+  bookingStatus: string;
+  vehicleType?: string | null;
+  plateNumber?: string | null;
+}
+
 export interface PageResult<T> {
   items: T[];
   nextCursor: string | null;
@@ -135,9 +156,7 @@ export interface AdminMetrics {
   drivers: number;
   reports: number;
   zones: number;
-  earnings: number;
   trips: number;
-  tripRevenue: number;
   bookings: number;
   safetyIncidents: number;
   scope: string;
@@ -147,6 +166,7 @@ export interface BookingOperation {
   bookingId: string;
   schemaVersion: number;
   status: string;
+  acknowledgement?: 'accidental' | 'needs_review';
   passengerName: string;
   driverName?: string | null;
   driverId?: string | null;
@@ -191,9 +211,26 @@ export interface SafetyIncident {
     online?: boolean;
   } | null;
   status: string;
+  responseStatus?: 'reported' | 'acknowledged' | 'responding' | 'resolved';
+  deliveryStatus?: 'pending' | 'delivered' | 'delivery_failed' | 'no_registered_admin_device' | 'not_required' | null;
+  deliveryRecipientCount?: number;
+  deliveryAttemptCount?: number;
+  deliverySuccessCount?: number;
+  escalationLevel?: number;
+  bookingCancelledForSafety?: boolean;
+  bookingSafetyAction?: string | null;
+  locationSource?: 'live_driver_location' | 'sos_snapshot';
   emergencyDispatch: string;
   requiresManualEmergencyContact: boolean;
   createdAt?: string | null;
+  updatedAt?: string | null;
+  deliveredAt?: string | null;
+  acknowledgedAt?: string | null;
+  respondingAt?: string | null;
+  resolvedAt?: string | null;
+  escalatedAt?: string | null;
+  lastResponseNote?: string | null;
+  resolutionNote?: string | null;
 }
 
 export interface ZoneRequest {

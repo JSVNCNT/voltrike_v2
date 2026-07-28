@@ -5,7 +5,9 @@ class AppAssets {
   // Images
   // ===========================================================================
 
-  static const String logo = 'assets/images/logo.png';
+  static const String logo = 'assets/images/VolTrikeLogo-Dark.png';
+  static const String logoDark = 'assets/images/VolTrikeLogo-Dark.png';
+  static const String logoLight = 'assets/images/VolTrikeLogo-Light.png';
   static const String appLogo = 'assets/images/appLogo.png';
 
   static const String defaultAvatar = 'assets/images/default_avatar.png';
@@ -26,6 +28,5 @@ class AppAssets {
   // JSON
   // ===========================================================================
 
-  static const String regionJson =
-      'assets/regionJson/philippines.json';
+  static const String regionJson = 'assets/regionJson/philippines.json';
 }

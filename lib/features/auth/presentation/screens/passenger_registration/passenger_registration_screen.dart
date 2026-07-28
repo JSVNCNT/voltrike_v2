@@ -13,12 +13,14 @@ import '../../../../../core/widgets/inputs/app_text_field.dart';
 import '../../../../../core/widgets/inputs/password_field.dart';
 import '../../../../../data/models/app_user.dart';
 import '../../../../../data/models/passenger.dart';
+import '../../../../common/presentation/screens/legal/legal_document_versions.dart';
 import '../../providers/passenger_registration_provider.dart';
 import '../../widgets/auth_footer.dart';
 import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
 import '../../widgets/loading_overlay.dart';
+import '../../widgets/legal_consent_card.dart';
 import '../../widgets/validation_message.dart';
 
 class PassengerRegistrationScreen extends ConsumerStatefulWidget {
@@ -48,6 +50,8 @@ class _PassengerRegistrationScreenState
   final _confirmPasswordController = TextEditingController();
 
   bool _acceptedTerms = false;
+  bool _termsViewed = false;
+  bool _privacyViewed = false;
 
   String? _error;
 
@@ -71,7 +75,9 @@ class _PassengerRegistrationScreenState
 
     if (!_acceptedTerms) {
       setState(() {
-        _error = 'Please accept the Terms and Conditions.';
+        _error =
+            'Open the Terms and Conditions and Privacy Policy, then confirm '
+            'your agreement.';
       });
 
       return;
@@ -96,6 +102,10 @@ class _PassengerRegistrationScreenState
       isActive: true,
       createdAt: now,
       updatedAt: now,
+      termsAcceptedAt: now,
+      privacyAcceptedAt: now,
+      termsVersion: LegalDocumentVersions.terms,
+      privacyVersion: LegalDocumentVersions.privacy,
     );
 
     final passenger = Passenger(
@@ -122,6 +132,23 @@ class _PassengerRegistrationScreenState
     } catch (e) {
       setState(() => _error = DomainErrorMapper.message(e));
     }
+  }
+
+  Future<void> _openLegalDocument({
+    required String route,
+    required bool terms,
+  }) async {
+    final confirmed = await context.push<bool>('$route?acknowledge=true');
+    if (!mounted || confirmed != true) return;
+    setState(() {
+      if (terms) {
+        _termsViewed = true;
+      } else {
+        _privacyViewed = true;
+      }
+      _acceptedTerms = false;
+      _error = null;
+    });
   }
 
   @override
@@ -258,18 +285,21 @@ class _PassengerRegistrationScreenState
 
                 const SizedBox(height: AppSpacing.lg),
 
-                CheckboxListTile(
-                  value: _acceptedTerms,
-                  onChanged: (value) {
-                    setState(() {
-                      _acceptedTerms = value ?? false;
-                    });
-                  },
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text(
-                    'I agree to the Terms and Conditions and Privacy Policy.',
+                LegalConsentCard(
+                  termsViewed: _termsViewed,
+                  privacyViewed: _privacyViewed,
+                  accepted: _acceptedTerms,
+                  onOpenTerms: () => _openLegalDocument(
+                    route: AppRoutes.termsAndConditions,
+                    terms: true,
                   ),
+                  onOpenPrivacy: () => _openLegalDocument(
+                    route: AppRoutes.privacyPolicy,
+                    terms: false,
+                  ),
+                  onAcceptedChanged: (value) {
+                    setState(() => _acceptedTerms = value);
+                  },
                 ),
 
                 const SizedBox(height: AppSpacing.lg),

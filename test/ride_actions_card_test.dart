@@ -10,6 +10,7 @@ void main() {
     var chatCount = 0;
     var reportCount = 0;
     var sosCount = 0;
+    var safetyUpdateCount = 0;
     var cancelCount = 0;
     var noShowCount = 0;
 
@@ -25,6 +26,7 @@ void main() {
                 onMessage: () => chatCount++,
                 onReport: () => reportCount++,
                 onSos: () => sosCount++,
+                onSafetyUpdate: () => safetyUpdateCount++,
                 onCancel: () => cancelCount++,
                 onNoShow: () => noShowCount++,
                 messageBadge: 3,
@@ -39,6 +41,7 @@ void main() {
     expect(find.text('Chat'), findsOneWidget);
     expect(find.text('Report'), findsOneWidget);
     expect(find.text('SOS'), findsOneWidget);
+    expect(find.text('Safety status'), findsOneWidget);
     expect(find.text('Cancel ride'), findsOneWidget);
     expect(find.text('No-show'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
@@ -49,6 +52,7 @@ void main() {
     await tester.tap(find.text('Chat'));
     await tester.tap(find.text('Report'));
     await tester.tap(find.text('SOS'));
+    await tester.tap(find.text('Safety status'));
     await tester.tap(find.text('Cancel ride'));
     await tester.tap(find.text('No-show'));
 
@@ -56,6 +60,7 @@ void main() {
     expect(chatCount, 1);
     expect(reportCount, 1);
     expect(sosCount, 1);
+    expect(safetyUpdateCount, 1);
     expect(cancelCount, 1);
     expect(noShowCount, 1);
   });

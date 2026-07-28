@@ -39,6 +39,10 @@ class DriverRegistrationData extends Equatable {
     this.crDocument,
     this.vehiclePhoto,
     this.profilePhoto,
+    this.termsAcceptedAt,
+    this.privacyAcceptedAt,
+    this.termsVersion,
+    this.privacyVersion,
   });
 
   //==========================================================================
@@ -108,6 +112,11 @@ class DriverRegistrationData extends Equatable {
 
   final String? profilePhoto;
 
+  final DateTime? termsAcceptedAt;
+  final DateTime? privacyAcceptedAt;
+  final String? termsVersion;
+  final String? privacyVersion;
+
   //==========================================================================
   // Helpers
   //==========================================================================
@@ -152,6 +161,10 @@ class DriverRegistrationData extends Equatable {
     String? crDocument,
     String? vehiclePhoto,
     String? profilePhoto,
+    DateTime? termsAcceptedAt,
+    DateTime? privacyAcceptedAt,
+    String? termsVersion,
+    String? privacyVersion,
   }) {
     return DriverRegistrationData(
       firstName: firstName ?? this.firstName,
@@ -162,11 +175,9 @@ class DriverRegistrationData extends Equatable {
       email: email ?? this.email,
       password: password ?? this.password,
 
-      licenseNumber:
-          licenseNumber ?? this.licenseNumber,
+      licenseNumber: licenseNumber ?? this.licenseNumber,
 
-      licenseExpiry:
-          licenseExpiry ?? this.licenseExpiry,
+      licenseExpiry: licenseExpiry ?? this.licenseExpiry,
 
       region: region ?? this.region,
       province: province ?? this.province,
@@ -174,81 +185,74 @@ class DriverRegistrationData extends Equatable {
       barangay: barangay ?? this.barangay,
       todaId: todaId ?? this.todaId,
 
-      plateNumber:
-          plateNumber ?? this.plateNumber,
+      plateNumber: plateNumber ?? this.plateNumber,
 
-      vehicleType:
-          vehicleType ?? this.vehicleType,
+      vehicleType: vehicleType ?? this.vehicleType,
 
-      vehicleBrand:
-          vehicleBrand ?? this.vehicleBrand,
+      vehicleBrand: vehicleBrand ?? this.vehicleBrand,
 
-      vehicleModel:
-          vehicleModel ?? this.vehicleModel,
+      vehicleModel: vehicleModel ?? this.vehicleModel,
 
-      vehicleColor:
-          vehicleColor ?? this.vehicleColor,
+      vehicleColor: vehicleColor ?? this.vehicleColor,
 
-      seatingCapacity:
-          seatingCapacity ?? this.seatingCapacity,
+      seatingCapacity: seatingCapacity ?? this.seatingCapacity,
 
-      driverLicenseFront:
-          driverLicenseFront ??
-              this.driverLicenseFront,
+      driverLicenseFront: driverLicenseFront ?? this.driverLicenseFront,
 
-      driverLicenseBack:
-          driverLicenseBack ??
-              this.driverLicenseBack,
+      driverLicenseBack: driverLicenseBack ?? this.driverLicenseBack,
 
-      governmentId:
-          governmentId ?? this.governmentId,
+      governmentId: governmentId ?? this.governmentId,
 
-      orDocument:
-          orDocument ?? this.orDocument,
+      orDocument: orDocument ?? this.orDocument,
 
-      crDocument:
-          crDocument ?? this.crDocument,
+      crDocument: crDocument ?? this.crDocument,
 
-      vehiclePhoto:
-          vehiclePhoto ?? this.vehiclePhoto,
+      vehiclePhoto: vehiclePhoto ?? this.vehiclePhoto,
 
-      profilePhoto:
-          profilePhoto ?? this.profilePhoto,
+      profilePhoto: profilePhoto ?? this.profilePhoto,
+      termsAcceptedAt: termsAcceptedAt ?? this.termsAcceptedAt,
+      privacyAcceptedAt: privacyAcceptedAt ?? this.privacyAcceptedAt,
+      termsVersion: termsVersion ?? this.termsVersion,
+      privacyVersion: privacyVersion ?? this.privacyVersion,
     );
   }
 
   @override
   List<Object?> get props => [
-        firstName,
-        middleName,
-        lastName,
-        dateOfBirth,
-        phoneNumber,
-        email,
-        password,
+    firstName,
+    middleName,
+    lastName,
+    dateOfBirth,
+    phoneNumber,
+    email,
+    password,
 
-        licenseNumber,
-        licenseExpiry,
+    licenseNumber,
+    licenseExpiry,
 
-        region,
-        province,
-        city,
-        barangay,
-        todaId,
+    region,
+    province,
+    city,
+    barangay,
+    todaId,
 
-        plateNumber,
-        vehicleType,
-        vehicleBrand,
-        vehicleModel,
-        vehicleColor,
-        seatingCapacity,
+    plateNumber,
+    vehicleType,
+    vehicleBrand,
+    vehicleModel,
+    vehicleColor,
+    seatingCapacity,
 
-        driverLicenseFront,
-        driverLicenseBack,
-        governmentId,
-        orDocument,
-        crDocument,
-        vehiclePhoto,
-        profilePhoto,
-      ];
+    driverLicenseFront,
+    driverLicenseBack,
+    governmentId,
+    orDocument,
+    crDocument,
+    vehiclePhoto,
+    profilePhoto,
+    termsAcceptedAt,
+    privacyAcceptedAt,
+    termsVersion,
+    privacyVersion,
+  ];
 }

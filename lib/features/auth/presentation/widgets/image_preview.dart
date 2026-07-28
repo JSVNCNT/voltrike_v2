@@ -7,35 +7,25 @@ import '../../../../core/theme/app_radius.dart';
 import '../../../../core/theme/app_spacing.dart';
 
 class ImagePreview extends StatelessWidget {
-  const ImagePreview({
-    super.key,
-    required this.file,
-    this.height = 180,
-  });
+  const ImagePreview({super.key, required this.file, this.aspectRatio = 4 / 3});
 
   final File? file;
-  final double height;
+  final double aspectRatio;
 
   @override
   Widget build(BuildContext context) {
     if (file == null) {
-      return Container(
-        height: height,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(
-            AppRadius.lg,
+      return AspectRatio(
+        aspectRatio: aspectRatio,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: Colors.grey.shade300),
           ),
-          border: Border.all(
-            color: Colors.grey.shade300,
-          ),
-        ),
-        child: const Center(
-          child: Icon(
-            Icons.image_outlined,
-            size: 56,
-            color: Colors.grey,
+          child: const Center(
+            child: Icon(Icons.image_outlined, size: 56, color: Colors.grey),
           ),
         ),
       );
@@ -48,16 +38,11 @@ class ImagePreview extends StatelessWidget {
           builder: (_) {
             return Dialog(
               backgroundColor: Colors.black,
-              insetPadding: const EdgeInsets.all(
-                AppSpacing.md,
-              ),
+              insetPadding: const EdgeInsets.all(AppSpacing.md),
               child: Stack(
                 children: [
                   InteractiveViewer(
-                    child: Image.file(
-                      file!,
-                      fit: BoxFit.contain,
-                    ),
+                    child: Image.file(file!, fit: BoxFit.contain),
                   ),
 
                   Positioned(
@@ -67,10 +52,7 @@ class ImagePreview extends StatelessWidget {
                       onPressed: () {
                         Navigator.pop(context);
                       },
-                      icon: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                      ),
+                      icon: const Icon(Icons.close, color: Colors.white),
                     ),
                   ),
                 ],
@@ -80,17 +62,14 @@ class ImagePreview extends StatelessWidget {
         );
       },
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(
-          AppRadius.lg,
-        ),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Stack(
           children: [
-            SizedBox(
-              width: double.infinity,
-              height: height,
-              child: Image.file(
-                file!,
-                fit: BoxFit.cover,
+            AspectRatio(
+              aspectRatio: aspectRatio,
+              child: SizedBox(
+                width: double.infinity,
+                child: Image.file(file!, fit: BoxFit.cover),
               ),
             ),
 
@@ -103,11 +82,7 @@ class ImagePreview extends StatelessWidget {
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.check,
-                  color: Colors.white,
-                  size: 18,
-                ),
+                child: const Icon(Icons.check, color: Colors.white, size: 18),
               ),
             ),
           ],
