@@ -12,6 +12,7 @@ import '../features/auth/presentation/screens/passenger_registration/passenger_r
 import '../features/auth/presentation/screens/driver_registration/driver_registration_step1_screen.dart';
 import '../features/auth/presentation/screens/driver_registration/driver_registration_step2_screen.dart';
 import '../features/auth/presentation/screens/driver_registration/driver_registration_step3_screen.dart';
+import '../features/auth/presentation/screens/driver_registration/driver_registration_review_screen.dart';
 import '../features/auth/presentation/screens/driver_registration/upload_documents_screen.dart';
 import '../features/auth/presentation/screens/driver_registration/under_review_screen.dart';
 
@@ -127,22 +128,35 @@ final GoRouter appRouter = GoRouter(
 
     GoRoute(
       path: AppRoutes.driverRegisterStep1,
-      builder: (context, state) => const DriverRegistrationStep1Screen(),
+      builder: (context, state) => DriverRegistrationStep1Screen(
+        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      ),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep2,
-      builder: (context, state) => const DriverRegistrationStep2Screen(),
+      builder: (context, state) => DriverRegistrationStep2Screen(
+        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      ),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep3,
-      builder: (context, state) => const DriverRegistrationStep3Screen(),
+      builder: (context, state) => DriverRegistrationStep3Screen(
+        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      ),
     ),
 
     GoRoute(
       path: AppRoutes.uploadDocuments,
-      builder: (context, state) => const UploadDocumentsScreen(),
+      builder: (context, state) => UploadDocumentsScreen(
+        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      ),
+    ),
+
+    GoRoute(
+      path: AppRoutes.driverRegisterReview,
+      builder: (context, state) => const DriverRegistrationReviewScreen(),
     ),
 
     GoRoute(

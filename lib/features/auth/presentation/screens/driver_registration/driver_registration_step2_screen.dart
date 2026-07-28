@@ -17,11 +17,14 @@ import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
 import '../../widgets/loading_overlay.dart';
+import '../../widgets/registration_back_scope.dart';
 import '../../widgets/registration_step_indicator.dart';
 import '../../widgets/validation_message.dart';
 
 class DriverRegistrationStep2Screen extends ConsumerStatefulWidget {
-  const DriverRegistrationStep2Screen({super.key});
+  const DriverRegistrationStep2Screen({super.key, this.returnToReview = false});
+
+  final bool returnToReview;
 
   @override
   ConsumerState<DriverRegistrationStep2Screen> createState() =>
@@ -204,161 +207,188 @@ class _DriverRegistrationStep2ScreenState
           todaId: _selectedToda!,
         );
 
-    context.go(AppRoutes.driverRegisterStep3);
+    context.go(
+      widget.returnToReview
+          ? AppRoutes.driverRegisterReview
+          : AppRoutes.driverRegisterStep3,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return LoadingOverlay(
-      isLoading: _loading,
-      child: AuthScaffold(
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const AuthLogo(logoSize: 72),
+    return RegistrationBackScope(
+      fallbackRoute: widget.returnToReview
+          ? AppRoutes.driverRegisterReview
+          : AppRoutes.driverRegisterStep1,
+      child: LoadingOverlay(
+        isLoading: _loading,
+        child: AuthScaffold(
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const AuthLogo(logoSize: 72),
 
-                const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(height: AppSpacing.xl),
 
-                const AuthHeader(
-                  title: 'Driver registration',
-                  subtitle: 'Address and TODA assignment',
-                ),
-
-                const SizedBox(height: AppSpacing.lg),
-                const RegistrationStepIndicator(currentStep: 2, totalSteps: 4),
-                const SizedBox(height: AppSpacing.xl),
-
-                if (_error != null) ...[
-                  ValidationMessage(message: _error!),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-
-                DropdownButtonFormField<String>(
-                  initialValue:
-                      _regions.any((e) => e['code'] == _selectedRegion)
-                      ? _selectedRegion
-                      : null,
-                  decoration: const InputDecoration(labelText: 'Region'),
-                  items: _regions
-                      .map(
-                        (region) => DropdownMenuItem<String>(
-                          value: region['code'] as String,
-                          child: Text(region['name'] as String),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _onRegionChanged,
-                  validator: (value) => value == null ? 'Required' : null,
-                ),
-
-                const SizedBox(height: AppSpacing.md),
-
-                DropdownButtonFormField<String>(
-                  initialValue:
-                      _provinces.any((e) => e['code'] == _selectedProvince)
-                      ? _selectedProvince
-                      : null,
-                  decoration: const InputDecoration(labelText: 'Province'),
-                  items: _provinces
-                      .map(
-                        (province) => DropdownMenuItem<String>(
-                          value: province['code'] as String,
-                          child: Text(province['name'] as String),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _selectedRegion == null
-                      ? null
-                      : _onProvinceChanged,
-                  validator: (value) => value == null ? 'Required' : null,
-                ),
-
-                const SizedBox(height: AppSpacing.md),
-
-                DropdownButtonFormField<String>(
-                  initialValue: _cities.any((e) => e['code'] == _selectedCity)
-                      ? _selectedCity
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'City / Municipality',
+                  const AuthHeader(
+                    title: 'Driver registration',
+                    subtitle: 'Address and TODA assignment',
                   ),
-                  items: _cities
-                      .map(
-                        (city) => DropdownMenuItem<String>(
-                          value: city['code'] as String,
-                          child: Text(city['name'] as String),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _selectedProvince == null ? null : _onCityChanged,
-                  validator: (value) => value == null ? 'Required' : null,
-                ),
 
-                const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: AppSpacing.lg),
+                  const RegistrationStepIndicator(
+                    currentStep: 2,
+                    totalSteps: 5,
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
 
-                DropdownButtonFormField<String>(
-                  initialValue:
-                      _barangays.any((e) => e['code'] == _selectedBarangay)
-                      ? _selectedBarangay
-                      : null,
-                  decoration: const InputDecoration(labelText: 'Barangay'),
-                  items: _barangays
-                      .map(
-                        (barangay) => DropdownMenuItem<String>(
-                          value: barangay['code'] as String,
-                          child: Text(barangay['name'] as String),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _selectedCity == null ? null : _onBarangayChanged,
-                  validator: (value) => value == null ? 'Required' : null,
-                ),
+                  if (_error != null) ...[
+                    ValidationMessage(message: _error!),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
 
-                const SizedBox(height: AppSpacing.md),
-                DropdownButtonFormField<String>(
-                  initialValue: _todas.any((toda) => toda.id == _selectedToda)
-                      ? _selectedToda
-                      : null,
-                  decoration: const InputDecoration(labelText: 'TODA'),
-                  items: _todas
-                      .map(
-                        (toda) => DropdownMenuItem<String>(
-                          value: toda.id,
-                          child: Text(toda.name),
-                        ),
-                      )
-                      .toList(),
+                  DropdownButtonFormField<String>(
+                    initialValue:
+                        _regions.any((e) => e['code'] == _selectedRegion)
+                        ? _selectedRegion
+                        : null,
+                    decoration: const InputDecoration(labelText: 'Region'),
+                    items: _regions
+                        .map(
+                          (region) => DropdownMenuItem<String>(
+                            value: region['code'] as String,
+                            child: Text(region['name'] as String),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _onRegionChanged,
+                    validator: (value) => value == null ? 'Required' : null,
+                  ),
 
-                  // TODAs are no longer filtered by barangay.
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedToda = value;
-                    });
-                  },
+                  const SizedBox(height: AppSpacing.md),
 
-                  validator: (value) =>
-                      value == null ? 'Please select a TODA.' : null,
-                ),
+                  DropdownButtonFormField<String>(
+                    initialValue:
+                        _provinces.any((e) => e['code'] == _selectedProvince)
+                        ? _selectedProvince
+                        : null,
+                    decoration: const InputDecoration(labelText: 'Province'),
+                    items: _provinces
+                        .map(
+                          (province) => DropdownMenuItem<String>(
+                            value: province['code'] as String,
+                            child: Text(province['name'] as String),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _selectedRegion == null
+                        ? null
+                        : _onProvinceChanged,
+                    validator: (value) => value == null ? 'Required' : null,
+                  ),
 
-                const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(height: AppSpacing.md),
 
-                PrimaryButton(text: 'Continue', onPressed: _continue),
+                  DropdownButtonFormField<String>(
+                    initialValue: _cities.any((e) => e['code'] == _selectedCity)
+                        ? _selectedCity
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'City / Municipality',
+                    ),
+                    items: _cities
+                        .map(
+                          (city) => DropdownMenuItem<String>(
+                            value: city['code'] as String,
+                            child: Text(city['name'] as String),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _selectedProvince == null
+                        ? null
+                        : _onCityChanged,
+                    validator: (value) => value == null ? 'Required' : null,
+                  ),
 
-                const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: AppSpacing.md),
 
-                TextButton.icon(
-                  onPressed: () {
-                    context.go(AppRoutes.driverRegisterStep1);
-                  },
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Back'),
-                ),
+                  DropdownButtonFormField<String>(
+                    initialValue:
+                        _barangays.any((e) => e['code'] == _selectedBarangay)
+                        ? _selectedBarangay
+                        : null,
+                    decoration: const InputDecoration(labelText: 'Barangay'),
+                    items: _barangays
+                        .map(
+                          (barangay) => DropdownMenuItem<String>(
+                            value: barangay['code'] as String,
+                            child: Text(barangay['name'] as String),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _selectedCity == null
+                        ? null
+                        : _onBarangayChanged,
+                    validator: (value) => value == null ? 'Required' : null,
+                  ),
 
-                const SizedBox(height: AppSpacing.xxl),
-              ],
+                  const SizedBox(height: AppSpacing.md),
+                  DropdownButtonFormField<String>(
+                    initialValue: _todas.any((toda) => toda.id == _selectedToda)
+                        ? _selectedToda
+                        : null,
+                    decoration: const InputDecoration(labelText: 'TODA'),
+                    items: _todas
+                        .map(
+                          (toda) => DropdownMenuItem<String>(
+                            value: toda.id,
+                            child: Text(toda.name),
+                          ),
+                        )
+                        .toList(),
+
+                    // TODAs are no longer filtered by barangay.
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedToda = value;
+                      });
+                    },
+
+                    validator: (value) =>
+                        value == null ? 'Please select a TODA.' : null,
+                  ),
+
+                  const SizedBox(height: AppSpacing.xl),
+
+                  PrimaryButton(
+                    text: widget.returnToReview ? 'Save changes' : 'Continue',
+                    onPressed: _continue,
+                  ),
+
+                  const SizedBox(height: AppSpacing.md),
+
+                  TextButton.icon(
+                    onPressed: () {
+                      context.go(
+                        widget.returnToReview
+                            ? AppRoutes.driverRegisterReview
+                            : AppRoutes.driverRegisterStep1,
+                      );
+                    },
+                    icon: const Icon(Icons.arrow_back),
+                    label: Text(
+                      widget.returnToReview
+                          ? 'Cancel and return to review'
+                          : 'Back',
+                    ),
+                  ),
+
+                  const SizedBox(height: AppSpacing.xxl),
+                ],
+              ),
             ),
           ),
         ),

@@ -15,11 +15,14 @@ import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
 import '../../widgets/loading_overlay.dart';
+import '../../widgets/registration_back_scope.dart';
 import '../../widgets/registration_step_indicator.dart';
 import '../../widgets/validation_message.dart';
 
 class DriverRegistrationStep1Screen extends ConsumerStatefulWidget {
-  const DriverRegistrationStep1Screen({super.key});
+  const DriverRegistrationStep1Screen({super.key, this.returnToReview = false});
+
+  final bool returnToReview;
 
   @override
   ConsumerState<DriverRegistrationStep1Screen> createState() =>
@@ -125,7 +128,11 @@ class _DriverRegistrationStep1ScreenState
           password: _passwordController.text,
         );
 
-    context.go(AppRoutes.driverRegisterStep2);
+    context.go(
+      widget.returnToReview
+          ? AppRoutes.driverRegisterReview
+          : AppRoutes.driverRegisterStep2,
+    );
   }
 
   bool _isAtLeast18(DateTime birthDate) {
@@ -163,164 +170,183 @@ class _DriverRegistrationStep1ScreenState
 
   @override
   Widget build(BuildContext context) {
-    return LoadingOverlay(
-      isLoading: false,
-      child: AuthScaffold(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              const AuthLogo(logoSize: 72),
+    return RegistrationBackScope(
+      fallbackRoute: widget.returnToReview
+          ? AppRoutes.driverRegisterReview
+          : AppRoutes.intro,
+      child: LoadingOverlay(
+        isLoading: false,
+        child: AuthScaffold(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                const AuthLogo(logoSize: 72),
 
-              const SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.xl),
 
-              const AuthHeader(
-                title: 'Driver registration',
-                subtitle: 'Personal and account information',
-              ),
+                const AuthHeader(
+                  title: 'Driver registration',
+                  subtitle: 'Personal and account information',
+                ),
 
-              const SizedBox(height: AppSpacing.lg),
-              const RegistrationStepIndicator(currentStep: 1, totalSteps: 4),
-              const SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.lg),
+                const RegistrationStepIndicator(currentStep: 1, totalSteps: 5),
+                const SizedBox(height: AppSpacing.xl),
 
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.verified_user_outlined),
-                  title: const Text('Drivers must be 18 or older'),
-                  subtitle: const Text(
-                    'Date of birth is collected to confirm the minimum age for '
-                    'professional driving and will be reviewed with your ID.',
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.verified_user_outlined),
+                    title: const Text('Drivers must be 18 or older'),
+                    subtitle: const Text(
+                      'Date of birth is collected to confirm the minimum age for '
+                      'professional driving and will be reviewed with your ID.',
+                    ),
                   ),
                 ),
-              ),
 
-              const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.lg),
 
-              if (_error != null) ...[
-                ValidationMessage(message: _error!),
+                if (_error != null) ...[
+                  ValidationMessage(message: _error!),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+
+                AppTextField(
+                  controller: _firstNameController,
+                  label: 'First Name',
+                  hint: 'Juan',
+                  prefixIcon: Icons.person_outline,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  validator: (value) => Validators.validateRequired(
+                    value,
+                    fieldName: 'First Name',
+                  ),
+                ),
+
                 const SizedBox(height: AppSpacing.md),
-              ],
 
-              AppTextField(
-                controller: _firstNameController,
-                label: 'First Name',
-                hint: 'Juan',
-                prefixIcon: Icons.person_outline,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                validator: (value) =>
-                    Validators.validateRequired(value, fieldName: 'First Name'),
-              ),
+                AppTextField(
+                  controller: _middleNameController,
+                  label: 'Middle Name (Optional)',
+                  hint: 'Santos',
+                  prefixIcon: Icons.person_outline,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                ),
 
-              const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.md),
 
-              AppTextField(
-                controller: _middleNameController,
-                label: 'Middle Name (Optional)',
-                hint: 'Santos',
-                prefixIcon: Icons.person_outline,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-              ),
-
-              const SizedBox(height: AppSpacing.md),
-
-              AppTextField(
-                controller: _lastNameController,
-                label: 'Last Name',
-                hint: 'Dela Cruz',
-                prefixIcon: Icons.person_outline,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                validator: (value) =>
-                    Validators.validateRequired(value, fieldName: 'Last Name'),
-              ),
-
-              const SizedBox(height: AppSpacing.md),
-
-              GestureDetector(
-                onTap: _selectBirthDate,
-                child: AbsorbPointer(
-                  child: AppTextField(
-                    controller: _birthDateController,
-                    label: 'Date of Birth',
-                    hint: 'YYYY-MM-DD',
-                    prefixIcon: Icons.cake_outlined,
-                    readOnly: true,
-                    validator: (value) => value == null || value.isEmpty
-                        ? 'Date of birth is required.'
-                        : null,
+                AppTextField(
+                  controller: _lastNameController,
+                  label: 'Last Name',
+                  hint: 'Dela Cruz',
+                  prefixIcon: Icons.person_outline,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  validator: (value) => Validators.validateRequired(
+                    value,
+                    fieldName: 'Last Name',
                   ),
                 ),
-              ),
 
-              const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.md),
 
-              AppTextField(
-                controller: _phoneController,
-                label: AppStrings.phoneNumber,
-                hint: '09XXXXXXXXX',
-                prefixIcon: Icons.phone_outlined,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                textInputAction: TextInputAction.next,
-                validator: Validators.validatePhoneNumber,
-              ),
-
-              const SizedBox(height: AppSpacing.md),
-
-              AppTextField(
-                controller: _emailController,
-                label: AppStrings.email,
-                hint: 'example@email.com',
-                prefixIcon: Icons.email_outlined,
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.next,
-                validator: Validators.validateEmail,
-              ),
-
-              const SizedBox(height: AppSpacing.md),
-
-              PasswordField(
-                controller: _passwordController,
-                label: AppStrings.password,
-                hint: 'Minimum 8 characters',
-                textInputAction: TextInputAction.next,
-                validator: Validators.validatePassword,
-              ),
-
-              const SizedBox(height: AppSpacing.md),
-
-              PasswordField(
-                controller: _confirmPasswordController,
-                label: AppStrings.confirmPassword,
-                hint: 'Re-enter your password',
-                textInputAction: TextInputAction.done,
-                validator: (value) => Validators.validateConfirmPassword(
-                  value,
-                  _passwordController.text,
+                GestureDetector(
+                  onTap: _selectBirthDate,
+                  child: AbsorbPointer(
+                    child: AppTextField(
+                      controller: _birthDateController,
+                      label: 'Date of Birth',
+                      hint: 'YYYY-MM-DD',
+                      prefixIcon: Icons.cake_outlined,
+                      readOnly: true,
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Date of birth is required.'
+                          : null,
+                    ),
+                  ),
                 ),
-                onFieldSubmitted: (_) {
-                  _continue();
-                },
-              ),
 
-              const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
 
-              PrimaryButton(
-                text: AppStrings.continueText,
-                onPressed: _continue,
-              ),
+                AppTextField(
+                  controller: _phoneController,
+                  label: AppStrings.phoneNumber,
+                  hint: '09XXXXXXXXX',
+                  prefixIcon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textInputAction: TextInputAction.next,
+                  validator: Validators.validatePhoneNumber,
+                ),
 
-              const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
 
-              TextButton(
-                onPressed: () {
-                  context.go(AppRoutes.login);
-                },
-                child: const Text('Already have an account? Login'),
-              ),
-            ],
+                AppTextField(
+                  controller: _emailController,
+                  label: AppStrings.email,
+                  hint: 'example@email.com',
+                  prefixIcon: Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  validator: Validators.validateEmail,
+                ),
+
+                const SizedBox(height: AppSpacing.md),
+
+                PasswordField(
+                  controller: _passwordController,
+                  label: AppStrings.password,
+                  hint: 'Minimum 8 characters',
+                  textInputAction: TextInputAction.next,
+                  validator: Validators.validatePassword,
+                ),
+
+                const SizedBox(height: AppSpacing.md),
+
+                PasswordField(
+                  controller: _confirmPasswordController,
+                  label: AppStrings.confirmPassword,
+                  hint: 'Re-enter your password',
+                  textInputAction: TextInputAction.done,
+                  validator: (value) => Validators.validateConfirmPassword(
+                    value,
+                    _passwordController.text,
+                  ),
+                  onFieldSubmitted: (_) {
+                    _continue();
+                  },
+                ),
+
+                const SizedBox(height: AppSpacing.lg),
+
+                PrimaryButton(
+                  text: widget.returnToReview
+                      ? 'Save changes'
+                      : AppStrings.continueText,
+                  onPressed: _continue,
+                ),
+
+                const SizedBox(height: AppSpacing.lg),
+
+                TextButton(
+                  onPressed: () {
+                    context.go(
+                      widget.returnToReview
+                          ? AppRoutes.driverRegisterReview
+                          : AppRoutes.login,
+                    );
+                  },
+                  child: Text(
+                    widget.returnToReview
+                        ? 'Cancel and return to review'
+                        : 'Already have an account? Login',
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

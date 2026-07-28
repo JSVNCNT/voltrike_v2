@@ -43,6 +43,8 @@ class AppRoutes {
 
   static const String uploadDocuments = '/register/driver/upload-documents';
 
+  static const String driverRegisterReview = '/register/driver/review';
+
   static const String driverUnderReview = '/driver/under-review';
 
   //==========================================================================

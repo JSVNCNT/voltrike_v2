@@ -1,20 +1,16 @@
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image/image.dart' as image_lib;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../../app/routes.dart';
-import '../../../../../core/errors/domain_error_mapper.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/widgets/buttons/primary_button.dart';
-import '../../../../common/presentation/screens/legal/legal_document_versions.dart';
+import '../../../services/registration_image_preparer.dart';
 
 import '../../providers/driver_registration_data_provider.dart';
-import '../../providers/driver_registration_provider.dart';
 
 import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
@@ -22,12 +18,14 @@ import '../../widgets/auth_scaffold.dart';
 import '../../widgets/document_picker_card.dart';
 import '../../widgets/image_preview.dart';
 import '../../widgets/loading_overlay.dart';
-import '../../widgets/legal_consent_card.dart';
+import '../../widgets/registration_back_scope.dart';
 import '../../widgets/registration_step_indicator.dart';
 import '../../widgets/validation_message.dart';
 
 class UploadDocumentsScreen extends ConsumerStatefulWidget {
-  const UploadDocumentsScreen({super.key});
+  const UploadDocumentsScreen({super.key, this.returnToReview = false});
+
+  final bool returnToReview;
 
   @override
   ConsumerState<UploadDocumentsScreen> createState() =>
@@ -36,6 +34,8 @@ class UploadDocumentsScreen extends ConsumerStatefulWidget {
 
 class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
   final ImagePicker _picker = ImagePicker();
+  final RegistrationImagePreparer _imagePreparer =
+      const RegistrationImagePreparer();
 
   File? _profilePhoto;
 
@@ -51,11 +51,26 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
 
   File? _vehiclePhoto;
 
-  bool _termsViewed = false;
-  bool _privacyViewed = false;
-  bool _acceptedLegal = false;
-
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final registration = ref.read(driverRegistrationDataProvider);
+    _profilePhoto = _fileFromPath(registration.profilePhoto);
+    _licenseFront = _fileFromPath(registration.driverLicenseFront);
+    _licenseBack = _fileFromPath(registration.driverLicenseBack);
+    _governmentId = _fileFromPath(registration.governmentId);
+    _orDocument = _fileFromPath(registration.orDocument);
+    _crDocument = _fileFromPath(registration.crDocument);
+    _vehiclePhoto = _fileFromPath(registration.vehiclePhoto);
+  }
+
+  File? _fileFromPath(String? path) {
+    if (path == null || path.trim().isEmpty) return null;
+    final file = File(path);
+    return file.existsSync() ? file : null;
+  }
 
   Future<void> _pickImage({
     required void Function(File file) setter,
@@ -97,25 +112,23 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
       );
       if (picked == null) return;
 
-      final processedPath = await Isolate.run(
-        () => _prepareRegistrationImage(picked.path, aspectRatio, targetWidth),
+      final file = await _imagePreparer.prepare(
+        sourcePath: picked.path,
+        targetAspectRatio: aspectRatio,
+        targetWidth: targetWidth,
       );
-      final file = File(processedPath);
-      if (await file.length() > 4 * 1024 * 1024) {
-        throw const FormatException(
-          'The processed image is larger than 4 MB. Retake it with better '
-          'lighting and less background.',
-        );
-      }
       if (!mounted) return;
       setState(() {
         setter(file);
         _error = null;
       });
-    } catch (error) {
+      _persistDocuments();
+    } catch (error, stackTrace) {
+      debugPrint('Registration image preparation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
       setState(() {
-        _error = error is FormatException
+        _error = error is RegistrationImagePreparationException
             ? error.message
             : 'Could not prepare that image. Please try again.';
       });
@@ -123,411 +136,310 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
   }
 
   bool get _isComplete {
-    return _profilePhoto != null &&
-        _licenseFront != null &&
-        _licenseBack != null &&
-        _governmentId != null &&
-        _orDocument != null &&
-        _crDocument != null &&
-        _vehiclePhoto != null &&
-        _acceptedLegal;
+    return <File?>[
+      _profilePhoto,
+      _licenseFront,
+      _licenseBack,
+      _governmentId,
+      _orDocument,
+      _crDocument,
+      _vehiclePhoto,
+    ].every((file) => file != null && file.existsSync());
   }
 
-  Future<void> _submit() async {
+  void _persistDocuments() {
+    ref
+        .read(driverRegistrationDataProvider.notifier)
+        .updateData(
+          profilePhoto: _profilePhoto?.path,
+          driverLicenseFront: _licenseFront?.path,
+          driverLicenseBack: _licenseBack?.path,
+          governmentId: _governmentId?.path,
+          orDocument: _orDocument?.path,
+          crDocument: _crDocument?.path,
+          vehiclePhoto: _vehiclePhoto?.path,
+        );
+  }
+
+  void _continue() {
     if (!_isComplete) {
       setState(() {
-        _error = !_acceptedLegal
-            ? 'Review and accept the Terms and Conditions and Privacy Policy.'
-            : 'Please capture all required registration images.';
+        _error = 'Please capture all required registration images.';
       });
-
       return;
     }
 
     setState(() {
       _error = null;
     });
-
-    ref
-        .read(driverRegistrationDataProvider.notifier)
-        .updateData(
-          profilePhoto: _profilePhoto!.path,
-          driverLicenseFront: _licenseFront!.path,
-          driverLicenseBack: _licenseBack!.path,
-          governmentId: _governmentId!.path,
-          orDocument: _orDocument!.path,
-          crDocument: _crDocument!.path,
-          vehiclePhoto: _vehiclePhoto!.path,
-          termsAcceptedAt: DateTime.now(),
-          privacyAcceptedAt: DateTime.now(),
-          termsVersion: LegalDocumentVersions.terms,
-          privacyVersion: LegalDocumentVersions.privacy,
-        );
-
-    final registration = ref.read(driverRegistrationDataProvider);
-
-    try {
-      await ref
-          .read(driverRegistrationControllerProvider.notifier)
-          .register(registration);
-
-      if (!mounted) {
-        return;
-      }
-
-      context.go(AppRoutes.driverUnderReview);
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _error = DomainErrorMapper.message(e);
-      });
-    }
-  }
-
-  Future<void> _openLegalDocument({
-    required String route,
-    required bool terms,
-  }) async {
-    final confirmed = await context.push<bool>('$route?acknowledge=true');
-    if (!mounted || confirmed != true) return;
-    setState(() {
-      if (terms) {
-        _termsViewed = true;
-      } else {
-        _privacyViewed = true;
-      }
-      _acceptedLegal = false;
-      _error = null;
-    });
+    _persistDocuments();
+    context.go(AppRoutes.driverRegisterReview);
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(driverRegistrationControllerProvider);
-    return LoadingOverlay(
-      isLoading: state.isLoading,
-      child: AuthScaffold(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              const AuthLogo(logoSize: 72),
+    return RegistrationBackScope(
+      fallbackRoute: widget.returnToReview
+          ? AppRoutes.driverRegisterReview
+          : AppRoutes.driverRegisterStep3,
+      child: LoadingOverlay(
+        isLoading: false,
+        child: AuthScaffold(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                const AuthLogo(logoSize: 72),
 
-              const SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.xl),
 
-              const AuthHeader(
-                title: 'Driver registration',
-                subtitle: 'Required documents for TODA review',
-              ),
+                const AuthHeader(
+                  title: 'Driver registration',
+                  subtitle: 'Required documents for TODA review',
+                ),
 
-              const SizedBox(height: AppSpacing.lg),
-              const RegistrationStepIndicator(currentStep: 4, totalSteps: 4),
-              const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.lg),
+                const RegistrationStepIndicator(currentStep: 4, totalSteps: 5),
+                const SizedBox(height: AppSpacing.lg),
 
-              if (_error != null) ...[
-                ValidationMessage(message: _error!),
-                const SizedBox(height: AppSpacing.md),
-              ],
+                if (_error != null) ...[
+                  ValidationMessage(message: _error!),
+                  const SizedBox(height: AppSpacing.md),
+                ],
 
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Why these images are required',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Your assigned TODA reviews them to confirm identity, '
-                        'driving eligibility, and vehicle registration before '
-                        'you can carry passengers. Clear, current images also '
-                        'support passenger safety and incident review. Access '
-                        'is limited to you and authorised reviewers.',
-                      ),
-                    ],
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Why these images are required',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Your assigned TODA reviews them to confirm identity, '
+                          'driving eligibility, and vehicle registration before '
+                          'you can carry passengers. Clear, current images also '
+                          'support passenger safety and incident review. Access '
+                          'is limited to you and authorised reviewers.',
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
 
-              const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.lg),
 
-              //--------------------------------------------------
-              // Profile Photo
-              //--------------------------------------------------
-              DocumentPickerCard(
-                title: 'Profile Photo',
-                icon: Icons.person,
-                file: _profilePhoto,
-                instruction: 'Camera or gallery • square portrait',
-                onTap: () => _pickImage(
-                  setter: (file) => _profilePhoto = file,
-                  aspectRatio: 1,
-                  targetWidth: 1080,
-                  allowGallery: true,
+                //--------------------------------------------------
+                // Profile Photo
+                //--------------------------------------------------
+                DocumentPickerCard(
+                  title: 'Profile Photo',
+                  icon: Icons.person,
+                  file: _profilePhoto,
+                  instruction: 'Camera or gallery • square portrait',
+                  onTap: () => _pickImage(
+                    setter: (file) => _profilePhoto = file,
+                    aspectRatio: 1,
+                    targetWidth: 1080,
+                    allowGallery: true,
+                  ),
                 ),
-              ),
 
-              if (_profilePhoto != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                ImagePreview(file: _profilePhoto, aspectRatio: 1),
+                if (_profilePhoto != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ImagePreview(file: _profilePhoto, aspectRatio: 1),
+                ],
+
+                const SizedBox(height: AppSpacing.lg),
+
+                //--------------------------------------------------
+                // Driver License Front
+                //--------------------------------------------------
+                DocumentPickerCard(
+                  title: 'Driver License (Front)',
+                  icon: Icons.badge_outlined,
+                  file: _licenseFront,
+                  instruction: 'Camera required • hold ID horizontally',
+                  cameraOnly: true,
+                  onTap: () => _pickImage(
+                    setter: (file) => _licenseFront = file,
+                    aspectRatio: 1.586,
+                    targetWidth: 1600,
+                    allowGallery: false,
+                  ),
+                ),
+
+                if (_licenseFront != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ImagePreview(file: _licenseFront, aspectRatio: 1.586),
+                ],
+
+                const SizedBox(height: AppSpacing.lg),
+
+                //--------------------------------------------------
+                // Driver License Back
+                //--------------------------------------------------
+                DocumentPickerCard(
+                  title: 'Driver License (Back)',
+                  icon: Icons.badge,
+                  file: _licenseBack,
+                  instruction: 'Camera required • hold ID horizontally',
+                  cameraOnly: true,
+                  onTap: () => _pickImage(
+                    setter: (file) => _licenseBack = file,
+                    aspectRatio: 1.586,
+                    targetWidth: 1600,
+                    allowGallery: false,
+                  ),
+                ),
+
+                if (_licenseBack != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ImagePreview(file: _licenseBack, aspectRatio: 1.586),
+                ],
+
+                const SizedBox(height: AppSpacing.lg),
+
+                //--------------------------------------------------
+                // Government ID
+                //--------------------------------------------------
+                DocumentPickerCard(
+                  title: 'Government ID',
+                  icon: Icons.credit_card,
+                  file: _governmentId,
+                  instruction: 'Camera required • hold ID horizontally',
+                  cameraOnly: true,
+                  onTap: () => _pickImage(
+                    setter: (file) => _governmentId = file,
+                    aspectRatio: 1.586,
+                    targetWidth: 1600,
+                    allowGallery: false,
+                  ),
+                ),
+
+                if (_governmentId != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ImagePreview(file: _governmentId, aspectRatio: 1.586),
+                ],
+
+                const SizedBox(height: AppSpacing.lg),
+
+                //--------------------------------------------------
+                // Official Receipt (OR)
+                //--------------------------------------------------
+                DocumentPickerCard(
+                  title: 'Official Receipt (OR)',
+                  icon: Icons.receipt_long,
+                  file: _orDocument,
+                  instruction: 'Camera required • fill the document frame',
+                  cameraOnly: true,
+                  onTap: () => _pickImage(
+                    setter: (file) => _orDocument = file,
+                    aspectRatio: 1 / 1.414,
+                    targetWidth: 1400,
+                    allowGallery: false,
+                  ),
+                ),
+
+                if (_orDocument != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ImagePreview(file: _orDocument, aspectRatio: 1 / 1.414),
+                ],
+
+                const SizedBox(height: AppSpacing.lg),
+
+                //--------------------------------------------------
+                // Certificate of Registration (CR)
+                //--------------------------------------------------
+                DocumentPickerCard(
+                  title: 'Certificate of Registration (CR)',
+                  icon: Icons.description,
+                  file: _crDocument,
+                  instruction: 'Camera required • fill the document frame',
+                  cameraOnly: true,
+                  onTap: () => _pickImage(
+                    setter: (file) => _crDocument = file,
+                    aspectRatio: 1 / 1.414,
+                    targetWidth: 1400,
+                    allowGallery: false,
+                  ),
+                ),
+
+                if (_crDocument != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ImagePreview(file: _crDocument, aspectRatio: 1 / 1.414),
+                ],
+
+                const SizedBox(height: AppSpacing.lg),
+
+                //--------------------------------------------------
+                // Vehicle Photo
+                //--------------------------------------------------
+                DocumentPickerCard(
+                  title: 'Vehicle Photo',
+                  icon: Icons.directions_car,
+                  file: _vehiclePhoto,
+                  instruction: 'Camera or gallery • show the full vehicle',
+                  onTap: () => _pickImage(
+                    setter: (file) => _vehiclePhoto = file,
+                    aspectRatio: 4 / 3,
+                    targetWidth: 1600,
+                    allowGallery: true,
+                  ),
+                ),
+
+                if (_vehiclePhoto != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ImagePreview(file: _vehiclePhoto, aspectRatio: 4 / 3),
+                ],
+
+                const SizedBox(height: AppSpacing.xl),
+
+                //--------------------------------------------------
+                // Continue to review
+                //--------------------------------------------------
+                PrimaryButton(
+                  text: 'Continue to Review',
+                  onPressed: _continue,
+                  icon: Icons.fact_check_outlined,
+                ),
+
+                const SizedBox(height: AppSpacing.md),
+
+                TextButton.icon(
+                  onPressed: () {
+                    _persistDocuments();
+                    context.go(
+                      widget.returnToReview
+                          ? AppRoutes.driverRegisterReview
+                          : AppRoutes.driverRegisterStep3,
+                    );
+                  },
+                  icon: const Icon(Icons.arrow_back),
+                  label: Text(
+                    widget.returnToReview
+                        ? 'Cancel and return to review'
+                        : 'Back',
+                  ),
+                ),
+
+                const SizedBox(height: AppSpacing.xl),
+
+                const Text(
+                  'Your images are not submitted yet. Review every detail and '
+                  'give final consent on the next screen.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+
+                const SizedBox(height: AppSpacing.xxl),
               ],
-
-              const SizedBox(height: AppSpacing.lg),
-
-              //--------------------------------------------------
-              // Driver License Front
-              //--------------------------------------------------
-              DocumentPickerCard(
-                title: 'Driver License (Front)',
-                icon: Icons.badge_outlined,
-                file: _licenseFront,
-                instruction: 'Camera required • hold ID horizontally',
-                cameraOnly: true,
-                onTap: () => _pickImage(
-                  setter: (file) => _licenseFront = file,
-                  aspectRatio: 1.586,
-                  targetWidth: 1600,
-                  allowGallery: false,
-                ),
-              ),
-
-              if (_licenseFront != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                ImagePreview(file: _licenseFront, aspectRatio: 1.586),
-              ],
-
-              const SizedBox(height: AppSpacing.lg),
-
-              //--------------------------------------------------
-              // Driver License Back
-              //--------------------------------------------------
-              DocumentPickerCard(
-                title: 'Driver License (Back)',
-                icon: Icons.badge,
-                file: _licenseBack,
-                instruction: 'Camera required • hold ID horizontally',
-                cameraOnly: true,
-                onTap: () => _pickImage(
-                  setter: (file) => _licenseBack = file,
-                  aspectRatio: 1.586,
-                  targetWidth: 1600,
-                  allowGallery: false,
-                ),
-              ),
-
-              if (_licenseBack != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                ImagePreview(file: _licenseBack, aspectRatio: 1.586),
-              ],
-
-              const SizedBox(height: AppSpacing.lg),
-
-              //--------------------------------------------------
-              // Government ID
-              //--------------------------------------------------
-              DocumentPickerCard(
-                title: 'Government ID',
-                icon: Icons.credit_card,
-                file: _governmentId,
-                instruction: 'Camera required • hold ID horizontally',
-                cameraOnly: true,
-                onTap: () => _pickImage(
-                  setter: (file) => _governmentId = file,
-                  aspectRatio: 1.586,
-                  targetWidth: 1600,
-                  allowGallery: false,
-                ),
-              ),
-
-              if (_governmentId != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                ImagePreview(file: _governmentId, aspectRatio: 1.586),
-              ],
-
-              const SizedBox(height: AppSpacing.lg),
-
-              //--------------------------------------------------
-              // Official Receipt (OR)
-              //--------------------------------------------------
-              DocumentPickerCard(
-                title: 'Official Receipt (OR)',
-                icon: Icons.receipt_long,
-                file: _orDocument,
-                instruction: 'Camera required • fill the document frame',
-                cameraOnly: true,
-                onTap: () => _pickImage(
-                  setter: (file) => _orDocument = file,
-                  aspectRatio: 1 / 1.414,
-                  targetWidth: 1400,
-                  allowGallery: false,
-                ),
-              ),
-
-              if (_orDocument != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                ImagePreview(file: _orDocument, aspectRatio: 1 / 1.414),
-              ],
-
-              const SizedBox(height: AppSpacing.lg),
-
-              //--------------------------------------------------
-              // Certificate of Registration (CR)
-              //--------------------------------------------------
-              DocumentPickerCard(
-                title: 'Certificate of Registration (CR)',
-                icon: Icons.description,
-                file: _crDocument,
-                instruction: 'Camera required • fill the document frame',
-                cameraOnly: true,
-                onTap: () => _pickImage(
-                  setter: (file) => _crDocument = file,
-                  aspectRatio: 1 / 1.414,
-                  targetWidth: 1400,
-                  allowGallery: false,
-                ),
-              ),
-
-              if (_crDocument != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                ImagePreview(file: _crDocument, aspectRatio: 1 / 1.414),
-              ],
-
-              const SizedBox(height: AppSpacing.lg),
-
-              //--------------------------------------------------
-              // Vehicle Photo
-              //--------------------------------------------------
-              DocumentPickerCard(
-                title: 'Vehicle Photo',
-                icon: Icons.directions_car,
-                file: _vehiclePhoto,
-                instruction: 'Camera or gallery • show the full vehicle',
-                onTap: () => _pickImage(
-                  setter: (file) => _vehiclePhoto = file,
-                  aspectRatio: 4 / 3,
-                  targetWidth: 1600,
-                  allowGallery: true,
-                ),
-              ),
-
-              if (_vehiclePhoto != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                ImagePreview(file: _vehiclePhoto, aspectRatio: 4 / 3),
-              ],
-
-              const SizedBox(height: AppSpacing.xl),
-
-              LegalConsentCard(
-                termsViewed: _termsViewed,
-                privacyViewed: _privacyViewed,
-                accepted: _acceptedLegal,
-                onOpenTerms: () => _openLegalDocument(
-                  route: AppRoutes.termsAndConditions,
-                  terms: true,
-                ),
-                onOpenPrivacy: () => _openLegalDocument(
-                  route: AppRoutes.privacyPolicy,
-                  terms: false,
-                ),
-                onAcceptedChanged: (value) {
-                  setState(() => _acceptedLegal = value);
-                },
-              ),
-
-              const SizedBox(height: AppSpacing.xl),
-
-              //--------------------------------------------------
-              // Submit
-              //--------------------------------------------------
-              PrimaryButton(
-                text: 'Submit Registration',
-                onPressed: _submit,
-                isLoading: state.isLoading,
-              ),
-
-              const SizedBox(height: AppSpacing.md),
-
-              TextButton.icon(
-                onPressed: state.isLoading
-                    ? null
-                    : () {
-                        context.go(AppRoutes.driverRegisterStep3);
-                      },
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Back'),
-              ),
-
-              const SizedBox(height: AppSpacing.xl),
-
-              Text(
-                state.isLoading
-                    ? 'Creating your account... Please wait.'
-                    : 'Submitting sends these images to your assigned TODA for '
-                          'verification. Registration is not approval to drive.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-
-              const SizedBox(height: AppSpacing.xxl),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
-}
-
-String _prepareRegistrationImage(
-  String sourcePath,
-  double targetAspectRatio,
-  int targetWidth,
-) {
-  final source = File(sourcePath);
-  final decoded = image_lib.decodeImage(source.readAsBytesSync());
-  if (decoded == null) {
-    throw const FormatException('The selected file is not a readable image.');
-  }
-
-  var prepared = image_lib.bakeOrientation(decoded);
-  final currentRatio = prepared.width / prepared.height;
-  if ((currentRatio - targetAspectRatio).abs() > 0.01) {
-    if (currentRatio > targetAspectRatio) {
-      final cropWidth = (prepared.height * targetAspectRatio).round();
-      prepared = image_lib.copyCrop(
-        prepared,
-        x: (prepared.width - cropWidth) ~/ 2,
-        y: 0,
-        width: cropWidth,
-        height: prepared.height,
-      );
-    } else {
-      final cropHeight = (prepared.width / targetAspectRatio).round();
-      prepared = image_lib.copyCrop(
-        prepared,
-        x: 0,
-        y: (prepared.height - cropHeight) ~/ 2,
-        width: prepared.width,
-        height: cropHeight,
-      );
-    }
-  }
-
-  if (prepared.width > targetWidth) {
-    prepared = image_lib.copyResize(prepared, width: targetWidth);
-  }
-
-  var encoded = image_lib.encodeJpg(prepared, quality: 78);
-  if (encoded.length > 3 * 1024 * 1024 && prepared.width > 1000) {
-    prepared = image_lib.copyResize(prepared, width: 1000);
-    encoded = image_lib.encodeJpg(prepared, quality: 72);
-  }
-
-  final output = File('$sourcePath.voltrike.jpg');
-  output.writeAsBytesSync(encoded, flush: true);
-  return output.path;
 }

@@ -38,16 +38,16 @@ void main() {
       MaterialApp(
         theme: AppTheme.lightTheme,
         home: const Scaffold(
-          body: RegistrationStepIndicator(currentStep: 3, totalSteps: 4),
+          body: RegistrationStepIndicator(currentStep: 4, totalSteps: 5),
         ),
       ),
     );
 
-    expect(find.text('Step 3 of 4'), findsOneWidget);
-    expect(find.text('75%'), findsOneWidget);
+    expect(find.text('Step 4 of 5'), findsOneWidget);
+    expect(find.text('80%'), findsOneWidget);
     final progress = tester.widget<LinearProgressIndicator>(
       find.byType(LinearProgressIndicator),
     );
-    expect(progress.value, 0.75);
+    expect(progress.value, 0.8);
   });
 }
