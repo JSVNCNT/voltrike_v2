@@ -47,6 +47,7 @@ const {
   normalizedResponseStatus,
 } = require('./safety-policy');
 const {
+  passwordResetEmail,
   safetyAlertEmail,
   sendBrevoEmail,
   todaApplicationEmail,
@@ -74,15 +75,21 @@ const liveKitApiSecret = defineSecret('LIVEKIT_API_SECRET');
 const liveKitUrl = defineString('LIVEKIT_URL');
 const adminBootstrapCode = defineSecret('ADMIN_BOOTSTRAP_CODE');
 const googleRoutesApiKey = defineSecret('GOOGLE_ROUTES_API_KEY');
-const brevoApiKey = defineSecret('BREVO_API_KEY');
+const brevoSmtpKey = defineSecret('BREVO_SMTP_KEY');
+const brevoSmtpLogin = defineString('BREVO_SMTP_LOGIN', {
+  default: 'a5cd23001@smtp-brevo.com',
+});
 const brevoSenderEmail = defineString('BREVO_SENDER_EMAIL', {
-  default: 'no-reply@voltrike.ph',
+  default: 'noreply@voltrikeride.online',
 });
 const brevoSenderName = defineString('BREVO_SENDER_NAME', {
   default: 'VolTrike',
 });
 const adminPortalUrl = defineString('ADMIN_PORTAL_URL', {
   default: 'https://voltrike-v2.web.app',
+});
+const emailLogoUrl = defineString('EMAIL_LOGO_URL', {
+  default: 'https://voltrike-v2.web.app/images/appLogo.png',
 });
 const bacolodBarangayCodes = new Set([
   '064501001', '064501002', '064501003', '064501004', '064501005', '064501006',
@@ -654,6 +661,7 @@ async function safetyAdminRecipients(todaId) {
       name: [data.firstName, data.lastName].filter(Boolean).join(' ') ||
         'Administrator',
       email,
+      emailEnabled: data.safetyEmailEnabled !== false,
     });
   }
   return [...recipients.values()];
@@ -762,20 +770,21 @@ async function notifySafetyAdmins({
         error,
       });
       return { attempted: 0, succeeded: 0 };
-    })));
-  const emailApiKey = brevoApiKey.value();
-  const emailMessage = safetyAlertEmail({
-    recipientName: '',
-    eventLabel: title,
-    adminPortalUrl: adminPortalUrl.value(),
-    incident: {
-      ...incident,
-      bookingId,
-      escalationLevel,
-    },
-  });
+  })));
+  const smtpKey = brevoSmtpKey.value();
   const emailDeliveries = await Promise.all(recipients.map((recipient) => {
-    if (validEmail(recipient.email)) {
+    if (recipient.emailEnabled && validEmail(recipient.email)) {
+      const message = safetyAlertEmail({
+        recipientName: recipient.name,
+        eventLabel: title,
+        adminPortalUrl: adminPortalUrl.value(),
+        logoUrl: emailLogoUrl.value(),
+        incident: {
+          ...incident,
+          bookingId,
+          escalationLevel,
+        },
+      });
       return deliverSafetyCommunication({
         recipient,
         channel: 'email',
@@ -784,22 +793,13 @@ async function notifySafetyAdmins({
         incidentId,
         bookingId,
         send: () => sendBrevoEmail({
-          apiKey: emailApiKey,
+          smtpLogin: brevoSmtpLogin.value(),
+          smtpKey,
           senderEmail: brevoSenderEmail.value(),
           senderName: brevoSenderName.value(),
           to: recipient.email,
           name: recipient.name,
-          ...emailMessage,
-          htmlContent: safetyAlertEmail({
-            recipientName: recipient.name,
-            eventLabel: title,
-            adminPortalUrl: adminPortalUrl.value(),
-            incident: {
-              ...incident,
-              bookingId,
-              escalationLevel,
-            },
-          }).htmlContent,
+          ...message,
         }),
       });
     }
@@ -841,7 +841,7 @@ exports.notifyRideChatMessage = onDocumentCreated(
 );
 
 exports.requestBrandedVerificationEmail = onCall(
-  { region: 'asia-southeast1', secrets: [brevoApiKey] },
+  { region: 'asia-southeast1', secrets: [brevoSmtpKey] },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError(
@@ -884,10 +884,15 @@ exports.requestBrandedVerificationEmail = onCall(
     ].filter(Boolean).join(' ') || authUser.displayName || 'VolTrike user';
     const verificationLink = await admin.auth()
       .generateEmailVerificationLink(authUser.email);
-    const message = verificationEmail({ name, verificationLink });
+    const message = verificationEmail({
+      name,
+      verificationLink,
+      logoUrl: emailLogoUrl.value(),
+    });
     try {
       const response = await sendBrevoEmail({
-        apiKey: brevoApiKey.value(),
+        smtpLogin: brevoSmtpLogin.value(),
+        smtpKey: brevoSmtpKey.value(),
         senderEmail: brevoSenderEmail.value(),
         senderName: brevoSenderName.value(),
         to: authUser.email,
@@ -920,6 +925,121 @@ exports.requestBrandedVerificationEmail = onCall(
         'The branded verification email is temporarily unavailable.',
       );
     }
+  },
+);
+
+exports.requestBrandedPasswordResetEmail = onCall(
+  { region: 'asia-southeast1', secrets: [brevoSmtpKey] },
+  async (request) => {
+    const email = requiredString(request.data?.email, 'Email').toLowerCase();
+    if (!validEmail(email)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Enter a valid email address.',
+      );
+    }
+
+    // The hash prevents storing an unauthenticated email address in the rate
+    // limiter. A one-minute cooldown and five-per-day ceiling prevent a reset
+    // form from becoming an email-spam relay.
+    const emailHash = createHash('sha256').update(email).digest('hex');
+    const rateRef = db.collection('communicationRateLimits')
+      .doc(`password-reset-${emailHash}`);
+    const now = Date.now();
+    const allowed = await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(rateRef);
+      const data = current.data() || {};
+      const lastRequestedAt = snapshotDateMillis(data.lastRequestedAt);
+      const windowStartedAt = snapshotDateMillis(data.windowStartedAt);
+      const withinWindow = windowStartedAt != null &&
+        now - windowStartedAt < 24 * 60 * 60 * 1000;
+      const requestCount = withinWindow
+        ? Number(data.requestCount || 0)
+        : 0;
+      if ((lastRequestedAt != null && now - lastRequestedAt < 60 * 1000) ||
+          requestCount >= 5) {
+        return false;
+      }
+      transaction.set(rateRef, {
+        purpose: 'password_reset',
+        emailHash,
+        lastRequestedAt: Timestamp.fromMillis(now),
+        windowStartedAt: withinWindow
+          ? data.windowStartedAt
+          : Timestamp.fromMillis(now),
+        requestCount: requestCount + 1,
+        updatedAt: Timestamp.fromMillis(now),
+      }, { merge: true });
+      return true;
+    });
+    if (!allowed) return { accepted: true };
+
+    // Never reveal whether an account exists. The app receives the same result
+    // for unknown addresses, rate-limited requests, and accepted deliveries.
+    const authUser = await admin.auth().getUserByEmail(email)
+      .catch((error) => {
+        if (error?.code === 'auth/user-not-found') return null;
+        throw error;
+      });
+    if (!authUser) return { accepted: true };
+
+    try {
+      const profile = await db.collection('users').doc(authUser.uid).get();
+      const profileData = profile.data() || {};
+      const name = [
+        profileData.firstName,
+        profileData.middleName,
+        profileData.lastName,
+      ].filter(Boolean).join(' ') ||
+        authUser.displayName ||
+        'VolTrike user';
+      const resetLink = await admin.auth().generatePasswordResetLink(email);
+      const message = passwordResetEmail({
+        name,
+        resetLink,
+        logoUrl: emailLogoUrl.value(),
+      });
+      const response = await sendBrevoEmail({
+        smtpLogin: brevoSmtpLogin.value(),
+        smtpKey: brevoSmtpKey.value(),
+        senderEmail: brevoSenderEmail.value(),
+        senderName: brevoSenderName.value(),
+        to: email,
+        name,
+        ...message,
+      });
+      await db.collection('communicationDeliveries').add({
+        recipientId: authUser.uid,
+        recipientEmailHash: emailHash,
+        channel: 'email',
+        purpose: 'password_reset',
+        status: 'accepted',
+        provider: 'brevo_smtp',
+        providerMessageId: String(response?.messageId || ''),
+        acceptedAt: timestamp(),
+        createdAt: timestamp(),
+        updatedAt: timestamp(),
+      });
+    } catch (error) {
+      logger.error('Could not send branded password reset email', {
+        uid: authUser.uid,
+        emailHash,
+        error,
+      });
+      await db.collection('communicationDeliveries').add({
+        recipientId: authUser.uid,
+        recipientEmailHash: emailHash,
+        channel: 'email',
+        purpose: 'password_reset',
+        status: 'failed',
+        provider: 'brevo_smtp',
+        errorCode: String(error?.code || 'provider_error'),
+        failedAt: timestamp(),
+        createdAt: timestamp(),
+        updatedAt: timestamp(),
+      });
+    }
+    return { accepted: true };
   },
 );
 
@@ -968,9 +1088,11 @@ async function sendTodaRegistrationStatusEmail({
       todaName: toda.data()?.name || todaId,
       status,
       adminPortalUrl: adminPortalUrl.value(),
+      logoUrl: emailLogoUrl.value(),
     });
     const response = await sendBrevoEmail({
-      apiKey: brevoApiKey.value(),
+      smtpLogin: brevoSmtpLogin.value(),
+      smtpKey: brevoSmtpKey.value(),
       senderEmail: brevoSenderEmail.value(),
       senderName: brevoSenderName.value(),
       to: authUser.email,
@@ -1003,7 +1125,7 @@ exports.notifyTodaRegistrationSubmitted = onDocumentCreated(
   {
     document: 'todaApplications/{todaId}',
     region: 'asia-southeast1',
-    secrets: [brevoApiKey],
+    secrets: [brevoSmtpKey],
   },
   async (event) => {
     const application = event.data?.data();
@@ -1020,7 +1142,7 @@ exports.notifyTodaRegistrationDecision = onDocumentUpdated(
   {
     document: 'todaApplications/{todaId}',
     region: 'asia-southeast1',
-    secrets: [brevoApiKey],
+    secrets: [brevoSmtpKey],
   },
   async (event) => {
     const before = event.data?.before.data();
@@ -3509,7 +3631,7 @@ exports.createRideReport = onCall(
 exports.createSafetyIncident = onCall(
   {
     region: 'asia-southeast1',
-    secrets: [brevoApiKey],
+    secrets: [brevoSmtpKey],
   },
   async (request) => {
     if (!request.auth) {
@@ -3748,7 +3870,7 @@ exports.getMySafetyIncident = onCall(
 exports.updateMySafetyIncident = onCall(
   {
     region: 'asia-southeast1',
-    secrets: [brevoApiKey],
+    secrets: [brevoSmtpKey],
   },
   async (request) => {
     if (!request.auth) {
@@ -3854,7 +3976,7 @@ exports.escalateUnacknowledgedSafetyIncidents = onSchedule(
   {
     region: 'asia-southeast1',
     schedule: 'every 1 minutes',
-    secrets: [brevoApiKey],
+    secrets: [brevoSmtpKey],
   },
   async () => {
     const open = await db.collection('safetyIncidents')

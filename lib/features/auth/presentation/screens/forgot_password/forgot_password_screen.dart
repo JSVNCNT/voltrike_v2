@@ -56,7 +56,9 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
       if (!mounted) return;
 
       setState(() {
-        _message = 'A password reset link has been sent to your email.';
+        _message =
+            'If an account exists for that email, a password reset link '
+            'will arrive shortly.';
       });
     } catch (e) {
       setState(() => _error = DomainErrorMapper.message(e));

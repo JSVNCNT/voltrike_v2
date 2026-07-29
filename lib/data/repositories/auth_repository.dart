@@ -61,8 +61,20 @@ class AuthRepository {
     return _authService.reloadUser();
   }
 
-  Future<void> sendPasswordResetEmail(String email) {
-    return _authService.sendPasswordResetEmail(email);
+  Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      await _functions
+          .httpsCallable('requestBrandedPasswordResetEmail')
+          .call<Map<String, dynamic>>({'email': email.trim()});
+    } on FirebaseFunctionsException catch (error) {
+      // Preserve password recovery while the branded function is being
+      // deployed. Other failures must not trigger a second provider email.
+      if (error.code == 'not-found' || error.code == 'unimplemented') {
+        await _authService.sendPasswordResetEmail(email);
+        return;
+      }
+      rethrow;
+    }
   }
 
   Future<void> updatePassword(String password) {

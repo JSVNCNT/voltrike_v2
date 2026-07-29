@@ -1,6 +1,12 @@
 'use strict';
 
-const BREVO_EMAIL_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
+const nodemailer = require('nodemailer');
+
+const BREVO_SMTP_HOST = 'smtp-relay.brevo.com';
+const BREVO_SMTP_PORT = 587;
+
+let cachedTransport;
+let cachedTransportLogin;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -17,6 +23,33 @@ function validEmail(value) {
     value.trim().length <= 254;
 }
 
+function plainTextEmail({
+  title,
+  greeting,
+  paragraphs,
+  facts = [],
+  actionLabel,
+  actionUrl,
+  footer,
+}) {
+  const lines = [
+    title,
+    '',
+    greeting,
+    '',
+    ...paragraphs.flatMap((paragraph) => [paragraph, '']),
+  ];
+  for (const fact of facts.filter((entry) => entry?.label && entry?.value)) {
+    lines.push(`${fact.label}: ${fact.value}`);
+  }
+  if (facts.length > 0) lines.push('');
+  if (actionLabel && actionUrl) {
+    lines.push(`${actionLabel}:`, actionUrl, '');
+  }
+  lines.push(footer);
+  return lines.join('\n').trim();
+}
+
 function emailShell({
   eyebrow,
   title,
@@ -26,6 +59,7 @@ function emailShell({
   actionLabel,
   actionUrl,
   footer,
+  logoUrl,
 }) {
   const factRows = facts
     .filter((entry) => entry?.label && entry?.value)
@@ -40,6 +74,11 @@ function emailShell({
         <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#087f83;color:#fff;text-decoration:none;padding:13px 22px;border-radius:10px;font-weight:700">${escapeHtml(actionLabel)}</a>
       </p>`
     : '';
+  const logo = logoUrl
+    ? `<td style="padding-right:16px">
+        <img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="VolTrike" style="display:block;width:64px;height:64px;border:0;border-radius:12px">
+      </td>`
+    : '';
   return `<!doctype html>
   <html lang="en">
   <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
@@ -48,9 +87,16 @@ function emailShell({
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f7f7">
       <tr><td align="center" style="padding:28px 12px">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#fff;border:1px solid #d8e5e5;border-radius:18px;overflow:hidden">
-          <tr><td style="background:#064c4d;padding:24px 30px;color:#fff">
-            <div style="font-size:25px;font-weight:800;letter-spacing:.3px">VolTrike</div>
-            <div style="margin-top:4px;color:#cbe5e5;font-size:13px">Clean Community Mobility</div>
+          <tr><td style="background:#064c4d;padding:22px 30px;color:#fff">
+            <table role="presentation" cellspacing="0" cellpadding="0">
+              <tr>
+                ${logo}
+                <td>
+                  <div style="font-size:25px;font-weight:800;letter-spacing:.3px">VolTrike</div>
+                  <div style="margin-top:4px;color:#cbe5e5;font-size:13px">Clean Community Mobility</div>
+                </td>
+              </tr>
+            </table>
           </td></tr>
           <tr><td style="padding:32px 30px">
             <div style="color:#087f83;font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase">${escapeHtml(eyebrow)}</div>
@@ -68,11 +114,28 @@ function emailShell({
   </html>`;
 }
 
-function verificationEmail({ name, verificationLink }) {
+function transactionalMessage({
+  subject,
+  eyebrow,
+  content,
+  logoUrl,
+  tags,
+}) {
   return {
+    subject,
+    htmlContent: emailShell({ eyebrow, ...content, logoUrl }),
+    textContent: plainTextEmail(content),
+    tags,
+  };
+}
+
+function verificationEmail({ name, verificationLink, logoUrl }) {
+  return transactionalMessage({
     subject: 'Verify your VolTrike email address',
-    htmlContent: emailShell({
-      eyebrow: 'Account verification',
+    eyebrow: 'Account verification',
+    logoUrl,
+    tags: ['account-verification'],
+    content: {
       title: 'Confirm your email address',
       greeting: `Hello ${name || 'VolTrike user'},`,
       paragraphs: [
@@ -82,9 +145,28 @@ function verificationEmail({ name, verificationLink }) {
       actionLabel: 'Verify email address',
       actionUrl: verificationLink,
       footer: 'This is a required transactional account email, not a promotional message. VolTrike will never ask for your password by email.',
-    }),
-    tags: ['account-verification'],
-  };
+    },
+  });
+}
+
+function passwordResetEmail({ name, resetLink, logoUrl }) {
+  return transactionalMessage({
+    subject: 'Reset your VolTrike password',
+    eyebrow: 'Password assistance',
+    logoUrl,
+    tags: ['password-reset'],
+    content: {
+      title: 'Reset your VolTrike password',
+      greeting: `Hello ${name || 'VolTrike user'},`,
+      paragraphs: [
+        'A password reset was requested for your VolTrike account.',
+        'Use the secure Firebase link below to choose a new password. If you did not request this, ignore this email and your password will remain unchanged.',
+      ],
+      actionLabel: 'Reset password',
+      actionUrl: resetLink,
+      footer: 'For your security, VolTrike will never ask you to reply with your password or verification code.',
+    },
+  });
 }
 
 function safetyAlertEmail({
@@ -92,12 +174,17 @@ function safetyAlertEmail({
   eventLabel,
   incident,
   adminPortalUrl,
+  logoUrl,
 }) {
   const level = Number(incident.escalationLevel || 0);
-  return {
-    subject: `${level > 0 ? 'Escalated ' : ''}VolTrike SOS · ${incident.bookingId}`,
-    htmlContent: emailShell({
-      eyebrow: level > 0 ? `Safety escalation level ${level}` : 'New safety incident',
+  return transactionalMessage({
+    subject: `${level > 0 ? 'Escalated ' : ''}VolTrike SOS - ${incident.bookingId}`,
+    eyebrow: level > 0
+      ? `Safety escalation level ${level}`
+      : 'New safety incident',
+    logoUrl,
+    tags: ['safety-incident', `escalation-${level}`],
+    content: {
       title: eventLabel,
       greeting: `Hello ${recipientName || 'administrator'},`,
       paragraphs: [
@@ -107,17 +194,25 @@ function safetyAlertEmail({
       facts: [
         { label: 'Booking', value: incident.bookingId },
         { label: 'Reported by', value: incident.reporterRole },
-        { label: 'TODA', value: incident.todaName || incident.todaId || 'Unassigned' },
-        { label: 'Ride status', value: incident.bookingStatus || 'Unknown' },
+        {
+          label: 'TODA',
+          value: incident.todaName || incident.todaId || 'Unassigned',
+        },
+        {
+          label: 'Ride status',
+          value: incident.bookingStatus || 'Unknown',
+        },
         { label: 'Pickup', value: incident.pickupAddress || 'Unavailable' },
-        { label: 'Destination', value: incident.destinationAddress || 'Unavailable' },
+        {
+          label: 'Destination',
+          value: incident.destinationAddress || 'Unavailable',
+        },
       ],
       actionLabel: 'Open Safety Incidents',
       actionUrl: adminPortalUrl,
       footer: 'You are receiving this transactional safety email because your active administrator account is responsible for this incident. Notification preferences can be edited on the Safety Incidents page.',
-    }),
-    tags: ['safety-incident', `escalation-${level}`],
-  };
+    },
+  });
 }
 
 function todaApplicationEmail({
@@ -125,6 +220,7 @@ function todaApplicationEmail({
   todaName,
   status,
   adminPortalUrl,
+  logoUrl,
 }) {
   const copy = {
     submitted: {
@@ -143,10 +239,12 @@ function todaApplicationEmail({
       paragraph: 'Your TODA application was declined. Contact the Developer Admin for the review details before submitting corrected information.',
     },
   }[status];
-  return {
-    subject: `VolTrike TODA application · ${copy.title}`,
-    htmlContent: emailShell({
-      eyebrow: copy.eyebrow,
+  return transactionalMessage({
+    subject: `VolTrike TODA application - ${copy.title}`,
+    eyebrow: copy.eyebrow,
+    logoUrl,
+    tags: ['toda-registration', status],
+    content: {
       title: copy.title,
       greeting: `Hello ${administratorName || 'administrator'},`,
       paragraphs: [copy.paragraph],
@@ -154,62 +252,76 @@ function todaApplicationEmail({
       actionLabel: 'Open VolTrike Admin',
       actionUrl: adminPortalUrl,
       footer: 'This is a transactional registration message related to your VolTrike administrator application.',
-    }),
-    tags: ['toda-registration', status],
-  };
-}
-
-async function brevoRequest({ apiKey, endpoint, body }) {
-  if (!apiKey) throw new Error('BREVO_API_KEY is not configured.');
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'api-key': apiKey,
-      'content-type': 'application/json',
     },
-    body: JSON.stringify(body),
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(
-      `Brevo request failed with HTTP ${response.status}.`,
-    );
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
-  }
-  return payload;
 }
 
-function sendBrevoEmail({
-  apiKey,
+function brevoTransport({ smtpLogin, smtpKey }) {
+  if (!smtpLogin || !smtpKey) {
+    throw new Error('Brevo SMTP credentials are not configured.');
+  }
+  if (!cachedTransport || cachedTransportLogin !== smtpLogin) {
+    cachedTransport = nodemailer.createTransport({
+      host: BREVO_SMTP_HOST,
+      port: BREVO_SMTP_PORT,
+      secure: false,
+      requireTLS: true,
+      pool: true,
+      maxConnections: 3,
+      maxMessages: 100,
+      auth: {
+        user: smtpLogin,
+        pass: smtpKey,
+      },
+      tls: {
+        minVersion: 'TLSv1.2',
+      },
+    });
+    cachedTransportLogin = smtpLogin;
+  }
+  return cachedTransport;
+}
+
+async function sendBrevoEmail({
+  smtpLogin,
+  smtpKey,
   senderEmail,
   senderName,
   to,
   name,
   subject,
   htmlContent,
-  tags = [],
+  textContent,
 }) {
   if (!validEmail(senderEmail) || !validEmail(to)) {
     throw new Error('A valid sender and recipient email are required.');
   }
-  return brevoRequest({
-    apiKey,
-    endpoint: BREVO_EMAIL_ENDPOINT,
-    body: {
-      sender: { email: senderEmail.trim(), name: senderName || 'VolTrike' },
-      to: [{ email: to.trim(), name: name || undefined }],
-      subject,
-      htmlContent,
-      tags,
+  const transport = brevoTransport({ smtpLogin, smtpKey });
+  const response = await transport.sendMail({
+    from: {
+      name: senderName || 'VolTrike',
+      address: senderEmail.trim(),
     },
+    to: {
+      name: name || undefined,
+      address: to.trim(),
+    },
+    replyTo: senderEmail.trim(),
+    subject,
+    text: textContent,
+    html: htmlContent,
   });
+  return {
+    messageId: response.messageId,
+    accepted: response.accepted,
+    rejected: response.rejected,
+  };
 }
 
 module.exports = {
   emailShell,
+  passwordResetEmail,
+  plainTextEmail,
   safetyAlertEmail,
   sendBrevoEmail,
   todaApplicationEmail,

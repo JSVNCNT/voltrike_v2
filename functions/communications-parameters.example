@@ -1,7 +1,9 @@
 # Non-secret Cloud Functions parameters. Copy these values into
 # functions/.env.voltrike-v2 and replace them with production values.
-# Store BREVO_API_KEY in Firebase Secret Manager.
+# Store BREVO_SMTP_KEY in Firebase Secret Manager. Never put it in this file.
 
-BREVO_SENDER_EMAIL=no-reply@notify.your-domain.example
+BREVO_SMTP_LOGIN=a5cd23001@smtp-brevo.com
+BREVO_SENDER_EMAIL=noreply@voltrikeride.online
 BREVO_SENDER_NAME=VolTrike
-ADMIN_PORTAL_URL=https://admin.your-domain.example
+ADMIN_PORTAL_URL=https://voltrike-v2.web.app
+EMAIL_LOGO_URL=https://voltrike-v2.web.app/images/appLogo.png
