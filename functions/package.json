@@ -8,7 +8,8 @@
   "scripts": {
     "test": "node --test",
     "emulator:seed": "node emulator/seed.js",
-    "emulator:verify": "node emulator/verify-lifecycle.js"
+    "emulator:verify": "node emulator/verify-lifecycle.js",
+    "emulator:test": "node emulator/seed.js && node emulator/verify-lifecycle.js"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0",

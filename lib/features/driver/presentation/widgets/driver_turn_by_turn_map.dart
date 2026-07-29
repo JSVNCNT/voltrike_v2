@@ -7,6 +7,8 @@ import 'package:google_navigation_flutter/google_navigation_flutter.dart'
 
 import '../../../../core/maps/voltrike_map.dart' as app_map;
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/services/route_restriction_service.dart';
+import '../../../../core/services/routes_service.dart';
 import '../../providers/driver_navigation_provider.dart';
 
 /// Android driver guidance backed by Google Navigation SDK for Flutter.
@@ -17,11 +19,13 @@ import '../../providers/driver_navigation_provider.dart';
 class DriverTurnByTurnMap extends ConsumerStatefulWidget {
   const DriverTurnByTurnMap({
     super.key,
+    required this.origin,
     required this.destination,
     required this.destinationLabel,
     required this.legKey,
   });
 
+  final app_map.LatLng origin;
   final app_map.LatLng destination;
   final String destinationLabel;
   final String legKey;
@@ -38,7 +42,9 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
   bool _sessionReady = false;
   bool _disposed = false;
   bool _hasSdkLocation = false;
+  app_map.LatLng? _roadSnappedLocation;
   String? _routedLegKey;
+  bool _validatedReroutePending = false;
   int _routeEpoch = 0;
   Brightness? _brightness;
 
@@ -112,7 +118,13 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
       _registerNavigationListeners();
       final locationSubscription =
           await navigation
-              .GoogleMapsNavigator.setRoadSnappedLocationUpdatedListener((_) {
+              .GoogleMapsNavigator.setRoadSnappedLocationUpdatedListener((
+            event,
+          ) {
+            _roadSnappedLocation = app_map.LatLng(
+              event.location.latitude,
+              event.location.longitude,
+            );
             if (_hasSdkLocation) return;
             _hasSdkLocation = true;
             unawaited(_setDestinationWhenReady());
@@ -166,6 +178,7 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
           ref
               .read(driverNavigationControllerProvider.notifier)
               .markSdkRerouting();
+          unawaited(_replaceAutomaticReroute());
         }),
       )
       ..add(
@@ -228,6 +241,17 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
     stateController.markSdkStarting();
 
     try {
+      final route = await RoutesService.computeRoute(
+        origin: _roadSnappedLocation ?? widget.origin,
+        destination: widget.destination,
+      );
+      final routeToken = route?.routeToken;
+      if (route == null || routeToken == null || routeToken.isEmpty) {
+        throw StateError(
+          'No permitted e-trike route is available for this trip.',
+        );
+      }
+      stateController.applyValidatedRoute(route);
       final status = await navigation.GoogleMapsNavigator.setDestinations(
         navigation.Destinations(
           waypoints: [
@@ -239,12 +263,9 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
           displayOptions: navigation.NavigationDisplayOptions(
             showDestinationMarkers: true,
           ),
-          routingOptions: navigation.RoutingOptions(
+          routeTokenOptions: navigation.RouteTokenOptions(
+            routeToken: routeToken,
             travelMode: navigation.NavigationTravelMode.driving,
-            alternateRoutesStrategy:
-                navigation.NavigationAlternateRoutesStrategy.one,
-            avoidFerries: true,
-            locationTimeoutMs: 15000,
           ),
         ),
       );
@@ -265,8 +286,32 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
     }
   }
 
+  Future<void> _replaceAutomaticReroute() async {
+    if (_validatedReroutePending || _disposed) return;
+    _validatedReroutePending = true;
+    try {
+      // Native automatic rerouting does not expose a route shape that can be
+      // checked against developer polygons. Stop it and install a fresh
+      // Routes API token selected by the same polygon/highway policy.
+      await navigation.GoogleMapsNavigator.stopGuidance();
+      _routedLegKey = null;
+      await _setDestinationWhenReady();
+    } finally {
+      _validatedReroutePending = false;
+    }
+  }
+
   String _friendlyError(Object error) {
     final message = error.toString();
+    if (message.contains(
+      'No permitted e-trike route is available for this trip.',
+    )) {
+      final conflict = RouteRestrictionService.instance.lastConflict;
+      return conflict == null
+          ? 'No permitted e-trike route is available for this trip.'
+          : 'No permitted e-trike route is available for this trip. '
+                'Route blocked by ${conflict.name}.';
+    }
     if (message.contains('apiKeyNotAuthorized')) {
       return 'In-app navigation is not authorized for this development key.';
     }

@@ -25,10 +25,41 @@ interface SearchResult {
 
 function zoneData(points: Point[], geometryMode: 'polygon' | 'polyline', completedAreas: Point[][] = []): GeoJSON.FeatureCollection {
   const polygon = [...points, points[0]];
+  const completedFeatures: GeoJSON.Feature[] = [];
+  for (const area of completedAreas) {
+    if (geometryMode === 'polyline') {
+      if (area.length >= 2) {
+        completedFeatures.push({
+          type: 'Feature' as const,
+          properties: { completed: true },
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: area,
+          },
+        });
+        completedFeatures.push(...area.map((point) => ({
+          type: 'Feature' as const,
+          properties: { completed: true },
+          geometry: { type: 'Point' as const, coordinates: point },
+        })));
+      }
+      continue;
+    }
+    if (area.length >= 3) {
+      completedFeatures.push({
+        type: 'Feature' as const,
+        properties: { completed: true },
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [[...area, area[0]]],
+        },
+      });
+    }
+  }
   return {
     type: 'FeatureCollection',
     features: [
-      ...completedAreas.filter((area) => area.length >= 3).map((area) => ({ type: 'Feature' as const, properties: { completed: true }, geometry: { type: 'Polygon' as const, coordinates: [[...area, area[0]]] } })),
+      ...completedFeatures,
       ...(geometryMode === 'polygon' && points.length >= 3
           ? [{ type: 'Feature' as const, properties: {}, geometry: { type: 'Polygon' as const, coordinates: [polygon] } }]
           : []),
@@ -126,5 +157,5 @@ export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints 
   }
 
   const configured = Boolean(import.meta.env.VITE_MAPBOX_ACCESS_TOKEN && import.meta.env.VITE_MAPBOX_ACCESS_TOKEN !== 'INSERT_MAPBOX_ACCESS_TOKEN_HERE');
-  return <div className="map-shell polygon-editor">{configured ? <><div ref={element} className="map" /><div className="map-search"><form onSubmit={search}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search address, landmark, or barangay" aria-label="Search map" /><button type="submit" disabled={searching}>{searching ? 'Searching…' : 'Search'}</button></form>{(results.length > 0 || searchError) && <div className="map-search-results">{searchError && <p>{searchError}</p>}{results.map((result) => <button type="button" key={result.id} onClick={() => choose(result)}><b>{result.name}</b><span>{result.placeName}</span></button>)}</div>}</div><div className="map-guide"><b>Coverage editor</b><span>1. Search or pan to an area</span><span>2. Left-click to add red boundary points</span><span>3. Press Enter or Finish polygon to submit</span></div></> : <div className="map-missing">Set <code>VITE_MAPBOX_ACCESS_TOKEN</code> in <code>admin/.env</code> to enable the coverage editor.</div>}</div>;
+  return <div className="map-shell polygon-editor">{configured ? <><div ref={element} className="map" /><div className="map-search"><form onSubmit={search}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search address, landmark, or barangay" aria-label="Search map" /><button type="submit" disabled={searching}>{searching ? 'Searching…' : 'Search'}</button></form>{(results.length > 0 || searchError) && <div className="map-search-results">{searchError && <p>{searchError}</p>}{results.map((result) => <button type="button" key={result.id} onClick={() => choose(result)}><b>{result.name}</b><span>{result.placeName}</span></button>)}</div>}</div><div className="map-guide"><b>{geometryMode === 'polyline' ? 'Legacy line editor' : 'Polygon editor'}</b><span>1. Search or pan to an area</span><span>{geometryMode === 'polyline' ? '2. Left-click along one line segment' : '2. Left-click to add red boundary points'}</span><span>3. Press Enter to finish the current shape</span></div></> : <div className="map-missing">Set <code>VITE_MAPBOX_ACCESS_TOKEN</code> in <code>admin/.env</code> to enable the map editor.</div>}</div>;
 }

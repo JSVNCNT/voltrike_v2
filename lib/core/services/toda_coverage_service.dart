@@ -24,9 +24,12 @@ class TodaCoverageDecision {
   final List<String> destinationTodaIds;
   final String? serviceTodaId;
 
-  bool get pickupAllowed => status != TodaTripCoverageStatus.pickupOutside;
+  /// Coverage affects dispatch priority and fees, not whether pickup is legal.
+  bool get pickupAllowed => true;
 
-  bool get isOutsideToda => status == TodaTripCoverageStatus.crossBoundary;
+  bool get isOutsideToda =>
+      status == TodaTripCoverageStatus.crossBoundary ||
+      status == TodaTripCoverageStatus.pickupOutside;
 }
 
 class TodaCoverageZone {
@@ -322,6 +325,9 @@ class TodaCoverageService {
       return TodaCoverageDecision(
         status: TodaTripCoverageStatus.pickupOutside,
         destinationTodaIds: List<String>.unmodifiable(destinationTodaIds),
+        serviceTodaId: destinationTodaIds.length == 1
+            ? destinationTodaIds.first
+            : null,
       );
     }
 

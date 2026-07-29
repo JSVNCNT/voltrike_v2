@@ -1,10 +1,17 @@
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
+import 'route_policy_advisory.dart';
+
 class RouteInfo {
   final int distanceMeters;
   final double distanceKm;
   final int durationMinutes;
   final String encodedPolyline;
+  final String? routeToken;
+
+  /// Restrictions encountered on rejected alternatives before this safe route.
+  final List<String> avoidedRestrictionNames;
+  final RoutePolicyAdvisory routePolicy;
 
   /// NEW
   final List<RouteStep> steps;
@@ -14,8 +21,28 @@ class RouteInfo {
     required this.distanceKm,
     required this.durationMinutes,
     required this.encodedPolyline,
+    this.routeToken,
+    this.avoidedRestrictionNames = const [],
+    this.routePolicy = const RoutePolicyAdvisory(),
     this.steps = const [],
   });
+
+  RouteInfo copyWith({
+    List<String>? avoidedRestrictionNames,
+    RoutePolicyAdvisory? routePolicy,
+  }) {
+    return RouteInfo(
+      distanceMeters: distanceMeters,
+      distanceKm: distanceKm,
+      durationMinutes: durationMinutes,
+      encodedPolyline: encodedPolyline,
+      routeToken: routeToken,
+      avoidedRestrictionNames:
+          avoidedRestrictionNames ?? this.avoidedRestrictionNames,
+      routePolicy: routePolicy ?? this.routePolicy,
+      steps: steps,
+    );
+  }
 }
 
 class RouteStep {

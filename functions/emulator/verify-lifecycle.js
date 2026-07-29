@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const {
   db,
   projectId,
@@ -107,14 +108,26 @@ async function waitFor(getValue, description, timeoutMs = 15000) {
   throw new Error(`Timed out waiting for ${description}.`);
 }
 
-async function setFreshDriverLocation(driverId, latitude, longitude) {
-  await realtime.ref(`driver_locations/${driverId}`).set({
+async function setFreshDriverLocation(
+  driverId,
+  latitude,
+  longitude,
+  {
+    accuracy = 5,
+    includeObservedAt = true,
+    observedAt = Date.now(),
+  } = {},
+) {
+  const location = {
     latitude,
     longitude,
-    accuracy: 5,
+    accuracy,
     timestamp: Date.now(),
     online: true,
-  });
+  };
+  if (includeObservedAt) location.observedAt = observedAt;
+  await realtime.ref(`driver_locations/${driverId}`).set(location);
+  return location;
 }
 
 function operation(prefix, index) {
@@ -135,6 +148,212 @@ async function main() {
     signIn('developer@voltrike.test'),
     signIn('toda.admin@voltrike.test'),
   ]);
+
+  const sharedAdminWebToken =
+    'emulator-admin-web-push-shared-token-v1';
+  const sharedAdminWebDeviceId = createHash('sha256')
+    .update(sharedAdminWebToken)
+    .digest('hex');
+  const legacyTodaDeviceRef = db.doc(
+    `users/toda-admin-test-001/devices/${sharedAdminWebDeviceId}`,
+  );
+  await legacyTodaDeviceRef.set({
+    token: sharedAdminWebToken,
+    platform: 'web',
+  });
+  const migratedWebPush = await callable(
+    'registerAdminWebPushToken',
+    developerToken,
+    {
+      token: sharedAdminWebToken,
+      previousUid: 'toda-admin-test-001',
+      previousDeviceId: sharedAdminWebDeviceId,
+    },
+  );
+  assert.deepEqual(migratedWebPush, {
+    registered: true,
+    deviceId: sharedAdminWebDeviceId,
+  });
+  assert.equal((await legacyTodaDeviceRef.get()).exists, false);
+  assert.equal(
+    (await db.doc(
+      `users/developer-admin-test-001/devices/${sharedAdminWebDeviceId}`,
+    ).get()).data().token,
+    sharedAdminWebToken,
+  );
+  const migratedRegistry = (await db.doc(
+    `adminWebPushTokens/${sharedAdminWebDeviceId}`,
+  ).get()).data();
+  assert.equal(migratedRegistry.ownerUid, 'developer-admin-test-001');
+  assert.equal(migratedRegistry.tokenHash, sharedAdminWebDeviceId);
+  assert.equal(migratedRegistry.token, undefined);
+
+  const transferredWebPush = await callable(
+    'registerAdminWebPushToken',
+    todaAdminToken,
+    { token: sharedAdminWebToken },
+  );
+  assert.equal(transferredWebPush.registered, true);
+  assert.equal(
+    (await db.doc(
+      `users/developer-admin-test-001/devices/${sharedAdminWebDeviceId}`,
+    ).get()).exists,
+    false,
+  );
+  assert.equal(
+    (await legacyTodaDeviceRef.get()).data().token,
+    sharedAdminWebToken,
+  );
+  assert.equal(
+    (await db.doc(
+      `adminWebPushTokens/${sharedAdminWebDeviceId}`,
+    ).get()).data().ownerUid,
+    'toda-admin-test-001',
+  );
+  await Promise.all([
+    expectHttpStatus(
+      'administrator cannot directly read the web push owner registry',
+      firestoreDocument(`adminWebPushTokens/${sharedAdminWebDeviceId}`),
+      developerToken,
+      [403],
+    ),
+    expectHttpStatus(
+      'administrator cannot directly overwrite the web push owner registry',
+      firestoreDocument(`adminWebPushTokens/${sharedAdminWebDeviceId}`),
+      todaAdminToken,
+      [403],
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            ownerUid: { stringValue: 'developer-admin-test-001' },
+          },
+        }),
+      },
+    ),
+  ]);
+  const refusedWebPushRemoval = await callable(
+    'unregisterAdminWebPushToken',
+    developerToken,
+    {
+      token: sharedAdminWebToken,
+      deviceId: sharedAdminWebDeviceId,
+    },
+  );
+  assert.equal(refusedWebPushRemoval.unregistered, false);
+  assert.equal((await legacyTodaDeviceRef.get()).exists, true);
+  const removedWebPush = await callable(
+    'unregisterAdminWebPushToken',
+    todaAdminToken,
+    {
+      token: sharedAdminWebToken,
+      deviceId: sharedAdminWebDeviceId,
+    },
+  );
+  assert.equal(removedWebPush.unregistered, true);
+  assert.equal((await legacyTodaDeviceRef.get()).exists, false);
+  assert.equal(
+    (await db.doc(
+      `adminWebPushTokens/${sharedAdminWebDeviceId}`,
+    ).get()).exists,
+    false,
+  );
+
+  const mismatchedMigrationRef = db.doc(
+    'users/toda-admin-test-001/devices/legacy-mismatched-web-device',
+  );
+  await mismatchedMigrationRef.set({
+    token: 'a-different-browser-token',
+    platform: 'web',
+  });
+  const migrationCandidateToken =
+    'emulator-admin-web-push-migration-candidate-v1';
+  const migrationCandidateDeviceId = createHash('sha256')
+    .update(migrationCandidateToken)
+    .digest('hex');
+  await callable('registerAdminWebPushToken', developerToken, {
+    token: migrationCandidateToken,
+    previousUid: 'toda-admin-test-001',
+    previousDeviceId: 'legacy-mismatched-web-device',
+  });
+  assert.equal(
+    (await mismatchedMigrationRef.get()).data().token,
+    'a-different-browser-token',
+  );
+  await callable('unregisterAdminWebPushToken', developerToken, {
+    token: migrationCandidateToken,
+    deviceId: migrationCandidateDeviceId,
+  });
+  await mismatchedMigrationRef.delete();
+
+  // Before any coverage is approved, the pilot fallback remains open to
+  // drivers from every active TODA and does not charge a boundary fee.
+  await Promise.all([
+    callable('setDriverOnlineStatus', driverToken, { isOnline: true }),
+    callable('setDriverOnlineStatus', secondDriverToken, { isOnline: true }),
+    setFreshDriverLocation('driver-test-001', 10.6765, 122.9509),
+    setFreshDriverLocation('driver-test-002', 10.6768, 122.9511),
+  ]);
+  const pilotBookingId = 'booking-test-pilot-open-001';
+  const pilotCreated = await callable(
+    'createBookingLifecycle',
+    passengerToken,
+    {
+      bookingId: pilotBookingId,
+      operationId: operation('create-pilot-open', 1),
+      pickup: { latitude: 10.6762, longitude: 122.9506 },
+      destination: { latitude: 10.6840, longitude: 122.9580 },
+      pickupAddress: 'Pilot Open Pickup',
+      destinationAddress: 'Pilot Open Destination',
+      additionalPassengers: 0,
+      baggageCount: 0,
+      isOutsideToda: true,
+      distanceMeters: 1,
+      estimatedFare: 1,
+    },
+  );
+  assert.equal(pilotCreated.coverageClass, 'unconfigured_fallback');
+  assert.equal(pilotCreated.isOutsideToda, false);
+  assert.equal(pilotCreated.fareBreakdown.boundarySurcharge, 0);
+  assert.deepEqual(pilotCreated.primaryTodaIds, []);
+  assert.deepEqual(pilotCreated.secondaryTodaIds, []);
+  await waitFor(
+    async () => {
+      const [primaryTodaDriver, secondTodaDriver] = await Promise.all([
+        db.doc(
+          `drivers/driver-test-001/bookingOffers/${pilotBookingId}`,
+        ).get(),
+        db.doc(
+          `drivers/driver-test-002/bookingOffers/${pilotBookingId}`,
+        ).get(),
+      ]);
+      return primaryTodaDriver.data()?.status === 'offered' &&
+          secondTodaDriver.data()?.status === 'offered'
+        ? [primaryTodaDriver.data(), secondTodaDriver.data()]
+        : null;
+    },
+    'open-pilot offers for both TODAs',
+  ).then((offers) => {
+    assert.deepEqual(
+      offers.map((offer) => offer.servicePriority),
+      [0, 0],
+    );
+    assert.deepEqual(
+      offers.map((offer) => offer.serviceTier),
+      ['open', 'open'],
+    );
+  });
+  await callable('acceptBookingLifecycle', secondDriverToken, {
+    bookingId: pilotBookingId,
+    operationId: operation('accept-pilot-open', 1),
+  });
+  await callable('transitionBookingLifecycle', passengerToken, {
+    bookingId: pilotBookingId,
+    operationId: operation('cancel-pilot-open', 1),
+    action: 'cancel',
+    reasonCode: 'emulator_cleanup',
+  });
 
   const coveragePolygon = [
     [122.94, 10.66],
@@ -171,6 +390,31 @@ async function main() {
     latitude: 10.66,
     longitude: 122.94,
   });
+  const secondaryCoveragePolygon = [
+    [122.975, 10.66],
+    [123.005, 10.66],
+    [123.005, 10.69],
+    [122.975, 10.69],
+  ];
+  const secondaryZone = await callable(
+    'adminSubmitZoneRequest',
+    developerToken,
+    {
+      todaId: 'test-toda-east',
+      polygon: secondaryCoveragePolygon,
+      areas: [secondaryCoveragePolygon],
+      notes: 'Developer-created secondary TODA emulator coverage.',
+    },
+  );
+  await callable('adminReviewZoneRequest', developerToken, {
+    zoneRequestId: secondaryZone.zoneRequestId,
+    status: 'approved',
+  });
+  const secondaryGeofence = (await db.doc(
+    'geofences/test-toda-east',
+  ).get()).data();
+  assert.equal(secondaryGeofence.geometryVersion, 2);
+  assert.equal(secondaryGeofence.areas[0].points.length, 4);
 
   const blockingArea = [
     [122.953, 10.681],
@@ -217,6 +461,69 @@ async function main() {
       isActive: false,
     },
   );
+  await callable(
+    'adminCreateRouteRestriction',
+    developerToken,
+    {
+      name: 'Emulator segmented highway',
+      type: 'prohibited_highway',
+      geometryType: 'corridor',
+      areas: [
+        [
+          [122.9400, 10.6500],
+          [122.9450, 10.6550],
+        ],
+        [
+          [122.9550, 10.6650],
+          [122.9600, 10.6700],
+        ],
+      ],
+      bufferMeters: 30,
+      notes: 'New manual highway creation must stay disabled.',
+    },
+    { expectError: 'FAILED_PRECONDITION' },
+  );
+  const restrictedDriving = await callable(
+    'adminCreateRouteRestriction',
+    developerToken,
+    {
+      name: 'Emulator restricted driving district',
+      type: 'restricted_crossing',
+      geometryType: 'polygon',
+      areas: [blockingArea],
+      notes: 'Validates identical endpoint enforcement.',
+    },
+  );
+  await callable('createBookingLifecycle', passengerToken, {
+    bookingId: 'booking-test-restricted-driving-001',
+    operationId: operation('create-restricted-driving', 1),
+    pickup: { latitude: 10.6762, longitude: 122.9506 },
+    destination: { latitude: 10.6820, longitude: 122.9540 },
+    pickupAddress: 'Allowed Pickup',
+    destinationAddress: 'Restricted Driving District',
+    additionalPassengers: 0,
+    baggageCount: 0,
+    isOutsideToda: false,
+    distanceMeters: 1,
+    estimatedFare: 1,
+  }, { expectError: 'FAILED_PRECONDITION' });
+  await callable('adminSetRouteRestrictionStatus', developerToken, {
+    restrictionId: restrictedDriving.restrictionId,
+    isActive: false,
+  });
+  const legacyHighwayId = 'legacy-highway-history-001';
+  await db.doc(`routeRestrictions/${legacyHighwayId}`).set({
+    name: 'Archived emulator highway corridor',
+    type: 'prohibited_highway',
+    geometryType: 'corridor',
+    bufferMeters: 30,
+    isActive: true,
+    coordinates: [
+      { latitude: 10.6810, longitude: 122.9480 },
+      { latitude: 10.6810, longitude: 122.9600 },
+    ],
+    notes: 'Retained for history but excluded from route enforcement.',
+  });
 
   await Promise.all([
     callable('setDriverOnlineStatus', driverToken, { isOnline: true }),
@@ -226,6 +533,20 @@ async function main() {
     setFreshDriverLocation('driver-test-001', 10.6765, 122.9509),
     setFreshDriverLocation('driver-test-002', 10.6770, 122.9512),
   ]);
+  const [developerLiveDrivers, todaLiveDrivers] = await Promise.all([
+    callable('adminListLiveDrivers', developerToken, {}),
+    callable('adminListLiveDrivers', todaAdminToken, {}),
+  ]);
+  assert.deepEqual(
+    developerLiveDrivers.items.map((item) => item.uid).sort(),
+    ['driver-test-001', 'driver-test-002'],
+  );
+  assert.deepEqual(
+    todaLiveDrivers.items.map((item) => item.uid),
+    ['driver-test-001'],
+  );
+  const initialDriverDispatchStats =
+    (await db.doc('drivers/driver-test-001').get()).data().dispatchStats || {};
 
   const bookingId = 'booking-test-main-001';
   const created = await callable('createBookingLifecycle', passengerToken, {
@@ -243,6 +564,22 @@ async function main() {
   });
   assert.ok(created.distanceMeters > 1);
   assert.ok(created.estimatedFare >= 20);
+  assert.equal(created.coveragePolicyVersion, 3);
+  assert.deepEqual(created.primaryTodaIds, ['test-toda-bacolod']);
+  assert.deepEqual(created.secondaryTodaIds, []);
+  assert.equal(created.allowAnyActiveToda, true);
+  assert.deepEqual(created.avoidedRouteRestrictionIds, []);
+  assert.deepEqual(created.avoidedRouteRestrictionNames, []);
+  assert.equal(created.routePolicyVersion, 4);
+  assert.equal(
+    created.highwayRouteAdvisory.confirmedViolation,
+    false,
+  );
+  assert.equal(
+    (await db.doc(`bookings/${bookingId}`).get())
+      .data().routeRestrictionIdsChecked.includes(legacyHighwayId),
+    false,
+  );
 
   const offer = await waitFor(
     async () => {
@@ -256,6 +593,11 @@ async function main() {
     'distance-ranked driver offer',
   );
   assert.ok(offer.distanceMeters <= 5000);
+  assert.equal(offer.servicePriority, 0);
+  assert.equal(offer.dispatchPolicyVersion, 3);
+  assert.equal(offer.dispatchScore.version, 3);
+  assert.ok(offer.queueEnteredAt);
+  assert.ok(offer.bookingCreatedAt);
   await expectHttpStatus(
     'offered driver may read the pending booking',
     firestoreDocument(`bookings/${bookingId}`),
@@ -290,8 +632,21 @@ async function main() {
   let booking = (await db.doc(`bookings/${bookingId}`).get()).data();
   assert.equal(booking.driverId, 'driver-test-001');
   assert.equal(booking.status, 'driverAssigned');
+  assert.equal(booking.routePolicyVersion, 4);
+  assert.equal(booking.highwayRouteAdvisory.confirmedViolation, false);
+  assert.equal(booking.coveragePolicyVersion, 3);
+  assert.equal(booking.coverageDecision.version, 3);
+  assert.equal(booking.awardPolicyVersion, 3);
+  assert.equal(booking.winningDispatchScore.version, 3);
   assert.equal(booking.clientEstimate.estimatedFare, 1);
   assert.notEqual(booking.estimatedFare, 1);
+  const assignedDriver =
+    (await db.doc('drivers/driver-test-001').get()).data();
+  assert.equal(
+    assignedDriver.dispatchStats.assignmentCount,
+    Number(initialDriverDispatchStats.assignmentCount || 0) + 1,
+  );
+  assert.ok(assignedDriver.dispatchStats.dailyAwardCount >= 1);
   assert.equal(
     (await realtime.ref(
       'driver_tracking_access/passenger-test-001/driver-test-001',
@@ -451,6 +806,193 @@ async function main() {
       }),
     },
   );
+  for (const [description, location] of [
+    [
+      'driver cannot publish a stale location timestamp',
+      {
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 5,
+        timestamp: Date.now() - 130000,
+        online: true,
+      },
+    ],
+    [
+      'driver cannot publish a future location timestamp',
+      {
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 5,
+        timestamp: Date.now() + 11000,
+        online: true,
+      },
+    ],
+    [
+      'driver cannot publish location worse than 100 metre accuracy',
+      {
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 101,
+        timestamp: Date.now(),
+        online: true,
+      },
+    ],
+    [
+      'driver cannot publish a stale GPS observation timestamp',
+      {
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 5,
+        observedAt: Date.now() - 130000,
+        timestamp: Date.now(),
+        online: true,
+      },
+    ],
+    [
+      'driver cannot publish a future GPS observation timestamp',
+      {
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 5,
+        observedAt: Date.now() + 11000,
+        timestamp: Date.now(),
+        online: true,
+      },
+    ],
+    [
+      'driver cannot publish an unknown location field',
+      {
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 5,
+        observedAt: Date.now(),
+        timestamp: Date.now(),
+        online: true,
+        spoofedTodaId: 'test-toda-east',
+      },
+    ],
+  ]) {
+    await expectHttpStatus(
+      description,
+      realtimeDocument('driver_locations/driver-test-001', driverToken),
+      driverToken,
+      [401, 403],
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(location),
+      },
+    );
+  }
+  await expectHttpStatus(
+    'legacy driver location without observedAt remains dispatch-readable',
+    realtimeDocument('driver_locations/driver-test-001', driverToken),
+    driverToken,
+    [200],
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 5,
+        timestamp: Date.now(),
+        online: true,
+      }),
+    },
+  );
+  await callable(
+    'driverReportRestrictionPosition',
+    driverToken,
+    {},
+    { expectError: 'FAILED_PRECONDITION' },
+  );
+  await expectHttpStatus(
+    'dispatch accepts an 80 metre fix before violation confidence filtering',
+    realtimeDocument('driver_locations/driver-test-001', driverToken),
+    driverToken,
+    [200],
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latitude: 10.6762,
+        longitude: 122.9506,
+        accuracy: 80,
+        observedAt: Date.now(),
+        timestamp: Date.now(),
+        online: true,
+      }),
+    },
+  );
+  await callable(
+    'driverReportRestrictionPosition',
+    driverToken,
+    {},
+    { expectError: 'FAILED_PRECONDITION' },
+  );
+  await expectHttpStatus(
+    'driver can publish online presence',
+    realtimeDocument('driver_presence/driver-test-001', driverToken),
+    driverToken,
+    [200],
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        online: true,
+        updatedAt: Date.now(),
+      }),
+    },
+  );
+  await expectHttpStatus(
+    'driver can publish the onDisconnect-compatible offline presence',
+    realtimeDocument('driver_presence/driver-test-001', driverToken),
+    driverToken,
+    [200],
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        online: false,
+        updatedAt: Date.now(),
+      }),
+    },
+  );
+  await expectHttpStatus(
+    'driver presence rejects unknown fields',
+    realtimeDocument('driver_presence/driver-test-001', driverToken),
+    driverToken,
+    [401, 403],
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        online: true,
+        updatedAt: Date.now(),
+        adminOverride: true,
+      }),
+    },
+  );
+  await expectHttpStatus(
+    'driver can restore online presence after an offline transition',
+    realtimeDocument('driver_presence/driver-test-001', driverToken),
+    driverToken,
+    [200],
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        online: true,
+        updatedAt: Date.now(),
+      }),
+    },
+  );
+  await setFreshDriverLocation(
+    'driver-test-001',
+    10.6762,
+    122.9506,
+  );
 
   await callable('transitionBookingLifecycle', driverToken, {
     bookingId,
@@ -534,6 +1076,10 @@ async function main() {
   assert.ok(driver.completedTrips >= 25);
   assert.ok(driver.totalEarnings > 3200);
   assert.equal(
+    driver.dispatchStats.completedAssignments,
+    Number(initialDriverDispatchStats.completedAssignments || 0) + 1,
+  );
+  assert.equal(
     (await realtime.ref(
       'driver_tracking_access/passenger-test-001/driver-test-001',
     ).get()).exists(),
@@ -566,9 +1112,9 @@ async function main() {
     bookingId: cancelledBookingId,
     operationId: operation('create-cancel', 1),
     pickup: { latitude: 10.6762, longitude: 122.9506 },
-    destination: { latitude: 10.7000, longitude: 122.9800 },
+    destination: { latitude: 10.6765, longitude: 122.9850 },
     pickupAddress: 'Cancellation Pickup',
-    destinationAddress: 'Cancellation Destination',
+    destinationAddress: 'Secondary TODA Destination',
     additionalPassengers: 0,
     baggageCount: 0,
     isOutsideToda: false,
@@ -579,10 +1125,23 @@ async function main() {
     `bookings/${cancelledBookingId}`,
   ).get()).data();
   assert.equal(crossBoundaryBooking.isOutsideToda, true);
+  assert.equal(
+    crossBoundaryBooking.coverageDecision.coverageClass,
+    'cross_boundary',
+  );
+  assert.deepEqual(
+    crossBoundaryBooking.primaryTodaIds,
+    ['test-toda-bacolod'],
+  );
+  assert.deepEqual(
+    crossBoundaryBooking.secondaryTodaIds,
+    ['test-toda-east'],
+  );
+  assert.equal(crossBoundaryBooking.allowAnyActiveToda, true);
   assert.equal(crossBoundaryBooking.fareBreakdown.boundarySurcharge, 20);
   assert.deepEqual(
     crossBoundaryBooking.eligibleTodaIds,
-    ['test-toda-bacolod'],
+    ['test-toda-bacolod', 'test-toda-east'],
   );
   await waitFor(
     async () => {
@@ -599,6 +1158,18 @@ async function main() {
     },
     'competing distance-ranked offers',
   );
+  const [primaryOffer, secondaryOffer] = await Promise.all([
+    db.doc(
+      `drivers/driver-test-001/bookingOffers/${cancelledBookingId}`,
+    ).get(),
+    db.doc(
+      `drivers/driver-test-002/bookingOffers/${cancelledBookingId}`,
+    ).get(),
+  ]);
+  assert.equal(primaryOffer.data().servicePriority, 0);
+  assert.equal(primaryOffer.data().serviceTier, 'primary');
+  assert.equal(secondaryOffer.data().servicePriority, 1);
+  assert.equal(secondaryOffer.data().serviceTier, 'secondary');
   const competingAccepts = await Promise.allSettled([
     callable('acceptBookingLifecycle', driverToken, {
       bookingId: cancelledBookingId,
@@ -615,7 +1186,7 @@ async function main() {
   );
   assert.equal(
     (await db.doc(`bookings/${cancelledBookingId}`).get()).data().driverId,
-    'driver-test-002',
+    'driver-test-001',
   );
   await callable('transitionBookingLifecycle', passengerToken, {
     bookingId: cancelledBookingId,
@@ -627,6 +1198,78 @@ async function main() {
     (await db.doc(`bookings/${cancelledBookingId}`).get()).data().status,
     'cancelled',
   );
+
+  const uncoveredBookingId = 'booking-test-uncovered-001';
+  await Promise.all([
+    setFreshDriverLocation(
+      'driver-test-001',
+      10.7051,
+      123.0101,
+    ),
+    setFreshDriverLocation(
+      'driver-test-002',
+      10.7052,
+      123.0102,
+    ),
+  ]);
+  const uncoveredCreated = await callable(
+    'createBookingLifecycle',
+    passengerToken,
+    {
+      bookingId: uncoveredBookingId,
+      operationId: operation('create-uncovered', 1),
+      pickup: { latitude: 10.7050, longitude: 123.0100 },
+      destination: { latitude: 10.7100, longitude: 123.0150 },
+      pickupAddress: 'Outside Network Pickup',
+      destinationAddress: 'Outside Network Destination',
+      additionalPassengers: 0,
+      baggageCount: 0,
+      isOutsideToda: false,
+      distanceMeters: 1,
+      estimatedFare: 1,
+    },
+  );
+  assert.equal(uncoveredCreated.coverageClass, 'outside_network');
+  assert.equal(uncoveredCreated.isOutsideToda, true);
+  assert.equal(uncoveredCreated.fareBreakdown.boundarySurcharge, 20);
+  assert.deepEqual(uncoveredCreated.primaryTodaIds, []);
+  assert.deepEqual(uncoveredCreated.secondaryTodaIds, []);
+  assert.equal(uncoveredCreated.allowAnyActiveToda, true);
+  const uncoveredOffers = await waitFor(
+    async () => {
+      const [first, second] = await Promise.all([
+        db.doc(
+          `drivers/driver-test-001/bookingOffers/${uncoveredBookingId}`,
+        ).get(),
+        db.doc(
+          `drivers/driver-test-002/bookingOffers/${uncoveredBookingId}`,
+        ).get(),
+      ]);
+      return first.data()?.status === 'offered' &&
+          second.data()?.status === 'offered'
+        ? [first.data(), second.data()]
+        : null;
+    },
+    'configured-network fallback offers',
+  );
+  assert.deepEqual(
+    uncoveredOffers.map((offer) => offer.servicePriority),
+    [0, 0],
+  );
+  assert.deepEqual(
+    uncoveredOffers.map((offer) => offer.serviceTier),
+    ['fallback', 'fallback'],
+  );
+  await callable('acceptBookingLifecycle', secondDriverToken, {
+    bookingId: uncoveredBookingId,
+    operationId: operation('accept-uncovered', 1),
+  });
+  await callable('transitionBookingLifecycle', passengerToken, {
+    bookingId: uncoveredBookingId,
+    operationId: operation('cancel-uncovered', 1),
+    action: 'cancel',
+    reasonCode: 'emulator_cleanup',
+  });
 
   const developerBookings = await callable(
     'adminListBookings',
@@ -719,12 +1362,367 @@ async function main() {
     { expectError: 'PERMISSION_DENIED' },
   );
 
+  const violationArea = [
+    [123.0095, 10.7045],
+    [123.0105, 10.7045],
+    [123.0105, 10.7055],
+    [123.0095, 10.7055],
+  ];
+  const violationRestriction = await callable(
+    'adminCreateRouteRestriction',
+    developerToken,
+    {
+      name: 'Emulator Downtown Restricted Area',
+      type: 'restricted_crossing',
+      geometryType: 'polygon',
+      areas: [violationArea],
+      notes: 'Exercises backend-verified online-idle entry detection.',
+    },
+  );
+  const firstInsideObservedAt = Date.now() - 3000;
+  await setFreshDriverLocation(
+    'driver-test-001',
+    10.7050,
+    123.0100,
+    { observedAt: firstInsideObservedAt },
+  );
+  await waitFor(
+    async () => {
+      const state = await db.doc(
+        'driverRestrictionStates/driver-test-001/restrictions/' +
+          violationRestriction.restrictionId,
+      ).get();
+      return state.data()?.candidateInsideSamples === 1
+        ? state.data()
+        : null;
+    },
+    'server-triggered first restricted-area observation',
+  );
+  // A heartbeat republishes the point with a newer server timestamp while
+  // retaining the same device GPS observedAt. It must not count as evidence.
+  await setFreshDriverLocation(
+    'driver-test-001',
+    10.7050,
+    123.0100,
+    { observedAt: firstInsideObservedAt },
+  );
+  const repeatedHeartbeat = await callable(
+    'driverReportRestrictionPosition',
+    driverToken,
+    {},
+  );
+  assert.deepEqual(repeatedHeartbeat.createdViolationIds, []);
+  assert.equal(repeatedHeartbeat.locationObservedAt, firstInsideObservedAt);
+  assert.equal(
+    (await db.doc(
+      'driverRestrictionStates/driver-test-001/restrictions/' +
+        violationRestriction.restrictionId,
+    ).get()).data().candidateInsideSamples,
+    1,
+  );
+  const secondInsideObservedAt = firstInsideObservedAt + 1000;
+  await setFreshDriverLocation(
+    'driver-test-001',
+    10.7050,
+    123.0100,
+    { observedAt: secondInsideObservedAt },
+  );
+  const violationSnapshot = await waitFor(
+    async () => {
+      const documents = await db.collection('driverViolations').get();
+      return documents.docs.find((document) =>
+        document.data().restrictionId === violationRestriction.restrictionId &&
+        document.data().driverId === 'driver-test-001') || null;
+    },
+    'server-triggered confirmed restricted-area case',
+  );
+  const violationId = violationSnapshot.id;
+  const repeatedPositionReport = await callable(
+    'driverReportRestrictionPosition',
+    driverToken,
+    {},
+  );
+  assert.deepEqual(repeatedPositionReport.createdViolationIds, []);
+  assert.equal(violationSnapshot.data().eventClass, 'restricted_area_entry');
+  assert.equal(violationSnapshot.data().status, 'open');
+  assert.equal(violationSnapshot.data().driverId, 'driver-test-001');
+  assert.equal(
+    violationSnapshot.data().ownerTodaId,
+    'test-toda-bacolod',
+  );
+  assert.equal(violationSnapshot.data().context, 'online_idle');
+  assert.equal(
+    violationSnapshot.data().restrictionId,
+    violationRestriction.restrictionId,
+  );
+  assert.equal(
+    violationSnapshot.data().confidence,
+    'two_fresh_driver_reported_gps_fixes_server_geometry_match',
+  );
+  assert.equal(violationSnapshot.data().evidence.sampleCount, 2);
+  assert.equal(
+    violationSnapshot.data().evidence.clock,
+    'gps_observed_at',
+  );
+  assert.equal(
+    violationSnapshot.data().evidence.firstObservedAt,
+    firstInsideObservedAt,
+  );
+  assert.equal(
+    violationSnapshot.data().evidence.confirmingObservedAt,
+    secondInsideObservedAt,
+  );
+  assert.equal(
+    violationSnapshot.data().eventLocation.observedAt,
+    secondInsideObservedAt,
+  );
+  assert.equal(
+    violationSnapshot.data().restrictionSnapshot.id,
+    violationRestriction.restrictionId,
+  );
+  assert.equal(
+    violationSnapshot.data().restrictionSnapshot.areas[0].points.length,
+    4,
+  );
+  const completedViolationDelivery = await waitFor(
+    async () => {
+      const data = (await db.doc(
+        `driverViolations/${violationId}`,
+      ).get()).data();
+      return data?.delivery?.status !== 'pending' &&
+          data?.driverDelivery?.status !== 'pending'
+        ? data
+        : null;
+    },
+    'separate admin and driver restricted-area notification delivery',
+  );
+  assert.equal(completedViolationDelivery.delivery.recipientCount, 2);
+  assert.equal(completedViolationDelivery.driverDelivery.recipientCount, 1);
+
+  const [developerViolations, todaViolations, driverViolations] =
+    await Promise.all([
+      callable('adminListDriverViolations', developerToken, {
+        limit: 20,
+      }),
+      callable('adminListDriverViolations', todaAdminToken, {
+        limit: 20,
+      }),
+      callable('listMyDriverViolations', driverToken, {
+        limit: 20,
+        includeClosed: true,
+      }),
+    ]);
+  assert.ok(
+    developerViolations.items.some(
+      (item) => item.violationId === violationId,
+    ),
+  );
+  assert.ok(
+    todaViolations.items.some(
+      (item) => item.violationId === violationId,
+    ),
+  );
+  assert.ok(
+    todaViolations.items.every(
+      (item) => item.ownerTodaId === 'test-toda-bacolod',
+    ),
+  );
+  assert.ok(
+    driverViolations.items.some(
+      (item) => item.violationId === violationId,
+    ),
+  );
+  assert.equal(developerViolations.nextCursor, null);
+  const [developerViolationDetail, todaViolationDetail] =
+    await Promise.all([
+      callable('adminGetDriverViolation', developerToken, {
+        violationId,
+      }),
+      callable('adminGetDriverViolation', todaAdminToken, {
+        violationId,
+      }),
+    ]);
+  assert.equal(
+    developerViolationDetail.item.violationId,
+    violationId,
+  );
+  assert.equal(todaViolationDetail.item.ownerTodaId, 'test-toda-bacolod');
+  await callable(
+    'adminGetDriverViolation',
+    passengerToken,
+    { violationId },
+    { expectError: 'PERMISSION_DENIED' },
+  );
+  await callable(
+    'listMyDriverViolations',
+    passengerToken,
+    {},
+    { expectError: 'PERMISSION_DENIED' },
+  );
+  await Promise.all([
+    expectHttpStatus(
+      'driver may read their own restricted-area case',
+      firestoreDocument(`driverViolations/${violationId}`),
+      driverToken,
+      [200],
+    ),
+    expectHttpStatus(
+      'owning TODA admin may read a restricted-area case',
+      firestoreDocument(`driverViolations/${violationId}`),
+      todaAdminToken,
+      [200],
+    ),
+    expectHttpStatus(
+      'passenger cannot read a driver restricted-area case',
+      firestoreDocument(`driverViolations/${violationId}`),
+      passengerToken,
+      [403],
+    ),
+    expectHttpStatus(
+      'another driver cannot read a driver restricted-area case',
+      firestoreDocument(`driverViolations/${violationId}`),
+      secondDriverToken,
+      [403],
+    ),
+  ]);
+
+  await callable('adminUpdateDriverViolation', todaAdminToken, {
+    violationId,
+    action: 'acknowledge',
+    note: 'TODA administrator acknowledged the alert.',
+  });
+  await callable('adminUpdateDriverViolation', developerToken, {
+    violationId,
+    action: 'investigate',
+    note: 'Developer administrator started investigation.',
+  });
+  const driverMessageId = 'violation-msg-driver-001';
+  const adminMessageId = 'violation-msg-admin-001';
+  await callable('sendDriverViolationMessage', driverToken, {
+    violationId,
+    messageId: driverMessageId,
+    message: 'I am leaving the restricted district now.',
+  });
+  const repeatedMessage = await callable(
+    'sendDriverViolationMessage',
+    driverToken,
+    {
+      violationId,
+      messageId: driverMessageId,
+      message: 'I am leaving the restricted district now.',
+    },
+  );
+  assert.equal(repeatedMessage.idempotent, true);
+  await callable('sendDriverViolationMessage', developerToken, {
+    violationId,
+    messageId: adminMessageId,
+    message: 'Follow the permitted route and confirm when clear.',
+  });
+  const storedAdminMessage = (await db.doc(
+    `driverViolations/${violationId}/messages/${adminMessageId}`,
+  ).get()).data();
+  assert.equal(
+    storedAdminMessage.senderName,
+    'Devon Administrator',
+  );
+  await callable(
+    'sendDriverViolationMessage',
+    passengerToken,
+    {
+      violationId,
+      messageId: 'violation-msg-passenger-001',
+      message: 'Passengers are not members of violation cases.',
+    },
+    { expectError: 'PERMISSION_DENIED' },
+  );
+  await Promise.all([
+    expectHttpStatus(
+      'driver may read violation case messages',
+      firestoreDocument(
+        `driverViolations/${violationId}/messages/${adminMessageId}`,
+      ),
+      driverToken,
+      [200],
+    ),
+    expectHttpStatus(
+      'passenger cannot read violation case messages',
+      firestoreDocument(
+        `driverViolations/${violationId}/messages/${adminMessageId}`,
+      ),
+      passengerToken,
+      [403],
+    ),
+  ]);
+  const readResult = await callable(
+    'markDriverViolationMessagesRead',
+    driverToken,
+    { violationId },
+  );
+  assert.equal(readResult.markedRead, 2);
+
+  const firstOutsideObservedAt = Date.now() - 2000;
+  await setFreshDriverLocation(
+    'driver-test-001',
+    10.7070,
+    123.0120,
+    { observedAt: firstOutsideObservedAt },
+  );
+  await waitFor(
+    async () => {
+      const state = await db.doc(
+        'driverRestrictionStates/driver-test-001/restrictions/' +
+          violationRestriction.restrictionId,
+      ).get();
+      return state.data()?.candidateOutsideSamples === 1
+        ? state.data()
+        : null;
+    },
+    'server-triggered first restricted-area exit observation',
+  );
+  await setFreshDriverLocation(
+    'driver-test-001',
+    10.7071,
+    123.0121,
+    { observedAt: firstOutsideObservedAt + 1000 },
+  );
+  const exitedViolation = await waitFor(
+    async () => {
+      const snapshot = await db.doc(
+        `driverViolations/${violationId}`,
+      ).get();
+      return snapshot.data()?.exitedAt ? snapshot.data() : null;
+    },
+    'server-triggered confirmed restricted-area exit',
+  );
+  assert.equal(
+    exitedViolation.exitEvidence.confirmingObservedAt,
+    firstOutsideObservedAt + 1000,
+  );
+  const resolvedViolation = await callable(
+    'adminUpdateDriverViolation',
+    developerToken,
+    {
+      violationId,
+      action: 'resolve',
+      note: 'Driver left the mapped restricted district safely.',
+    },
+  );
+  assert.equal(resolvedViolation.status, 'resolved');
+  await expectHttpStatus(
+    'driver location may be removed by the onDisconnect-compatible cleanup',
+    realtimeDocument('driver_locations/driver-test-001', driverToken),
+    driverToken,
+    [200],
+    { method: 'DELETE' },
+  );
+
   console.log('Verified isolated VolTrike lifecycle:');
   console.log('- trusted booking/fare creation and 5 km dispatch');
   console.log('- driver acceptance, tracking grant, arrival, SOS, and sharing');
   console.log('- pickup PIN, start, cash settlement, completion, and rating');
   console.log('- report creation, cancellation cleanup, and admin/TODA scope');
   console.log('- Firestore and RTDB participant/offer security rules');
+  console.log('- restricted-area entry dedupe, scope, response, and case chat');
 }
 
 main().then(

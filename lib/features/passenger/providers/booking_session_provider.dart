@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
+import '../../../data/models/route_policy_advisory.dart';
+
 /// ===========================================================================
 /// Booking Session
 ///
@@ -22,6 +24,8 @@ class BookingSession {
     this.destinationName,
     this.destinationAddress,
     this.routePoints = const [],
+    this.routeAdvisory = '',
+    this.routePolicy = const RoutePolicyAdvisory(),
     this.distanceMeters = 0,
     this.duration = '',
 
@@ -61,6 +65,10 @@ class BookingSession {
 
   /// Decoded Google Routes polyline.
   final List<LatLng> routePoints;
+
+  /// Persistent passenger-facing notice when a safe alternative was selected.
+  final String routeAdvisory;
+  final RoutePolicyAdvisory routePolicy;
 
   /// Route distance in meters.
   final int distanceMeters;
@@ -106,6 +114,8 @@ class BookingSession {
     String? destinationName,
     String? destinationAddress,
     List<LatLng>? routePoints,
+    String? routeAdvisory,
+    RoutePolicyAdvisory? routePolicy,
     int? distanceMeters,
     String? duration,
 
@@ -129,6 +139,8 @@ class BookingSession {
       destinationName: destinationName ?? this.destinationName,
       destinationAddress: destinationAddress ?? this.destinationAddress,
       routePoints: routePoints ?? this.routePoints,
+      routeAdvisory: routeAdvisory ?? this.routeAdvisory,
+      routePolicy: routePolicy ?? this.routePolicy,
       distanceMeters: distanceMeters ?? this.distanceMeters,
       duration: duration ?? this.duration,
 
@@ -172,6 +184,8 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       pickupName: pickupName,
       pickupAddress: pickupAddress,
       routePoints: const <LatLng>[],
+      routeAdvisory: '',
+      routePolicy: const RoutePolicyAdvisory(),
       distanceMeters: 0,
       duration: '',
       baseFare: 0,
@@ -196,6 +210,8 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       destinationName: destinationName,
       destinationAddress: destinationAddress,
       routePoints: const <LatLng>[],
+      routeAdvisory: '',
+      routePolicy: const RoutePolicyAdvisory(),
       distanceMeters: 0,
       duration: '',
       baseFare: 0,

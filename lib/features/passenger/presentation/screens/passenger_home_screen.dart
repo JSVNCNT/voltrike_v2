@@ -161,6 +161,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         destinationName: destinationName,
         destinationAddress: destinationAddress,
         routePoints: const <LatLng>[],
+        routeAdvisory: '',
         distanceMeters: 0,
         duration: '',
         baseFare: 0,
@@ -195,17 +196,31 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     if (!mounted || calculationGeneration != _routeCalculationGeneration) {
       return;
     }
-    if (!coverage.pickupAllowed) {
-      ref.read(bookingProvider.notifier).reset();
-      _showCoverageWarning(
-        'Pickup is outside the configured VolTrike service areas. Choose a pickup inside a TODA coverage zone.',
-      );
-      return;
-    }
-
     RouteRestrictionService.instance
       ..invalidate()
       ..clearLastConflict();
+    final endpointRestriction =
+        await RouteRestrictionService.instance.bookingEndpointConflict(
+          pickup,
+        ) ??
+        await RouteRestrictionService.instance.bookingEndpointConflict(
+          destination,
+        );
+    if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+      return;
+    }
+    if (endpointRestriction != null) {
+      ref.read(bookingProvider.notifier).reset();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'E-trikes cannot pick up, drop off, or travel through this '
+            'restricted area. Move the pin outside the red boundary.',
+          ),
+        ),
+      );
+      return;
+    }
     final result = await RoutesService.computeRoute(
       origin: pickup,
       destination: destination,
@@ -224,7 +239,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             content: Text(
               restriction == null
                   ? 'Unable to calculate a route right now.'
-                  : 'No safe route is available because of ${restriction.name}.',
+                  : 'No permitted e-trike route is available for this trip.',
             ),
           ),
         );
@@ -234,6 +249,15 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     }
 
     final routePoints = PolylineService.decodePolyline(result.encodedPolyline);
+    final routeNotices = <String>[
+      if (result.avoidedRestrictionNames.isNotEmpty)
+        'Route adjusted to avoid '
+            '${result.avoidedRestrictionNames.join(', ')}.',
+      if (result.routePolicy.restrictionsPartiallyIgnored)
+        'Highways are avoided where possible. Follow posted e-trike '
+            'restrictions.',
+    ];
+    final routeAdvisory = routeNotices.join(' ');
 
     final booking = ref.read(bookingSessionProvider);
 
@@ -256,6 +280,8 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             destinationName: destinationName,
             destinationAddress: destinationAddress,
             routePoints: routePoints,
+            routeAdvisory: routeAdvisory,
+            routePolicy: result.routePolicy,
             distanceMeters: result.distanceMeters,
             duration: '${result.durationMinutes} mins',
 
@@ -275,9 +301,14 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
     if (coverage.isOutsideToda) {
       _showCoverageWarning(
-        'This trip leaves the pickup TODA coverage area. The '
-        '₱${fare.boundarySurcharge.toStringAsFixed(2)} outside-zone surcharge '
-        'is included in the estimate.',
+        coverage.status == TodaTripCoverageStatus.pickupOutside
+            ? 'Pickup is outside all configured TODA coverage zones. Booking '
+                  'is still allowed, and the '
+                  '₱${fare.boundarySurcharge.toStringAsFixed(2)} Outside TODA '
+                  'surcharge is included in the estimate.'
+            : 'Pickup and destination do not share an approved TODA coverage '
+                  'zone. The ₱${fare.boundarySurcharge.toStringAsFixed(2)} '
+                  'Outside TODA surcharge is included in the estimate.',
       );
     }
   }
@@ -476,6 +507,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 boundarySurcharge:
                     '₱${session.boundarySurcharge.toStringAsFixed(2)}',
 
+                isOutsideToda: session.isOutsideToda,
+
+                routeAdvisory: session.routeAdvisory,
+
                 hasRoute: session.hasRoute,
 
                 onIncreasePassengers: session.additionalPassengers < 3
@@ -537,8 +572,17 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         return value is num && value.isFinite ? value.toDouble() : fallback;
       }
 
+      final serverRouteAdvisory = creation.avoidedRouteRestrictionNames.isEmpty
+          ? creation.routePolicy.hasNotice
+                ? creation.routePolicy.passengerMessage
+                : session.routeAdvisory
+          : 'Server route avoids '
+                '${creation.avoidedRouteRestrictionNames.join(', ')}. '
+                'Follow the route shown in the app.';
       final serverConfirmedSession = session.copyWith(
         distanceMeters: creation.distanceMeters,
+        routeAdvisory: serverRouteAdvisory,
+        routePolicy: creation.routePolicy,
         baseFare: component('baseFare', session.baseFare),
         distanceFare: component('distanceFare', session.distanceFare),
         additionalPassengerFee: component(
@@ -560,15 +604,27 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
           creation.distanceMeters != session.distanceMeters ||
           creation.isOutsideToda != session.isOutsideToda;
       if (quoteChanged) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Server-validated fare: '
-              'â‚±${creation.estimatedFare.toStringAsFixed(2)} for '
-              '${(creation.distanceMeters / 1000).toStringAsFixed(2)} km.',
+        if (creation.isOutsideToda != session.isOutsideToda) {
+          _showCoverageWarning(
+            creation.isOutsideToda
+                ? 'Server validation confirmed this is an Outside TODA trip. '
+                      'The ₱${serverConfirmedSession.boundarySurcharge.toStringAsFixed(2)} '
+                      'surcharge is included in the '
+                      '₱${creation.estimatedFare.toStringAsFixed(2)} fare.'
+                : 'Server validation confirmed pickup and destination share a '
+                      'TODA coverage zone. No Outside TODA surcharge applies.',
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Server-validated fare: '
+                '₱${creation.estimatedFare.toStringAsFixed(2)} for '
+                '${(creation.distanceMeters / 1000).toStringAsFixed(2)} km.',
+              ),
             ),
-          ),
-        );
+          );
+        }
       }
 
       ref

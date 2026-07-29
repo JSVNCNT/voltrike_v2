@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/providers/theme_provider.dart';
 import '../core/theme/app_theme.dart';
+import '../features/driver/restrictions/driver_restriction_app_overlay.dart';
 import 'router.dart';
 
 class VolTrikeApp extends ConsumerWidget {
@@ -37,6 +38,9 @@ class VolTrikeApp extends ConsumerWidget {
           darkTheme: AppTheme.darkTheme,
 
           themeMode: themeMode,
+
+          builder: (context, child) =>
+              DriverRestrictionAppOverlay(child: child ?? const SizedBox()),
 
           routerConfig: appRouter,
         ),

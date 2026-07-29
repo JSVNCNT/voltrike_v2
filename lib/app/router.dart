@@ -41,6 +41,8 @@ import '../features/common/presentation/screens/legal/terms_and_conditions_scree
 import '../features/passenger/presentation/screens/passenger_settings_screen.dart';
 import '../features/passenger/presentation/screens/edit_passenger_profile_screen.dart';
 import '../features/driver/presentation/screens/driver_booking_tracking_screen.dart';
+import '../features/driver/restrictions/driver_violation_detail_screen.dart';
+import '../features/driver/restrictions/driver_violation_list_screen.dart';
 import '../features/ride/chat/booking_chat_screen.dart';
 
 import 'routes.dart';
@@ -343,6 +345,22 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.driverSettings,
       builder: (context, state) => _driverGate(const DriverSettingsScreen()),
+    ),
+
+    GoRoute(
+      path: AppRoutes.driverViolations,
+      builder: (context, state) =>
+          _driverGate(const DriverViolationListScreen()),
+      routes: [
+        GoRoute(
+          path: ':violationId',
+          builder: (context, state) => _driverGate(
+            DriverViolationDetailScreen(
+              violationId: state.pathParameters['violationId']!,
+            ),
+          ),
+        ),
+      ],
     ),
 
     GoRoute(

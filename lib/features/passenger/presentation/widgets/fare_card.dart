@@ -24,6 +24,7 @@ class FareCard extends StatelessWidget {
     this.additionalPassengerFee = '₱0.00',
     this.baggageFee = '₱0.00',
     this.boundarySurcharge = '₱0.00',
+    this.isOutsideToda = false,
   });
 
   final String estimatedFare;
@@ -40,6 +41,7 @@ class FareCard extends StatelessWidget {
   final String baggageFee;
 
   final String boundarySurcharge;
+  final bool isOutsideToda;
 
   @override
   Widget build(BuildContext context) {
@@ -78,16 +80,63 @@ class FareCard extends StatelessWidget {
 
             _FareRow(title: 'Baggage Fee', value: baggageFee),
 
-            _FareRow(title: 'Outside TODA Surcharge', value: boundarySurcharge),
+            if (isOutsideToda) ...[
+              const SizedBox(height: 6),
+              _OutsideTodaFareRow(value: boundarySurcharge),
+            ],
 
             const SizedBox(height: 8),
             Text(
               'Fare = base fare + distance surcharge + selected passenger, '
-              'baggage, and boundary charges.',
+              'baggage${isOutsideToda ? ', and Outside TODA' : ''} charges.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OutsideTodaFareRow extends StatelessWidget {
+  const _OutsideTodaFareRow({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.tertiaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: colors.onTertiaryContainer,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Outside TODA surcharge',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colors.onTertiaryContainer,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colors.onTertiaryContainer,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -4,13 +4,53 @@
       "$driverId": {
         ".read": "auth != null && (auth.uid === $driverId || root.child('driver_tracking_access').child(auth.uid).child($driverId).exists())",
         ".write": "auth != null && auth.uid === $driverId",
-        ".validate": "newData.hasChildren(['latitude', 'longitude', 'accuracy', 'timestamp', 'online']) && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && newData.child('accuracy').isNumber() && newData.child('accuracy').val() >= 0 && newData.child('accuracy').val() <= 100 && newData.child('timestamp').isNumber() && newData.child('online').isBoolean()"
+        ".validate": "newData.hasChildren(['latitude', 'longitude', 'accuracy', 'timestamp', 'online'])",
+        "latitude": {
+          ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
+        },
+        "longitude": {
+          ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
+        },
+        "accuracy": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+        },
+        "timestamp": {
+          ".validate": "newData.isNumber() && newData.val() >= now - 120000 && newData.val() <= now + 10000"
+        },
+        "online": {
+          ".validate": "newData.isBoolean()"
+        },
+        "bearing": {
+          ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 360"
+        },
+        "speed": {
+          ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 80"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() && newData.val() >= now - 120000 && newData.val() <= now + 10000"
+        },
+        "observedAt": {
+          ".validate": "newData.isNumber() && newData.val() >= now - 120000 && newData.val() <= now + 10000"
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     },
     "driver_presence": {
       "$driverId": {
         ".read": "auth != null && auth.uid === $driverId",
-        ".write": "auth != null && auth.uid === $driverId"
+        ".write": "auth != null && auth.uid === $driverId",
+        ".validate": "newData.hasChildren(['online', 'updatedAt'])",
+        "online": {
+          ".validate": "newData.isBoolean()"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() && newData.val() >= now - 120000 && newData.val() <= now + 10000"
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     },
     "driver_tracking_access": {

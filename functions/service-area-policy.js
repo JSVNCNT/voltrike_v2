@@ -121,11 +121,10 @@ function normalizeGeometry(source, {
 } = {}) {
   const rawAreas = geometryAreaInputs(source);
   const minimumPoints = geometryType === 'corridor' ? 2 : 3;
-  if (rawAreas.length === 0 || rawAreas.length > maximumAreas ||
-      (geometryType === 'corridor' && rawAreas.length !== 1)) {
+  if (rawAreas.length === 0 || rawAreas.length > maximumAreas) {
     throw new TypeError(
       geometryType === 'corridor'
-        ? 'A corridor needs one centreline.'
+        ? `A corridor needs one to ${maximumAreas} centrelines.`
         : `Geometry needs one to ${maximumAreas} areas.`,
     );
   }
@@ -265,6 +264,18 @@ function classifyTripCoverage(geofences, rawPickup, rawDestination) {
   const destinationSet = new Set(destinationTodaIds);
   const sharedTodaIds = pickupTodaIds
     .filter((todaId) => destinationSet.has(todaId));
+  const primaryTodaIds = sharedTodaIds.length > 0
+    ? sharedTodaIds
+    : pickupTodaIds.length > 0
+      ? pickupTodaIds
+      : destinationTodaIds;
+  const primarySet = new Set(primaryTodaIds);
+  const secondaryTodaIds = [...new Set([
+    ...pickupTodaIds,
+    ...destinationTodaIds,
+  ])]
+    .filter((todaId) => !primarySet.has(todaId))
+    .sort();
   const matchedTodaIds = new Set([
     ...pickupTodaIds,
     ...destinationTodaIds,
@@ -283,29 +294,35 @@ function classifyTripCoverage(geofences, rawPickup, rawDestination) {
       );
     }
   }
-  const serviceable = !configured || pickupTodaIds.length > 0;
   const isOutsideToda = configured && sharedTodaIds.length === 0;
-  const eligibleTodaIds = !configured
-    ? []
+  const coverageClass = !configured
+    ? 'unconfigured_fallback'
     : sharedTodaIds.length > 0
-      ? sharedTodaIds
-      : pickupTodaIds;
+      ? 'intra_toda'
+      : pickupTodaIds.length > 0 && destinationTodaIds.length > 0
+        ? 'cross_boundary'
+        : pickupTodaIds.length > 0
+          ? 'destination_outside_coverage'
+          : destinationTodaIds.length > 0
+            ? 'pickup_outside_coverage'
+            : 'outside_network';
+  // Compatibility summary of endpoint TODAs. Dispatch uses the explicit
+  // primary/secondary tiers and may admit other active TODAs as fallback.
+  const eligibleTodaIds = [...primaryTodaIds, ...secondaryTodaIds];
   return {
     configured,
-    serviceable,
+    serviceable: true,
     isOutsideToda,
-    coverageClass: !configured
-      ? 'unconfigured_fallback'
-      : !serviceable
-        ? 'pickup_outside_service'
-        : sharedTodaIds.length > 0
-          ? 'intra_toda'
-          : 'cross_boundary',
+    coverageClass,
     pickupTodaIds,
     destinationTodaIds,
     sharedTodaIds,
+    primaryTodaIds,
+    secondaryTodaIds,
+    allowAnyActiveToda: true,
     eligibleTodaIds,
-    serviceTodaId: eligibleTodaIds.length === 1 ? eligibleTodaIds[0] : null,
+    serviceTodaId:
+      primaryTodaIds.length === 1 ? primaryTodaIds[0] : null,
     geofenceRevisions,
   };
 }
@@ -408,30 +425,41 @@ function routeConflictsRestriction(rawRoute, restriction) {
   const areas = normalizedRecordAreas(restriction, geometryType);
   if (geometryType === 'corridor') {
     const bufferMeters = Number(restriction.bufferMeters);
-    return areas.length === 1 &&
+    return areas.length > 0 &&
       Number.isFinite(bufferMeters) &&
       bufferMeters > 0 &&
-      routeNearCorridor(route, areas[0], bufferMeters);
+      areas.some((centreline) =>
+        routeNearCorridor(route, centreline, bufferMeters));
   }
   return areas.some((polygon) => routeIntersectsPolygon(route, polygon));
 }
 
 function firstRouteConflict(route, restrictions) {
   return restrictions.find((restriction) =>
+    endpointBlockingRestriction(restriction) &&
+    restriction?.geometryType !== 'corridor' &&
     routeConflictsRestriction(route, restriction)) ?? null;
 }
 
-function firstNoServiceEndpointConflict(
+function endpointBlockingRestriction(restriction) {
+  return restriction?.isActive !== false &&
+    ['no_service_area', 'restricted_crossing'].includes(restriction?.type);
+}
+
+function firstRestrictedEndpointConflict(
   pickup,
   destination,
   restrictions,
 ) {
   return restrictions.find((restriction) =>
-    restriction?.isActive !== false &&
-    restriction?.type === 'no_service_area' &&
+    endpointBlockingRestriction(restriction) &&
     (recordContainsPoint(restriction, pickup) ||
       recordContainsPoint(restriction, destination))) ?? null;
 }
+
+// Compatibility alias retained for older imports while both polygon types
+// now enforce the same no-pickup/no-drop-off policy.
+const firstNoServiceEndpointConflict = firstRestrictedEndpointConflict;
 
 function decodePolyline(encoded) {
   const points = [];
@@ -468,6 +496,7 @@ module.exports = {
   classifyTripCoverage,
   decodePolyline,
   firstNoServiceEndpointConflict,
+  firstRestrictedEndpointConflict,
   firstRouteConflict,
   firestoreGeometry,
   firestoreRestrictionGeometry,

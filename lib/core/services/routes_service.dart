@@ -4,6 +4,7 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:http/http.dart' as http;
 
 import '../../data/models/route_info.dart';
+import '../../data/models/route_policy_advisory.dart';
 import '../config/api_keys.dart';
 import 'polyline_service.dart';
 import 'route_restriction_service.dart';
@@ -15,18 +16,20 @@ class RoutesService {
       'https://routes.googleapis.com/directions/v2:computeRoutes';
 
   static Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': ApiKeys.googleMapsApiKey,
-        'X-Goog-FieldMask':
-            'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,'
-            'routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,'
-            'routes.legs.steps.startLocation,routes.legs.steps.endLocation,'
-            'routes.legs.steps.polyline.encodedPolyline,'
-            'routes.legs.steps.navigationInstruction',
-      };
+    'Content-Type': 'application/json',
+    'X-Goog-Api-Key': ApiKeys.googleMapsApiKey,
+    'X-Goog-FieldMask':
+        'routes.routeToken,routes.distanceMeters,routes.duration,'
+        'routes.polyline.encodedPolyline,'
+        'routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,'
+        'routes.legs.steps.startLocation,routes.legs.steps.endLocation,'
+        'routes.legs.steps.polyline.encodedPolyline,'
+        'routes.legs.steps.navigationInstruction,'
+        'routes.travelAdvisory.routeRestrictionsPartiallyIgnored',
+  };
 
-  /// Requests Google alternatives, then selects the first route that does not
-  /// enter a developer-defined prohibited highway, crossing, or service area.
+  /// Requests Google alternatives, asks the provider to avoid highways, then
+  /// selects a route that does not enter an enforced restricted polygon.
   static Future<RouteInfo?> computeRoute({
     required LatLng origin,
     required LatLng destination,
@@ -35,13 +38,9 @@ class RoutesService {
       final response = await http.post(
         Uri.parse(_baseUrl),
         headers: _headers,
-        body: jsonEncode({
-          'origin': {'location': {'latLng': {'latitude': origin.latitude, 'longitude': origin.longitude}}},
-          'destination': {'location': {'latLng': {'latitude': destination.latitude, 'longitude': destination.longitude}}},
-          'travelMode': 'DRIVE',
-          'routingPreference': 'TRAFFIC_AWARE',
-          'computeAlternativeRoutes': true,
-        }),
+        body: jsonEncode(
+          buildRequest(origin: origin, destination: destination),
+        ),
       );
       if (response.statusCode != 200) return null;
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -49,46 +48,123 @@ class RoutesService {
       if (rawRoutes == null || rawRoutes.isEmpty) return null;
 
       final restrictions = RouteRestrictionService.instance;
+      restrictions.clearLastConflict();
+      final avoidedRestrictionNames = <String>{};
+      RouteInfo? highwayAdvisoryFallback;
       for (final raw in rawRoutes) {
-        final route = _parseRoute(raw as Map<String, dynamic>);
+        final route = parseGoogleRoute(raw as Map<String, dynamic>);
         final conflict = await restrictions.routeConflict(
           PolylineService.decodePolyline(route.encodedPolyline),
         );
-        if (conflict == null) return route;
+        if (conflict == null) {
+          final candidate = route.copyWith(
+            avoidedRestrictionNames: List<String>.unmodifiable(
+              avoidedRestrictionNames,
+            ),
+            routePolicy: route.routePolicy.copyWith(
+              avoidedRestrictionNames: List<String>.unmodifiable(
+                avoidedRestrictionNames,
+              ),
+            ),
+          );
+          if (!route.routePolicy.restrictionsPartiallyIgnored) {
+            return candidate;
+          }
+          highwayAdvisoryFallback ??= candidate;
+          continue;
+        }
+        avoidedRestrictionNames.add(conflict.name);
         restrictions.markConflict(conflict);
       }
-      // Do not direct a passenger or driver through a configured restriction
-      // when Google has no safe alternative.
-      return null;
+      // A polygon-safe flagged route remains a pilot fallback only after all
+      // alternatives have been checked for an unflagged option.
+      return highwayAdvisoryFallback;
     } on FormatException {
       return null;
     } on http.ClientException {
       return null;
+    } catch (_) {
+      // Restriction policy is fail-closed. If Firestore cannot provide the
+      // active polygons (or any unexpected validation step fails), callers
+      // receive no route instead of an unchecked provider route.
+      return null;
     }
   }
 
-  static RouteInfo _parseRoute(Map<String, dynamic> route) {
+  static Map<String, dynamic> buildRequest({
+    required LatLng origin,
+    required LatLng destination,
+  }) {
+    return {
+      'origin': {
+        'location': {
+          'latLng': {
+            'latitude': origin.latitude,
+            'longitude': origin.longitude,
+          },
+        },
+      },
+      'destination': {
+        'location': {
+          'latLng': {
+            'latitude': destination.latitude,
+            'longitude': destination.longitude,
+          },
+        },
+      },
+      'travelMode': 'DRIVE',
+      'routingPreference': 'TRAFFIC_AWARE',
+      'computeAlternativeRoutes': true,
+      'routeModifiers': {'avoidHighways': true},
+    };
+  }
+
+  static RouteInfo parseGoogleRoute(Map<String, dynamic> route) {
     final distanceMeters = (route['distanceMeters'] as num?)?.round() ?? 0;
-    final durationSeconds = _durationSeconds(route['duration'] as String? ?? '0s');
+    final durationSeconds = _durationSeconds(
+      route['duration'] as String? ?? '0s',
+    );
     final encodedPolyline =
-        (route['polyline'] as Map<String, dynamic>?)?['encodedPolyline'] as String? ?? '';
+        (route['polyline'] as Map<String, dynamic>?)?['encodedPolyline']
+            as String? ??
+        '';
     final steps = <RouteStep>[];
+    final travelAdvisory =
+        route['travelAdvisory'] as Map<String, dynamic>? ?? const {};
     for (final leg in route['legs'] as List? ?? const []) {
-      for (final rawStep in (leg as Map<String, dynamic>)['steps'] as List? ?? const []) {
+      for (final rawStep
+          in (leg as Map<String, dynamic>)['steps'] as List? ?? const []) {
         final step = rawStep as Map<String, dynamic>;
-        final navigation = step['navigationInstruction'] as Map<String, dynamic>? ?? const {};
-        final start = (step['startLocation'] as Map<String, dynamic>?)?['latLng'] as Map<String, dynamic>? ?? const {};
-        final end = (step['endLocation'] as Map<String, dynamic>?)?['latLng'] as Map<String, dynamic>? ?? const {};
+        final navigation =
+            step['navigationInstruction'] as Map<String, dynamic>? ?? const {};
+        final start =
+            (step['startLocation'] as Map<String, dynamic>?)?['latLng']
+                as Map<String, dynamic>? ??
+            const {};
+        final end =
+            (step['endLocation'] as Map<String, dynamic>?)?['latLng']
+                as Map<String, dynamic>? ??
+            const {};
         final polyline = step['polyline'] as Map<String, dynamic>? ?? const {};
-        steps.add(RouteStep(
-          instruction: navigation['instructions'] as String? ?? '',
-          maneuver: navigation['maneuver'] as String? ?? '',
-          distanceMeters: (step['distanceMeters'] as num?)?.round() ?? 0,
-          durationSeconds: _durationSeconds(step['staticDuration'] as String? ?? '0s'),
-          startLocation: LatLng((start['latitude'] as num?)?.toDouble() ?? 0, (start['longitude'] as num?)?.toDouble() ?? 0),
-          endLocation: LatLng((end['latitude'] as num?)?.toDouble() ?? 0, (end['longitude'] as num?)?.toDouble() ?? 0),
-          encodedPolyline: polyline['encodedPolyline'] as String? ?? '',
-        ));
+        steps.add(
+          RouteStep(
+            instruction: navigation['instructions'] as String? ?? '',
+            maneuver: navigation['maneuver'] as String? ?? '',
+            distanceMeters: (step['distanceMeters'] as num?)?.round() ?? 0,
+            durationSeconds: _durationSeconds(
+              step['staticDuration'] as String? ?? '0s',
+            ),
+            startLocation: LatLng(
+              (start['latitude'] as num?)?.toDouble() ?? 0,
+              (start['longitude'] as num?)?.toDouble() ?? 0,
+            ),
+            endLocation: LatLng(
+              (end['latitude'] as num?)?.toDouble() ?? 0,
+              (end['longitude'] as num?)?.toDouble() ?? 0,
+            ),
+            encodedPolyline: polyline['encodedPolyline'] as String? ?? '',
+          ),
+        );
       }
     }
     return RouteInfo(
@@ -96,6 +172,11 @@ class RoutesService {
       distanceKm: distanceMeters / 1000,
       durationMinutes: (durationSeconds / 60).ceil(),
       encodedPolyline: encodedPolyline,
+      routeToken: route['routeToken'] as String?,
+      routePolicy: RoutePolicyAdvisory(
+        restrictionsPartiallyIgnored:
+            travelAdvisory['routeRestrictionsPartiallyIgnored'] == true,
+      ),
       steps: steps,
     );
   }

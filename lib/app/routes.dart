@@ -101,6 +101,8 @@ class AppRoutes {
 
   static const String driverSettings = '/driver/settings';
 
+  static const String driverViolations = '/driver/violations';
+
   static const String aboutVoltrike = '/about';
 
   static const String privacyPolicy = '/legal/privacy-policy';

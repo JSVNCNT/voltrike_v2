@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'model_date_parser.dart';
+import 'route_policy_advisory.dart';
 
 /// ===========================================================================
 /// Booking Status
@@ -78,6 +79,8 @@ class Booking {
     required this.additionalPassengers,
     required this.baggageCount,
     required this.isOutsideToda,
+    this.routePolicyVersion = 0,
+    this.routePolicy = const RoutePolicyAdvisory(),
     required this.status,
     required this.createdAt,
     required this.updatedAt,
@@ -155,6 +158,10 @@ class Booking {
   final int baggageCount;
 
   final bool isOutsideToda;
+
+  final int routePolicyVersion;
+
+  final RoutePolicyAdvisory routePolicy;
 
   //==========================================================================
   // Status
@@ -265,6 +272,15 @@ class Booking {
       additionalPassengers: _asInt(data['additionalPassengers']),
       baggageCount: _asInt(data['baggageCount']),
       isOutsideToda: data['isOutsideToda'] == true,
+      routePolicyVersion: _asInt(data['routePolicyVersion']),
+      routePolicy:
+          RoutePolicyAdvisory.fromMap(
+            data['highwayRouteAdvisory'] ?? data['routeAdvisory'],
+          ).copyWith(
+            avoidedRestrictionNames: _stringList(
+              data['avoidedRouteRestrictionNames'],
+            ),
+          ),
       status: _parseStatus(data['status']),
       createdAt: parseModelDate(data['createdAt']) ?? DateTime.now(),
       updatedAt: parseModelDate(data['updatedAt']) ?? DateTime.now(),
@@ -328,6 +344,8 @@ class Booking {
       'additionalPassengers': additionalPassengers,
       'baggageCount': baggageCount,
       'isOutsideToda': isOutsideToda,
+      'routePolicyVersion': routePolicyVersion,
+      'highwayRouteAdvisory': routePolicy.toMap(),
 
       //======================================================================
       // Status
@@ -398,6 +416,8 @@ class Booking {
     int? additionalPassengers,
     int? baggageCount,
     bool? isOutsideToda,
+    int? routePolicyVersion,
+    RoutePolicyAdvisory? routePolicy,
 
     //======================================================================
     // Status
@@ -456,6 +476,8 @@ class Booking {
       additionalPassengers: additionalPassengers ?? this.additionalPassengers,
       baggageCount: baggageCount ?? this.baggageCount,
       isOutsideToda: isOutsideToda ?? this.isOutsideToda,
+      routePolicyVersion: routePolicyVersion ?? this.routePolicyVersion,
+      routePolicy: routePolicy ?? this.routePolicy,
 
       //====================================================================
       // Status
@@ -533,4 +555,14 @@ LatLng _parseLatLng(Object? value, {Object? latitude, Object? longitude}) {
     );
   }
   return LatLng(_asDouble(latitude), _asDouble(longitude));
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! Iterable) return const [];
+  return value
+      .whereType<String>()
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
 }

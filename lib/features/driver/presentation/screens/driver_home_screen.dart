@@ -518,6 +518,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
                       '₱${incomingBooking.estimatedFare.toStringAsFixed(2)}',
                   distance:
                       '${(incomingBooking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                  routeAdvisory: incomingBooking.routePolicy.driverMessage,
                   onAccept: canRespondToOffer ? _acceptBooking : null,
                   onDecline: canRespondToOffer ? _declineBooking : null,
                 ),

@@ -6,14 +6,37 @@ import { adminApi } from './admin-api';
 import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
 import { bacolodBarangays } from './data/bacolodBarangays';
 import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaRegistration, ZoneRequest } from './types';
+import {
+  enableAdminWebPush,
+  listenForAdminPush,
+  removeAdminWebPush,
+  syncAdminWebPush,
+  webPushSetupMessage,
+  type AdminPushAlert,
+  type WebPushResult,
+} from './web-push';
 import './registration.css';
 import './driver-review.css';
 
 // Mapbox is substantial; load it only when an administrator opens a map page.
 const PolygonEditor = lazy(() => import('./components/PolygonEditor').then((module) => ({ default: module.PolygonEditor })));
 const AdminLocationMap = lazy(() => import('./components/AdminLocationMap').then((module) => ({ default: module.AdminLocationMap })));
+const ViolationsPage = lazy(() => import('./components/ViolationsPage').then((module) => ({ default: module.ViolationsPage })));
 
-type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'commission' | 'ratings' | 'operations' | 'safety' | 'reports' | 'coverage' | 'route_rules';
+type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'commission' | 'ratings' | 'operations' | 'safety' | 'violations' | 'reports' | 'coverage' | 'route_rules';
+const pages = new Set<Page>(['overview', 'todas', 'fares', 'drivers', 'live_drivers', 'commission', 'ratings', 'operations', 'safety', 'violations', 'reports', 'coverage', 'route_rules']);
+
+function adminRoute(): { page: Page; violationId: string | null } {
+  const parameters = new URLSearchParams(window.location.search);
+  const violationId = parameters.get('case') || parameters.get('violation');
+  const requestedPage = parameters.get('page');
+  const page = violationId
+    ? 'violations'
+    : requestedPage && pages.has(requestedPage as Page)
+      ? requestedPage as Page
+      : 'overview';
+  return { page, violationId };
+}
 const initialFare: FareConfig = { baseFare: 20, includedMeters: 1000, distanceStepMeters: 500, distanceStepPrice: 5, additionalPassengerFee: 40, baggageFee: 20, outsideTodaSurcharge: 20 };
 const registrationFields: Array<[keyof TodaRegistration, string]> = [
   ['secCertificateNumber', 'SEC registration certificate number'], ['spResolutionNumber', 'SP resolution number'], ['mayorsPermitNumber', "Bacolod Mayor's permit / BPLO license number"], ['barangayClearanceNumber', 'Barangay clearance and endorsement number'], ['presidentName', "TODA President's full name"], ['presidentLicenseNumber', "President's professional driver license number"], ['presidentTin', "President's TIN"],
@@ -51,11 +74,21 @@ function zoneStatusLabel(status: ZoneRequest['status']): string {
 }
 
 export default function App() {
+  const initialRoute = useMemo(adminRoute, []);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<AdminSession | null>(null);
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useState<Page>(initialRoute.page);
+  const [deepLinkedViolationId, setDeepLinkedViolationId] = useState<string | null>(
+    initialRoute.violationId,
+  );
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [pushAlert, setPushAlert] = useState<AdminPushAlert | null>(null);
+  const [webPushResult, setWebPushResult] = useState<WebPushResult>({
+    enabled: false,
+    mode: 'local_only',
+    message: webPushSetupMessage(),
+  });
 
   const loadSession = useCallback(async (signedIn: User | null) => {
     setUser(signedIn);
@@ -84,21 +117,108 @@ export default function App() {
   }, []);
 
   useEffect(() => onAuthStateChanged(auth, loadSession), [loadSession]);
+  useEffect(() => {
+    const onPopState = () => {
+      const route = adminRoute();
+      setPage(route.page);
+      setDeepLinkedViolationId(route.violationId);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    let stopListening: () => void = () => undefined;
+    void syncAdminWebPush(session.uid)
+      .then((result) => {
+        if (active) setWebPushResult(result);
+      })
+      .catch((reason) => {
+        if (active) {
+          setWebPushResult({
+            enabled: false,
+            mode: 'unavailable',
+            message: reason instanceof Error
+              ? reason.message
+              : 'Unable to synchronize this browser for violation-case web push.',
+          });
+        }
+      });
+    void listenForAdminPush((alert) => {
+      if (!active) return;
+      setPushAlert(alert);
+      window.navigator.vibrate?.([220, 100, 220]);
+    }).then((unsubscribe) => {
+      if (active) stopListening = unsubscribe;
+      else unsubscribe();
+    });
+    return () => {
+      active = false;
+      stopListening();
+    };
+  }, [session]);
   if (loading) return <main className="centered">Loading VolTrike Admin…</main>;
   if (!user) return <Login onMessage={setMessage} message={message} />;
   if (!session) return <AccountGate user={user} reload={() => loadSession(auth.currentUser)} onMessage={setMessage} message={message} />;
 
+  const sessionUid = session.uid;
   const isDeveloper = session.role === 'developer_admin';
   const visiblePages: Array<[Page, string]> = isDeveloper
-    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['live_drivers', 'Live drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
-    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['live_drivers', 'Live drivers'], ['commission', 'Driver commission'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
+    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['live_drivers', 'Live drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['violations', 'Violations'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
+    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['live_drivers', 'Live drivers'], ['commission', 'Driver commission'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['violations', 'Violations'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
+
+  function navigate(nextPage: Page) {
+    setPage(nextPage);
+    setDeepLinkedViolationId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', nextPage);
+    url.searchParams.delete('case');
+    url.searchParams.delete('violation');
+    window.history.pushState({}, '', url);
+  }
+
+  function selectViolation(violationId: string | null) {
+    setDeepLinkedViolationId(violationId);
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', 'violations');
+    url.searchParams.delete('violation');
+    if (violationId) url.searchParams.set('case', violationId);
+    else url.searchParams.delete('case');
+    window.history.replaceState({}, '', url);
+  }
+
+  async function enableWebPush(): Promise<WebPushResult> {
+    try {
+      const result = await enableAdminWebPush(sessionUid);
+      setWebPushResult(result);
+      return result;
+    } catch (reason) {
+      const result: WebPushResult = {
+        enabled: false,
+        mode: 'unavailable',
+        message: reason instanceof Error
+          ? reason.message
+          : 'Unable to register violation-case web push on this browser.',
+      };
+      setWebPushResult(result);
+      return result;
+    }
+  }
+
+  async function signOutAdmin() {
+    await removeAdminWebPush(sessionUid).catch(() => undefined);
+    await signOut(auth);
+  }
+
   return <div className="shell">
     <aside className="sidebar"><div className="brand"><img src="/images/VolTrikeLogo-Light.png" alt="VolTrike" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'Developer Admin' : 'TODA Admin'}</div>
-      <nav aria-label="Admin sections">{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => setPage(key)}>{text}</button>)}</nav>
-      <div className="sidebar-footer"><span>{session.displayName}</span><button onClick={() => signOut(auth)}>Sign out</button></div>
+      <nav aria-label="Admin sections">{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => navigate(key)}>{text}</button>)}</nav>
+      <div className="sidebar-footer"><span>{session.displayName}</span><button onClick={signOutAdmin}>Sign out</button></div>
     </aside>
     <main className="content"><header><div><p className="eyebrow">Bacolod City TNVS operations</p><h1>{visiblePages.find(([key]) => key === page)?.[1]}</h1></div><div className="status">{isDeveloper ? 'Platform-wide access' : 'TODA-scoped access'}</div></header>
       {message && <div className="notice" role="status">{message}<button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
+      {pushAlert && <div className="violation-alert-strip global-push-alert" role="alert"><span><b>{pushAlert.title}</b><br />{pushAlert.body}</span><span className="actions">{pushAlert.violationId && <button onClick={() => { setPage('violations'); selectViolation(pushAlert.violationId); setPushAlert(null); }}>Open case</button>}<button aria-label="Dismiss push alert" onClick={() => setPushAlert(null)}>×</button></span></div>}
       {page === 'overview' && <Overview session={session} />}
       {page === 'todas' && isDeveloper && <Todas onMessage={setMessage} />}
       {page === 'fares' && isDeveloper && <Fares onMessage={setMessage} />}
@@ -108,6 +228,7 @@ export default function App() {
       {page === 'ratings' && !isDeveloper && <RatingsPage />}
       {page === 'operations' && <OperationsPage session={session} />}
       {page === 'safety' && <SafetyIncidentsPage session={session} />}
+      {page === 'violations' && <Suspense fallback={<section className="panel wide">Loading violations…</section>}><ViolationsPage session={session} initialViolationId={deepLinkedViolationId} onSelectViolation={selectViolation} webPushResult={webPushResult} onEnableWebPush={enableWebPush} /></Suspense>}
       {page === 'reports' && <ReportsPage todaId={isDeveloper ? undefined : session.todaId!} onMessage={setMessage} />}
       {page === 'coverage' && <CoveragePage session={session} onMessage={setMessage} />}
       {page === 'route_rules' && isDeveloper && <RouteRestrictionsPage onMessage={setMessage} />}
@@ -294,7 +415,7 @@ function LiveDriversPage() {
       <p className="muted">Only approved drivers who are online and have a fresh location are shown. Select a driver to expand their marker and current booking status.</p>
       {error && <div className="notice">{error}</div>}
       <Suspense fallback={<div className="map-missing">Loading live-driver map…</div>}>
-        <AdminLocationMap points={points} selectedId={selectedId} />
+        <AdminLocationMap points={points} selectedId={selectedId} onSelect={setSelectedId} ariaLabel="Online driver operations map" />
       </Suspense>
     </section>
     <section className="panel">
@@ -851,7 +972,7 @@ function SafetyIncidentsPage({ session }: { session: AdminSession }) {
       </div>
       {error && <div className="notice">{error}</div>}
       <Suspense fallback={<div className="map-missing">Loading incident map…</div>}>
-        <AdminLocationMap points={points} selectedId={selectedId} />
+        <AdminLocationMap points={points} selectedId={selectedId} onSelect={setSelectedId} ariaLabel="Safety incident operations map" />
       </Suspense>
     </section>
     <section className="panel wide">
@@ -923,9 +1044,7 @@ function LegacyRouteRestrictionsPageV2({ onMessage }: { onMessage: (value: strin
 function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => void }) {
   const [restrictions, setRestrictions] = useState<RouteRestriction[]>([]);
   const [name, setName] = useState('');
-  const [type, setType] = useState<RouteRestriction['type']>('prohibited_highway');
-  const [geometryType, setGeometryType] = useState<'polygon' | 'corridor'>('corridor');
-  const [bufferMeters, setBufferMeters] = useState(30);
+  const [type, setType] = useState<Exclude<RouteRestriction['type'], 'prohibited_highway'>>('no_service_area');
   const [notes, setNotes] = useState('');
   const [points, setPoints] = useState<Point[]>([]);
   const [completedAreas, setCompletedAreas] = useState<Point[][]>([]);
@@ -939,32 +1058,32 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
   }, [onMessage]);
   useEffect(() => { void reload(); }, [reload]);
 
-  const minimumPoints = geometryType === 'corridor' ? 2 : 3;
-  const bufferIsValid = geometryType !== 'corridor'
-    || (Number.isFinite(bufferMeters) && bufferMeters >= 5 && bufferMeters <= 200);
-  const allAreas = geometryType === 'polygon'
-    ? [...completedAreas, ...(points.length >= minimumPoints ? [points] : [])]
-    : points.length >= minimumPoints ? [points] : [];
+  const minimumPoints = 3;
+  const hasIncompleteDraft = points.length > 0 && points.length < minimumPoints;
+  const allAreas = [
+    ...completedAreas,
+    ...(points.length >= minimumPoints ? [points] : []),
+  ];
 
-  function addArea() {
-    if (points.length >= 3) {
+  function finishGeometry() {
+    if (points.length >= minimumPoints && completedAreas.length < 20) {
       setCompletedAreas([...completedAreas, points]);
       setPoints([]);
     }
   }
 
   async function create() {
-    if (!name.trim() || allAreas.length === 0 || !bufferIsValid) {
-      onMessage(`Enter a restriction name, at least ${minimumPoints} valid coordinates${geometryType === 'corridor' ? ', and a buffer from 5 to 200 metres' : ''}.`);
+    if (!name.trim() || allAreas.length === 0 || hasIncompleteDraft) {
+      onMessage('Enter a restriction name and finish every polygon with at least three coordinates.');
       return;
     }
     try {
       await adminApi.createRouteRestriction(
         name.trim(),
         type,
-        geometryType,
+        'polygon',
         allAreas[0],
-        bufferMeters,
+        0,
         notes,
         allAreas,
       );
@@ -989,60 +1108,87 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
     }
   }
 
-  function changeType(next: RouteRestriction['type']) {
+  function changeType(next: Exclude<RouteRestriction['type'], 'prohibited_highway'>) {
     setType(next);
-    setGeometryType(next === 'prohibited_highway' ? 'corridor' : 'polygon');
     setPoints([]);
     setCompletedAreas([]);
   }
 
   return <>
     <section className="panel wide">
-      <h2>Highways and prohibited areas</h2>
-      <p className="muted">A highway is one buffered red centreline. A no-service or crossing restriction may contain several disconnected red polygons. Coordinates are stored as longitude and latitude.</p>
+      <h2>Create a prohibited operating area</h2>
+      <p className="muted">
+        Draw up to 20 disconnected polygons with up to 200 boundary points per
+        polygon. Pickup, destination, and routes inside or crossing either type
+        are blocked. Use no-service areas for complete downtown or commercial
+        district bans and restricted driving areas for other officially
+        prohibited operating areas. Coordinates are stored as longitude and
+        latitude.
+      </p>
       <div className="form-grid">
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restriction name" required />
-        <select value={type} onChange={(event) => changeType(event.target.value as RouteRestriction['type'])}>
-          <option value="prohibited_highway">Prohibited highway corridor</option>
+        <select value={type} onChange={(event) => changeType(event.target.value as Exclude<RouteRestriction['type'], 'prohibited_highway'>)}>
           <option value="no_service_area">No-service MultiPolygon</option>
-          <option value="restricted_crossing">Restricted crossing MultiPolygon</option>
+          <option value="restricted_crossing">Restricted driving area</option>
         </select>
-        {geometryType === 'corridor' && <label>
-          Highway buffer (metres)
-          <input type="number" min="5" max="200" value={bufferMeters} onChange={(event) => setBufferMeters(Number(event.target.value))} />
-        </label>}
       </div>
       <PolygonEditor
         points={points}
-        completedAreas={geometryType === 'polygon' ? completedAreas : []}
+        completedAreas={completedAreas}
         onChange={setPoints}
-        onFinish={geometryType === 'polygon' ? addArea : create}
-        geometryMode={geometryType === 'corridor' ? 'polyline' : 'polygon'}
+        onFinish={finishGeometry}
+        disabled={completedAreas.length >= 20}
+        geometryMode="polygon"
+        maxPoints={200}
       />
       <div className="map-actions">
-        <span>{geometryType === 'polygon' ? `${allAreas.length} area(s) | current shape ${points.length} points` : `${points.length} centreline points | ${bufferMeters} m buffer`}</span>
+        <span>
+          {allAreas.length} area(s) | current shape {points.length}/200 points
+        </span>
         <button onClick={() => setPoints(points.slice(0, -1))} disabled={!points.length}>Undo point</button>
-        {geometryType === 'polygon' && <button onClick={addArea} disabled={points.length < 3 || completedAreas.length >= 19}>Add another area</button>}
+        <button
+          onClick={finishGeometry}
+          disabled={points.length < minimumPoints || completedAreas.length >= 20}
+        >
+          Add another area
+        </button>
         <button onClick={() => { setPoints([]); setCompletedAreas([]); }} disabled={!points.length && !completedAreas.length}>Clear all</button>
-        <button className="primary" onClick={create} disabled={allAreas.length === 0 || !name.trim() || !bufferIsValid}>Save restriction</button>
+        <button className="primary" onClick={create} disabled={allAreas.length === 0 || !name.trim() || hasIncompleteDraft}>Save restriction</button>
       </div>
       <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Operational reason and driver guidance" />
     </section>
     <section className="panel wide">
-      <h2>Active and archived restrictions</h2>
+      <h2>Active, archived, and legacy restrictions</h2>
+      <p className="muted">
+        New hand-drawn highway corridors are no longer created. Existing
+        highway records remain visible and can be disabled or re-enabled for
+        audit history, but their geometry is not used to block booking routes
+        or create live driver violations.
+      </p>
       <div className="table">
         {restrictions.map((item) => {
-          const itemAreas = item.geometryType === 'corridor'
-            ? [item.polygon]
-            : item.areas?.length ? item.areas : [item.polygon];
+          const itemAreas = item.areas?.length ? item.areas : [item.polygon];
+          const itemType = item.type === 'restricted_crossing'
+            ? 'Restricted driving area'
+            : item.type === 'no_service_area'
+              ? 'No-service MultiPolygon'
+              : 'Legacy prohibited highway corridor';
           return <div className="row" key={item.id}>
             <span>
               <b>{item.name}</b>
-              <small>{item.type.replace(/_/g, ' ')} | {item.geometryType === 'corridor' ? `${item.bufferMeters || 0} m corridor` : 'polygon coverage'} | {item.geometryVersion ? `geometry v${item.geometryVersion}` : 'legacy geometry'}</small>
+              <small>{itemType} | {item.geometryType === 'corridor' ? `${itemAreas.length} retained segment${itemAreas.length === 1 ? '' : 's'} | ${item.bufferMeters || 0} m buffer` : `${itemAreas.length} polygon${itemAreas.length === 1 ? '' : 's'}`} | {item.geometryVersion ? `geometry v${item.geometryVersion}` : 'legacy geometry'}</small>
               <small>{geometrySummary(itemAreas)}</small>
             </span>
             <span>{item.notes || 'No operational guidance supplied'}</span>
-            <span className={item.isActive ? 'warning' : 'ok'}>{item.isActive ? 'Active in compatible route checks' : 'Disabled and retained for audit'}</span>
+            <span className={item.isActive ? 'warning' : 'ok'}>
+              {item.type === 'prohibited_highway'
+                ? item.isActive
+                  ? 'Legacy active status · not enforced'
+                  : 'Legacy disabled status · retained for audit'
+                : item.isActive
+                  ? 'Active in route and live-driver checks'
+                  : 'Disabled and retained for audit'}
+            </span>
             <span className="actions"><button onClick={() => toggle(item)}>{item.isActive ? 'Disable' : 'Enable'}</button></span>
           </div>;
         })}
@@ -1088,11 +1234,14 @@ function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage
   useEffect(() => { void reload(); }, [reload]);
 
   const areas = [...completedAreas, ...(points.length >= 3 ? [points] : [])];
+  const hasIncompleteAreaDraft = points.length > 0 && points.length < 3;
   const selectedName = useMemo(() => todas.find((toda) => toda.id === todaId)?.name || 'selected TODA', [todas, todaId]);
   const todaNames = useMemo(() => new Map(todas.map((toda) => [toda.id, toda.name])), [todas]);
 
   function addAnotherArea() {
-    if (points.length >= 3) {
+    // The current polygon becomes the next drawable area. Keep the twentieth
+    // polygon current so Enter cannot commit it and open a twenty-first area.
+    if (points.length >= 3 && completedAreas.length < 19) {
       setCompletedAreas([...completedAreas, points]);
       setPoints([]);
     }
@@ -1111,6 +1260,7 @@ function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage
   }
 
   async function submit() {
+    if (hasIncompleteAreaDraft) { onMessage('Finish the current polygon with at least three points, or undo it before submitting.'); return; }
     if (areas.length === 0) { onMessage('Draw at least one polygon with three points.'); return; }
     if (!todaId) { onMessage('Select a TODA before submitting coverage.'); return; }
     const wasEditing = Boolean(editingZoneId);
@@ -1188,7 +1338,7 @@ function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage
         <button onClick={addAnotherArea} disabled={points.length < 3 || completedAreas.length >= 19}>Add another area</button>
         <button onClick={() => { setPoints([]); setCompletedAreas([]); }} disabled={!points.length && !completedAreas.length}>Clear geometry</button>
         {editingZoneId && <button onClick={resetEditor}>Cancel edit</button>}
-        <button className="primary" onClick={submit} disabled={areas.length === 0 || !todaId}>{editingZoneId ? 'Save pending request' : 'Submit coverage request'}</button>
+        <button className="primary" onClick={submit} disabled={areas.length === 0 || !todaId || hasIncompleteAreaDraft}>{editingZoneId ? 'Save pending request' : 'Submit coverage request'}</button>
       </div>
       <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Route/terminal notes for the reviewer" />
     </section>

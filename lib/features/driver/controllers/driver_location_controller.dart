@@ -39,6 +39,9 @@ class DriverLocationState {
     this.isStarting = false,
     this.errorMessage,
     this.lastPublishedAt,
+    this.lastPublishedObservedAt,
+    this.accuracyMeters,
+    this.observedAt,
   });
 
   final LatLng? location;
@@ -46,6 +49,9 @@ class DriverLocationState {
   final bool isStarting;
   final String? errorMessage;
   final DateTime? lastPublishedAt;
+  final DateTime? lastPublishedObservedAt;
+  final double? accuracyMeters;
+  final DateTime? observedAt;
 
   DriverLocationState copyWith({
     LatLng? location,
@@ -55,6 +61,9 @@ class DriverLocationState {
     String? errorMessage,
     bool clearError = false,
     DateTime? lastPublishedAt,
+    DateTime? lastPublishedObservedAt,
+    double? accuracyMeters,
+    DateTime? observedAt,
   }) {
     return DriverLocationState(
       location: clearLocation ? null : location ?? this.location,
@@ -62,6 +71,13 @@ class DriverLocationState {
       isStarting: isStarting ?? this.isStarting,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
       lastPublishedAt: lastPublishedAt ?? this.lastPublishedAt,
+      lastPublishedObservedAt: clearLocation
+          ? null
+          : lastPublishedObservedAt ?? this.lastPublishedObservedAt,
+      accuracyMeters: clearLocation
+          ? null
+          : accuracyMeters ?? this.accuracyMeters,
+      observedAt: clearLocation ? null : observedAt ?? this.observedAt,
     );
   }
 }
@@ -123,23 +139,26 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
         LocationService.instance.locationStream,
       );
 
-      _subscription = LocationService.instance.locationStream.listen((
-        position,
-      ) async {
-        _lastPosition = position;
-        state = state.copyWith(
-          location: LatLng(position.latitude, position.longitude),
-          isTracking: true,
-          isStarting: false,
-          clearError: true,
-        );
-        await _writeLocation(_locationRef!, position);
-      }, onError: (Object error, StackTrace _) {
-        state = state.copyWith(
-          isStarting: false,
-          errorMessage: _messageFor(error),
-        );
-      });
+      _subscription = LocationService.instance.locationStream.listen(
+        (position) async {
+          _lastPosition = position;
+          state = state.copyWith(
+            location: LatLng(position.latitude, position.longitude),
+            accuracyMeters: position.accuracy,
+            observedAt: position.timestamp,
+            isTracking: true,
+            isStarting: false,
+            clearError: true,
+          );
+          await _writeLocation(_locationRef!, position);
+        },
+        onError: (Object error, StackTrace _) {
+          state = state.copyWith(
+            isStarting: false,
+            errorMessage: _messageFor(error),
+          );
+        },
+      );
 
       _heartbeat?.cancel();
       _heartbeat = Timer.periodic(const Duration(seconds: 10), (_) {
@@ -227,6 +246,8 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
       _lastPosition = position;
       state = state.copyWith(
         location: LatLng(position.latitude, position.longitude),
+        accuracyMeters: position.accuracy,
+        observedAt: position.timestamp,
         clearError: true,
       );
       await _writeLocation(locationRef, position, force: true);
@@ -260,11 +281,17 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
       'bearing': position.heading,
       'speed': position.speed,
       'accuracy': position.accuracy,
+      // Device-observed GPS time remains stable when the heartbeat republishes
+      // the same fix. The backend uses it to require two distinct samples.
+      'observedAt': position.timestamp.millisecondsSinceEpoch,
       'timestamp': ServerValue.timestamp,
       'online': true,
       'updatedAt': ServerValue.timestamp,
     });
-    state = state.copyWith(lastPublishedAt: now);
+    state = state.copyWith(
+      lastPublishedAt: now,
+      lastPublishedObservedAt: position.timestamp,
+    );
   }
 
   String _messageFor(Object error) {

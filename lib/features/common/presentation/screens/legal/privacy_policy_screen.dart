@@ -63,6 +63,17 @@ class PrivacyPolicyScreen extends StatelessWidget {
                   'or regulatory responsibilities.',
             ),
             const _PrivacySection(
+              title: 'Online driver location and restricted areas',
+              body:
+                  'When a driver chooses Online, VolTrike continues using '
+                  'location during idle availability and active trips for '
+                  'dispatch, navigation, and restricted-area safety warnings. '
+                  'A confirmed entry may create a safety case visible to the '
+                  'driver, the assigned TODA administrator, and authorised '
+                  'developer administrators. Monitoring stops when the driver '
+                  'goes Offline.',
+            ),
+            const _PrivacySection(
               title: 'Who can access data',
               body:
                   'Passengers and drivers receive only the trip information '

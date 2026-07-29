@@ -16,6 +16,11 @@ import '../../../../data/repositories/user_repository.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../../common/presentation/widgets/dashboard_widgets.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
+import '../../providers/driver_booking_listener_provider.dart';
+import '../../providers/driver_booking_provider.dart';
+import '../../providers/driver_location_controller_provider.dart';
+import '../../providers/driver_status_provider.dart';
+import '../../services/driver_session_shutdown.dart';
 
 class DriverDashboardScreen extends ConsumerWidget {
   const DriverDashboardScreen({super.key});
@@ -38,6 +43,7 @@ class DriverDashboardScreen extends ConsumerWidget {
           IconButton(
             tooltip: 'Sign out',
             onPressed: () async {
+              await shutdownDriverSession(ref);
               await auth.signOut();
               if (context.mounted) {
                 Navigator.popUntil(context, (route) => route.isFirst);
@@ -203,6 +209,21 @@ class DriverDashboardScreen extends ConsumerWidget {
                             ListTile(
                               minTileHeight: 64,
                               leading: Icon(
+                                Icons.policy_outlined,
+                                color: colors.primary,
+                              ),
+                              title: const Text('Restricted-area cases'),
+                              subtitle: const Text(
+                                'View mapped safety cases and chat with admins',
+                              ),
+                              trailing: const Icon(Icons.chevron_right_rounded),
+                              onTap: () =>
+                                  context.push(AppRoutes.driverViolations),
+                            ),
+                            const Divider(),
+                            ListTile(
+                              minTileHeight: 64,
+                              leading: Icon(
                                 Icons.account_balance_wallet_outlined,
                                 color: colors.primary,
                               ),
@@ -236,10 +257,40 @@ class DriverDashboardScreen extends ConsumerWidget {
                               ),
                               value: driver.isOnline,
                               onChanged: (online) async {
-                                if (online) {
-                                  await driverRepository.goOnline(driver.uid);
-                                } else {
-                                  await driverRepository.goOffline(driver.uid);
+                                try {
+                                  final bookingController = ref.read(
+                                    driverBookingControllerProvider.notifier,
+                                  );
+                                  final locationController = ref.read(
+                                    driverLocationControllerProvider.notifier,
+                                  );
+                                  final statusController = ref.read(
+                                    driverStatusProvider.notifier,
+                                  );
+                                  final listener = ref.read(
+                                    driverBookingListenerProvider,
+                                  );
+                                  if (online) {
+                                    await bookingController.goOnline();
+                                    statusController.goOnline();
+                                    await locationController.startTracking();
+                                    listener.startListening();
+                                  } else {
+                                    await bookingController.goOffline();
+                                    await listener.stopListening();
+                                    await locationController.stopTracking();
+                                    statusController.goOffline();
+                                  }
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          DomainErrorMapper.message(error),
+                                        ),
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                             ),

@@ -255,3 +255,99 @@ export interface RouteRestriction {
   notes?: string;
   isActive: boolean;
 }
+
+export type DriverViolationStatus =
+  | 'open'
+  | 'acknowledged'
+  | 'responding'
+  | 'resolved'
+  | 'dismissed';
+
+export type DriverViolationEventClass =
+  | 'restricted_area_approach'
+  | 'restricted_area_entry'
+  | 'restricted_area_route'
+  | 'highway_advisory'
+  | 'highway_travel'
+  | string;
+
+export interface ViolationLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+  bearing?: number | null;
+  speed?: number | null;
+  timestamp?: number | null;
+  observedAt?: number | null;
+}
+
+export interface ViolationRestrictionSnapshot {
+  id?: string | null;
+  name: string;
+  type?: RouteRestriction['type'] | string | null;
+  revision?: number | null;
+  geometryVersion?: number | null;
+  polygon?: Point[];
+  areas?: Point[][];
+}
+
+export interface ViolationDelivery {
+  status?: string | null;
+  recipientCount?: number;
+  attemptedCount?: number;
+  successCount?: number;
+  lastAttemptAt?: string | null;
+}
+
+export interface DriverViolation {
+  id: string;
+  schemaVersion?: number;
+  eventClass: DriverViolationEventClass;
+  status: DriverViolationStatus;
+  severity?: 'advisory' | 'warning' | 'critical' | string;
+  driverId: string;
+  driverName?: string | null;
+  ownerTodaId?: string | null;
+  ownerTodaName?: string | null;
+  bookingId?: string | null;
+  bookingStatus?: string | null;
+  context?: 'idle' | 'to_pickup' | 'on_trip' | 'unknown' | string;
+  restriction?: ViolationRestrictionSnapshot | null;
+  eventLocation: ViolationLocation;
+  evidence?: Record<string, unknown> | null;
+  source?: string | null;
+  confidence?: string | number | null;
+  routeAdvisory?: string | null;
+  enteredAt?: string | null;
+  exitedAt?: string | null;
+  occurredAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  acknowledgedAt?: string | null;
+  resolvedAt?: string | null;
+  delivery?: ViolationDelivery | null;
+  driverDelivery?: ViolationDelivery | null;
+  resolutionNote?: string | null;
+  latestAdminNote?: string | null;
+  unreadMessageCount?: number;
+  messageCount?: number;
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
+}
+
+export interface ViolationMessage {
+  id: string;
+  violationId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'driver' | 'toda_admin' | 'developer_admin' | string;
+  text: string;
+  createdAt?: string | null;
+  readBy?: string[];
+}
+
+export interface ViolationFilters {
+  status?: DriverViolationStatus | '';
+  eventClass?: string;
+  search?: string;
+}

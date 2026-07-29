@@ -71,6 +71,7 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
         additionalPassengers: session.additionalPassengers,
         baggageCount: session.baggageCount,
         isOutsideToda: session.isOutsideToda,
+        routePolicy: session.routePolicy,
         status: BookingStatus.pending,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),

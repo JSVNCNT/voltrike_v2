@@ -15,6 +15,8 @@ import '../../../../app/routes.dart';
 import '../../providers/driver_current_booking_provider.dart';
 import '../../providers/driver_booking_provider.dart';
 import '../../providers/driver_navigation_provider.dart';
+import '../../providers/driver_location_controller_provider.dart';
+import '../../providers/driver_status_provider.dart';
 import '../../controllers/driver_navigation_controller.dart';
 
 import '../widgets/passenger_information_card.dart';
@@ -88,6 +90,14 @@ class _DriverBookingTrackingScreenState
         .read(driverBookingControllerProvider.notifier)
         .restoreCurrentBooking();
     if (booking != null) {
+      ref.read(driverStatusProvider.notifier).goBusy();
+      try {
+        await ref
+            .read(driverLocationControllerProvider.notifier)
+            .startTracking();
+      } catch (_) {
+        // The route remains visible while location permission is repaired.
+      }
       try {
         final incident = await _safetyService.load(booking.bookingId);
         if (mounted) setState(() => _safetyIncident = incident);
@@ -135,6 +145,7 @@ class _DriverBookingTrackingScreenState
     return !kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
         NavigationConfig.inAppTurnByTurnEnabled &&
+        ref.read(driverLocationProvider) != null &&
         _guidanceEligible(booking);
   }
 
@@ -632,6 +643,7 @@ class _DriverBookingTrackingScreenState
             Positioned.fill(
               child: useInAppGuidance
                   ? DriverTurnByTurnMap(
+                      origin: driverLocation!,
                       destination: _routeDestination(booking),
                       destinationLabel: _guidanceDestinationLabel(booking),
                       legKey: _guidanceLegKey(booking),

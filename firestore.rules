@@ -33,6 +33,15 @@ service cloud.firestore {
         get(/databases/$(database)/documents/drivers/$(request.auth.uid)/bookingOffers/$(bookingId)).data.status == 'offered' &&
         get(/databases/$(database)/documents/drivers/$(request.auth.uid)/bookingOffers/$(bookingId)).data.expiresAt > request.time;
     }
+    function driverViolationMember(violationId) {
+      return signedIn() && (
+        get(/databases/$(database)/documents/driverViolations/$(violationId)).data.driverId == request.auth.uid ||
+        developerAdmin() ||
+        todaAdminFor(
+          get(/databases/$(database)/documents/driverViolations/$(violationId)).data.ownerTodaId
+        )
+      );
+    }
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || developerAdmin() ||
         (todaAdmin() && resource.data.todaId == adminTodaId()));
@@ -46,7 +55,15 @@ service cloud.firestore {
         request.resource.data.todaId == resource.data.todaId &&
         request.resource.data.isActive == resource.data.isActive;
       allow delete: if false;
-      match /devices/{token} { allow read, write: if signedIn() && request.auth.uid == uid; }
+      match /devices/{token} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        // Administrator browser-token ownership is managed only by trusted
+        // callables and the SHA-256 ownership registry. Passenger and driver
+        // apps retain their existing self-registration path.
+        allow write: if signedIn() && request.auth.uid == uid &&
+          !(get(/databases/$(database)/documents/users/$(uid)).data.role in
+            ['developer_admin', 'toda_admin']);
+      }
       match /emergencyContacts/{contactId} {
         allow read, delete: if signedIn() && request.auth.uid == uid;
         allow create, update: if signedIn() && request.auth.uid == uid &&
@@ -80,6 +97,12 @@ service cloud.firestore {
       allow read: if developerAdmin();
       allow write: if false;
     }
+    match /adminWebPushTokens/{tokenHash} {
+      // Browser-token ownership is transferred atomically by trusted callable
+      // functions. Raw tokens are never stored in this registry and clients
+      // cannot forge or inspect ownership records directly.
+      allow read, write: if false;
+    }
     // Passenger profile data is kept separate from the public user identity.
     // The passenger may maintain their own profile; admins can audit it.
     match /passengers/{uid} {
@@ -101,7 +124,17 @@ service cloud.firestore {
         request.resource.data.uid == driverId &&
         request.resource.data.driverStatus == 'pending' &&
         request.resource.data.isOnline == false &&
-        request.resource.data.isAvailable == false;
+        request.resource.data.isAvailable == false &&
+        request.resource.data.currentBookingId == null &&
+        request.resource.data.rating == 0 &&
+        request.resource.data.ratingCount == 0 &&
+        request.resource.data.completedTrips == 0 &&
+        request.resource.data.totalEarnings == 0 &&
+        !request.resource.data.keys().hasAny([
+          'dispatchStats', 'dailyAwardCount', 'assignmentCount',
+          'completedAssignments', 'cancellationCount',
+          'driverFaultCancellations'
+        ]);
       // Developers can audit every registration. A TODA administrator can
       // inspect and decide only applications assigned to their TODA.
       allow read: if signedIn() && (request.auth.uid == driverId ||
@@ -155,6 +188,30 @@ service cloud.firestore {
       // developer-admin callable functions may create or change them.
       allow read: if signedIn();
       allow write: if false;
+    }
+    match /driverRestrictionStates/{driverId} {
+      // Polygon transition state and deduplication are backend-owned. A
+      // client cannot reset an entry state to manufacture or suppress cases.
+      allow read, write: if false;
+      match /restrictions/{restrictionId} {
+        allow read, write: if false;
+      }
+    }
+    match /driverViolations/{violationId} {
+      // Cases and response fields are created and mutated only by callable
+      // functions. Direct reads are limited to the driver, developer admins,
+      // and the administrator of the driver's owning TODA. Passengers are
+      // deliberately excluded even when a bookingId is present.
+      allow read: if signedIn() && (
+        resource.data.driverId == request.auth.uid ||
+        developerAdmin() ||
+        todaAdminFor(resource.data.ownerTodaId)
+      );
+      allow write: if false;
+      match /messages/{messageId} {
+        allow read: if driverViolationMember(violationId);
+        allow write: if false;
+      }
     }
     match /zoneRequests/{requestId} {
       allow read: if developerAdmin() || todaAdminFor(resource.data.todaId);

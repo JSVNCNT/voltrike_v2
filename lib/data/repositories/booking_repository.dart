@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/booking.dart';
 import '../models/driver_booking_offer.dart';
+import '../models/route_policy_advisory.dart';
 
 class BookingCreationResult {
   const BookingCreationResult({
@@ -12,6 +13,9 @@ class BookingCreationResult {
     required this.estimatedFare,
     required this.isOutsideToda,
     required this.fareBreakdown,
+    this.avoidedRouteRestrictionNames = const [],
+    this.routePolicyVersion = 0,
+    this.routePolicy = const RoutePolicyAdvisory(),
   });
 
   final String bookingId;
@@ -19,6 +23,9 @@ class BookingCreationResult {
   final double estimatedFare;
   final bool isOutsideToda;
   final Map<String, dynamic> fareBreakdown;
+  final List<String> avoidedRouteRestrictionNames;
+  final int routePolicyVersion;
+  final RoutePolicyAdvisory routePolicy;
 
   factory BookingCreationResult.fromCallable(
     Object? value, {
@@ -35,6 +42,18 @@ class BookingCreationResult {
           ? data['isOutsideToda'] as bool
           : fallback.isOutsideToda,
       fareBreakdown: _stringKeyedMap(data['fareBreakdown']),
+      avoidedRouteRestrictionNames: _stringList(
+        data['avoidedRouteRestrictionNames'],
+      ),
+      routePolicyVersion: _intValue(data['routePolicyVersion']) ?? 0,
+      routePolicy:
+          RoutePolicyAdvisory.fromMap(
+            data['highwayRouteAdvisory'] ?? data['routeAdvisory'],
+          ).copyWith(
+            avoidedRestrictionNames: _stringList(
+              data['avoidedRouteRestrictionNames'],
+            ),
+          ),
     );
   }
 }
@@ -96,6 +115,7 @@ class BookingRepository {
           'additionalPassengers': booking.additionalPassengers,
           'baggageCount': booking.baggageCount,
           'isOutsideToda': booking.isOutsideToda,
+          'clientRouteAdvisory': booking.routePolicy.toMap(),
         });
     return BookingCreationResult.fromCallable(response.data, fallback: booking);
   }
@@ -194,7 +214,7 @@ class BookingRepository {
                   .map(DriverBookingOffer.fromFirestore)
                   .where((offer) => !offer.isExpired)
                   .toList()
-                ..sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
+                ..sort(DriverBookingOffer.compareForDisplay);
           final bookings = await Future.wait(
             offers.map((offer) => getBooking(offer.bookingId)),
           );
@@ -462,4 +482,15 @@ double? _doubleValue(Object? value) {
   if (value is num && value.isFinite) return value.toDouble();
   if (value is String) return double.tryParse(value);
   return null;
+}
+
+List<String> _stringList(Object? value) {
+  if (value is! Iterable) return const <String>[];
+  return List<String>.unmodifiable(
+    value
+        .whereType<String>()
+        .map((entry) => entry.trim())
+        .where((entry) => entry.isNotEmpty)
+        .toSet(),
+  );
 }

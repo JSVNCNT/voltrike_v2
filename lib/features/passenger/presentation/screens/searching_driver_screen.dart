@@ -17,6 +17,7 @@ import '../../controllers/passenger_booking_flow_controller.dart';
 import '../models/driver_search_presentation.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_listener_provider.dart';
+import '../../providers/booking_session_provider.dart';
 
 class SearchingDriverScreen extends ConsumerStatefulWidget {
   const SearchingDriverScreen({super.key, required this.bookingId});
@@ -274,6 +275,9 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
   @override
   Widget build(BuildContext context) {
     final booking = ref.watch(bookingListenerProvider(widget.bookingId));
+    final routeAdvisory = ref.watch(
+      bookingSessionProvider.select((session) => session.routeAdvisory),
+    );
 
     return booking.when(
       loading: () =>
@@ -288,12 +292,17 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
             body: Center(child: Text('Booking not found.')),
           );
         }
-        return _buildSearchScaffold(bookingData);
+        return _buildSearchScaffold(
+          bookingData,
+          routeAdvisory.isNotEmpty
+              ? routeAdvisory
+              : bookingData.routePolicy.passengerMessage,
+        );
       },
     );
   }
 
-  Widget _buildSearchScaffold(Booking booking) {
+  Widget _buildSearchScaffold(Booking booking, String routeAdvisory) {
     final timedOut =
         _timedOut ||
         (booking.status == BookingStatus.cancelled &&
@@ -343,6 +352,7 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
           timingOut: _timingOut,
           cancelling: _cancelling,
           timeoutError: _timeoutError,
+          routeAdvisory: routeAdvisory,
           onCancel: _cancelBooking,
           onReturnHome: _returnHome,
           onRetryTimeout: () => _expireSearch(booking),
@@ -386,6 +396,7 @@ class _DriverSearchBottomSheet extends StatelessWidget {
     required this.timingOut,
     required this.cancelling,
     required this.timeoutError,
+    required this.routeAdvisory,
     required this.onCancel,
     required this.onReturnHome,
     required this.onRetryTimeout,
@@ -397,6 +408,7 @@ class _DriverSearchBottomSheet extends StatelessWidget {
   final bool timingOut;
   final bool cancelling;
   final String? timeoutError;
+  final String routeAdvisory;
   final VoidCallback onCancel;
   final VoidCallback onReturnHome;
   final VoidCallback onRetryTimeout;
@@ -496,6 +508,34 @@ class _DriverSearchBottomSheet extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 18),
+        if (routeAdvisory.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colors.tertiaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: colors.onTertiaryContainer,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    routeAdvisory,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
         ClipRRect(
           borderRadius: BorderRadius.circular(99),
           child: LinearProgressIndicator(

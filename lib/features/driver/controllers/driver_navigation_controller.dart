@@ -3,6 +3,7 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../../core/services/navigation_service.dart';
 import '../../../core/services/route_restriction_service.dart';
+import '../../../data/models/route_info.dart';
 import '../../ride/tracking/services/route_refresh_policy.dart';
 
 /// ===========================================================================
@@ -147,6 +148,9 @@ class DriverNavigationController extends StateNotifier<DriverNavigationState> {
         nextInstruction: routeInfo.steps.length < 2
             ? null
             : routeInfo.steps[1].instruction,
+        restrictionWarning: routeInfo.routePolicy.driverMessage.isEmpty
+            ? null
+            : routeInfo.routePolicy.driverMessage,
         loading: false,
       );
       _refreshPolicy.succeed(origin: origin, destination: destination);
@@ -181,6 +185,19 @@ class DriverNavigationController extends StateNotifier<DriverNavigationState> {
     required LatLng destination,
   }) {
     return loadRoute(origin: driverLocation, destination: destination);
+  }
+
+  /// Mirrors the policy-validated Routes API result used to seed native
+  /// guidance with a route token.
+  void applyValidatedRoute(RouteInfo routeInfo) {
+    state = state.copyWith(
+      routePoints: _navigation.decodePolyline(routeInfo.encodedPolyline),
+      eta: '${routeInfo.durationMinutes} min',
+      duration: '${routeInfo.durationMinutes} min',
+      distance: '${routeInfo.distanceKm.toStringAsFixed(1)} km',
+      restrictionWarning: routeInfo.routePolicy.driverMessage,
+      loading: false,
+    );
   }
 
   /// Called from live GPS updates to warn a driver who enters a developer-

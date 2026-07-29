@@ -19,6 +19,7 @@ class BookingRequestCard extends StatelessWidget {
     required this.destinationAddress,
     required this.estimatedFare,
     required this.distance,
+    this.routeAdvisory = '',
     this.passengerPhotoUrl,
     this.onAccept,
     this.onDecline,
@@ -29,6 +30,7 @@ class BookingRequestCard extends StatelessWidget {
   final String destinationAddress;
   final String estimatedFare;
   final String distance;
+  final String routeAdvisory;
   final String? passengerPhotoUrl;
 
   final VoidCallback? onAccept;
@@ -94,6 +96,37 @@ class BookingRequestCard extends StatelessWidget {
                 ),
               ],
             ),
+
+            if (routeAdvisory.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: semantic.warningContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 19,
+                      color: semantic.onWarningContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        routeAdvisory,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: semantic.onWarningContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 12),
             _LocationLine(

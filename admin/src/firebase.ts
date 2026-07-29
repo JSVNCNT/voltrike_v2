@@ -8,7 +8,7 @@ import { connectStorageEmulator, getStorage } from 'firebase/storage';
 export const isFirebaseEmulator =
   import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
 const projectId = isFirebaseEmulator ? 'demo-voltrike' : 'voltrike-v2';
-const app = initializeApp(isFirebaseEmulator ? {
+export const app = initializeApp(isFirebaseEmulator ? {
   apiKey: 'demo-voltrike-api-key',
   authDomain: `${projectId}.firebaseapp.com`,
   projectId,

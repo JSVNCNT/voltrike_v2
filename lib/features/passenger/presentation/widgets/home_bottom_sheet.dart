@@ -41,6 +41,8 @@ class HomeBottomSheet extends StatelessWidget {
     this.baggageFee = '₱0.00',
     this.additionalPassengerFee = '₱0.00',
     this.boundarySurcharge = '₱0.00',
+    this.isOutsideToda = false,
+    this.routeAdvisory = '',
 
     this.hasRoute = false,
   });
@@ -71,6 +73,8 @@ class HomeBottomSheet extends StatelessWidget {
   final String baggageFee;
   final String additionalPassengerFee;
   final String boundarySurcharge;
+  final bool isOutsideToda;
+  final String routeAdvisory;
 
   final bool hasRoute;
 
@@ -145,6 +149,11 @@ class HomeBottomSheet extends StatelessWidget {
 
                 const SizedBox(height: 12),
 
+                if (routeAdvisory.isNotEmpty) ...[
+                  _RouteAdvisoryCard(message: routeAdvisory),
+                  const SizedBox(height: 12),
+                ],
+
                 FareCard(
                   estimatedFare: estimatedFare,
                   baseFare: baseFare,
@@ -155,6 +164,7 @@ class HomeBottomSheet extends StatelessWidget {
                   additionalPassengerFee: additionalPassengerFee,
                   baggageFee: baggageFee,
                   boundarySurcharge: boundarySurcharge,
+                  isOutsideToda: isOutsideToda,
                 ),
 
                 const SizedBox(height: 16),
@@ -188,6 +198,52 @@ class HomeBottomSheet extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RouteAdvisoryCard extends StatelessWidget {
+  const _RouteAdvisoryCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.tertiaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: colors.onTertiaryContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Route advisory',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: colors.onTertiaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onTertiaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

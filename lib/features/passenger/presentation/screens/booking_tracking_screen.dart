@@ -505,6 +505,26 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                     ),
                   ),
                 ],
+                if (booking.routePolicy.hasNotice) ...[
+                  const SizedBox(height: 8),
+                  Card(
+                    color: colorScheme.tertiaryContainer,
+                    margin: EdgeInsets.zero,
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(
+                        Icons.warning_amber_rounded,
+                        color: colorScheme.onTertiaryContainer,
+                      ),
+                      title: Text(
+                        booking.routePolicy.passengerMessage,
+                        style: TextStyle(
+                          color: colorScheme.onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 DriverInformationCard(
                   driverName: booking.driverName ?? 'VolTrike driver',

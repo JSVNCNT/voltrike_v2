@@ -69,6 +69,12 @@ void main() {
                 <String, double>{'latitude': 10.6601, 'longitude': 122.9401},
               ],
             },
+            <String, dynamic>{
+              'points': <Map<String, double>>[
+                <String, double>{'latitude': 10.6701, 'longitude': 122.9501},
+                <String, double>{'latitude': 10.6801, 'longitude': 122.9601},
+              ],
+            },
           ],
           'isActive': true,
         },
@@ -81,7 +87,12 @@ void main() {
         LatLng(10.6501, 122.9301),
         LatLng(10.6601, 122.9401),
       ]);
-      expect(restriction.areas.single, restriction.polygon);
+      expect(restriction.areas, hasLength(2));
+      expect(restriction.areas.first, restriction.polygon);
+      expect(restriction.areas.last, const <LatLng>[
+        LatLng(10.6701, 122.9501),
+        LatLng(10.6801, 122.9601),
+      ]);
     });
 
     test('retains legacy longitude-latitude tuple decoding', () {

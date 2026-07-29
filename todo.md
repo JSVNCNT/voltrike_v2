@@ -591,3 +591,303 @@ classification, zone-aware dispatch, fare breakdown, and route restrictions.
   isolated emulator seed and lifecycle verification.
 - [x] Record only completed implementation and actual validation evidence in
   the matching appended section of `done.md`.
+
+## 14. Open-zone mutual aid, balanced dispatch, and segmented highways
+
+This section supersedes the strict uncovered-pickup and pickup-TODA-only
+assumptions in section 13. It preserves that earlier section as implementation
+history while recording the current policy.
+
+### Completed service and fare policy
+
+- [x] Keep bookings serviceable when one or both endpoints are outside every
+  approved TODA zone. If approved coverage exists, charge the configured
+  Outside TODA surcharge exactly once; if no valid coverage exists anywhere,
+  keep the barangay pilot fallback open with no boundary surcharge.
+- [x] For TODA A pickup and TODA B destination, rank A as primary, B as
+  secondary, and other active TODAs as mutual-aid fallback. Keep every
+  candidate subject to availability, document, vehicle, location freshness,
+  accuracy, capacity, active-booking, and five-kilometre checks.
+- [x] When only one endpoint is covered, use its TODA set as the primary tier.
+  When neither endpoint is covered in a configured network, let any active
+  TODA serve at equal fallback priority.
+- [x] Treat an overlap as shared jurisdiction when pickup and destination have
+  at least one TODA in common. Sort all matching IDs, keep every shared TODA
+  primary, charge no Outside TODA fee, and never choose ownership from
+  Firestore document order.
+- [x] Snapshot policy-v3 coverage class, primary/secondary TODA IDs,
+  all-active-fallback permission, revisions, route decision, and the
+  server-calculated fare breakdown on each new booking.
+
+### Completed matching and queue policy
+
+- [x] Offer at most five eligible drivers in the first batch while reserving a
+  place for the nearest available secondary and fallback candidate when those
+  tiers exist.
+- [x] Arbitrate simultaneous accepts by hard TODA service tier, 100-metre
+  pickup-distance band, fewer awards during the current Manila calendar day,
+  smoothed reliability, smoothed rating, exact distance, server acceptance
+  time, and stable driver ID.
+- [x] Update protected driver dispatch statistics transactionally and store
+  score snapshots/audit data so an award can be explained later.
+- [x] Order multiple offers on the driver screen by the passenger's oldest
+  queue-entry time, then service tier, pickup distance, and stable ID.
+- [x] Keep the award transaction as the single source of truth when several
+  drivers accept. Only one driver can reserve the booking; losing claims
+  receive an already-awarded result.
+
+### Completed segmented restriction policy
+
+- [x] Let one highway restriction contain up to 20 disconnected centreline
+  segments. Treat every red buffered segment as blocked and an intentionally
+  wide blank gap as a legal cross-street opening.
+- [x] Require the administrator to finish the current segment before saving;
+  prevent a partial one-point segment from being silently discarded.
+- [x] Check all stored corridor segments on both the Functions and Flutter
+  paths, retain legacy one-line restrictions, and test blocked second
+  segments, wide legal gaps, and gaps still closed by endpoint buffers.
+- [x] Carry avoided restriction names into the booking response and passenger
+  search state, then show a compact Material warning/advisory without using
+  the oversized warning PNG.
+- [x] Exercise open-pilot, A-to-B mutual aid, configured fully uncovered,
+  one-time surcharge, competing acceptance, and segmented-highway behavior in
+  the isolated `demo-voltrike` Firebase lifecycle.
+
+### Remaining production and scale work
+
+- [ ] Add a geo-index and sub-minute offer-tier scheduler. The current
+  500-driver query cap, five-driver first batch, 55-second offer, and
+  60-second passenger timeout are suitable for the present pilot, not
+  platform-scale matching.
+- [ ] Add a global multi-booking optimizer or short driver lease if dispatch
+  must optimize several passengers and several drivers simultaneously. The
+  current implementation orders each driver's visible offers and arbitrates
+  each booking independently.
+- [ ] Add an injectable HTTP client and direct Flutter test for Google Routes
+  alternative selection/advisory propagation, plus automated admin
+  Enter/max-20 interaction tests.
+- [ ] Verify a live Google Routes response and the complete passenger/driver
+  flow on physical devices. The deterministic emulator route does not prove
+  every real Bacolod road alternative.
+- [ ] Define a native Navigation SDK custom-route handoff or stop-guidance
+  policy. A native reroute can still differ from the server-approved polyline.
+- [ ] Integrate and monitor Flutter Firebase App Check before enabling
+  enforcement. Current logs show invalid/missing tokens being allowed because
+  enforcement is intentionally disabled.
+- [ ] Deploy Functions and Firestore rules together, rebuild/deploy Hosting,
+  then perform a controlled production field test. No production deployment
+  is part of this implementation pass.
+- [ ] Keep the proposed Flutter/TypeScript-to-Rust bridge as a separate
+  app-wide architecture project; do not mix it into this dispatch rollout.
+
+## 15. Provider highway avoidance, restricted-area monitoring, violations, and case chat
+
+Status on 2026-07-30: the first runtime implementation is complete locally
+across Functions, rules, Flutter, and Admin. Unit/static/build checks pass.
+Production Firebase deployment, physical Bacolod field validation, App Check,
+disciplinary policy, and later map-matched highway detection remain open.
+
+This section supersedes the manual segmented-highway creation policy in
+sections 13 and 14. Legacy records and parsers remain migration/audit concerns;
+they must not be deleted merely because new corridor creation is removed.
+
+### Accepted policy and terminology
+
+- [x] Stop treating a hand-drawn buffered highway centreline as the long-term
+  solution. It is too expensive to maintain and cannot reliably distinguish
+  travelling along a highway from a legal perpendicular, bridge, or underpass
+  crossing.
+- [x] Keep `no_service_area` and legacy `restricted_crossing` MultiPolygons.
+  Display the latter as `Restricted driving area` while retaining its database
+  value for compatibility. Both types block pickup, destination, and route
+  traversal.
+- [x] Ask the route provider to avoid highways. With Google, treat
+  `avoidHighways` as a routing preference and
+  `routeRestrictionsPartiallyIgnored` as a route-level advisory, not proof
+  that a driver travelled on a prohibited road.
+- [x] Never classify a legal perpendicular highway crossing as a violation.
+  A future confirmed highway-travel event requires sustained, map-matched road
+  evidence and an official/legal road classification, not one GPS point.
+- [x] Monitor restrictions only while the driver is online, including both
+  idle/available and active-booking states. Stop location monitoring and
+  restriction alerts when the driver goes offline.
+- [x] Scope a violation to the driver's TODA at occurrence. Developer admins
+  may review all cases; a TODA admin may review only cases owned by its TODA;
+  the driver may review only its own cases; passengers have no access.
+- [x] Use a separate violation-case conversation for driver, matching TODA
+  admins, and developer admins. Reuse chat presentation patterns, but do not
+  add admins to the passenger-driver booking chat.
+- [x] Reuse the Live Drivers and Safety Incident map/list interaction patterns
+  for a separate Violations page available to both admin roles. Use the same
+  shared dark Mapbox style as the zone editor.
+
+### Phase 0 - first implementation gate
+
+- [ ] Checkpoint the already validated zone, open-service, fare, dispatch, and
+  segmented-corridor work in a dedicated commit before changing its policy or
+  schema.
+- [ ] Inventory active `prohibited_highway` documents and snapshot their IDs,
+  revisions, status, and usage before migration.
+- [ ] Add rollout settings for provider highway avoidance, strict
+  partially-ignored-route rejection, legacy-corridor enforcement, violation
+  detection, and administrator alert delivery.
+- [x] Hide new highway-corridor creation and make the backend reject new
+  `prohibited_highway` writes, but retain read/parsing support and an archived
+  history view until the replacement is field-proven.
+- [ ] Define retention, appeal/dismissal, escalation, and false-positive
+  policy before any violation is used for discipline. Telemetry must be
+  described as operational evidence, not tamper-proof legal evidence.
+
+### Phase 1 - server-owned contracts, security, and routing
+
+- [x] Define a versioned `driverViolations/{violationId}` contract containing
+  server-resolved driver/TODA ownership, context (`online_idle`,
+  `to_pickup`, or `active_trip`), booking ID when present, restriction
+  snapshot/revision, immutable event coordinates, accuracy/bearing/speed,
+  source/confidence, entry/exit timestamps, workflow status, and delivery
+  status.
+- [x] Keep backend-only transition/cooldown state so repeated GPS writes do
+  not create duplicate cases. Store an immutable event marker separately from
+  the driver's current live marker.
+- [ ] Add strict Firestore rules and indexes for developer-global,
+  TODA-owned, and driver-owned reads. Keep event/state writes backend-only and
+  keep internal administrator notes outside the shared driver chat.
+- [x] Add a separate versioned violation-message contract. Send messages
+  through an authenticated callable that validates case membership, text
+  length and allowed fields, stamps sender identity/role and server time, and
+  writes an audit record.
+- [x] Harden RTDB location validation and the Admin live-location reader:
+  reject stale/future or inaccurate samples, constrain allowed fields, avoid
+  reading the entire location root for a TODA-scoped request, and document
+  that client GPS can still be spoofed or suppressed.
+- [ ] Add Firebase App Check to Flutter and Admin, monitor it before
+  enforcement, and add Firestore/RTDB rules-emulator tests before relying on
+  violation telemetry.
+- [x] Make both retained polygon types explicitly reject pickup and
+  destination points and every crossing route in Functions and Flutter.
+- [x] Use the exact passenger outcomes:
+  `E-trikes cannot pick up, drop off, or travel through this restricted area.
+  Move the pin outside the red boundary.`,
+  `Route adjusted to avoid <restriction name>.`, and
+  `No permitted e-trike route is available for this trip.`
+- [x] Send `avoidHighways: true`, request alternatives, and request/store
+  `routeRestrictionsPartiallyIgnored` in both authoritative Functions routing
+  and Flutter preview routing. The current pilot accepts a polygon-safe route
+  with a strong advisory when Google partially ignores the preference and
+  never describes an unflagged route as a legal guarantee.
+- [ ] Put strict rejection of a partially ignored highway preference behind a
+  rollout setting for controlled Bacolod comparison.
+- [x] Apply equivalent highway-avoidance/custom-route policy to native
+  navigation. Stop or warn on a native reroute that no longer matches the
+  server-approved route until a verified custom-route handoff exists.
+
+### Phase 2 - online driver warning and confirmed polygon entry
+
+- [x] Add one app-wide `DriverRestrictionMonitor` fed by the existing driver
+  location controller. It must remain active across driver screens while the
+  backend-authoritative online state is true, including native navigation,
+  and stop immediately when offline.
+- [x] Add accuracy gating, approach distance, outside/approaching/inside/exit
+  state, two reliable inside samples, hysteresis, and per-restriction cooldown
+  so GPS jitter cannot repeatedly vibrate or open cases.
+- [x] Show an amber approach banner and one short haptic near a restricted
+  polygon. Show a persistent red entry banner, double haptic, optional spoken
+  instruction, and a dedicated high-importance notification channel only on
+  an entry transition.
+- [x] Correct the Android foreground-service disclosure so it says that
+  location is shared while the driver is online, not only during an active
+  ride. Add an explicit online-idle/background-location privacy explanation
+  and permission flow.
+- [x] Have the backend independently validate fresh RTDB location, driver
+  approval/online state, active restriction geometry/revision, consecutive
+  samples, and transition state before creating one operational polygon case.
+- [x] Record approach locally only. Persist operational entry and exit; permit a
+  new case only after a real exit and cooldown.
+- [x] Store Google `highway_route_advisory` data separately from polygon
+  violations. Do not vibrate or alert at an alleged live highway
+  crossing unless a later map-matching/official-road implementation can prove
+  sustained prohibited-road travel.
+- [x] Parse stored route advisory fields into booking and driver-offer models
+  so the driver can see `Approved route avoids <restriction name>` before
+  accepting and during guidance.
+
+### Phase 3 - notifications, dark Mapbox operations map, and role pages
+
+- [x] Extend the existing Functions notification-recipient pattern to active
+  developer admins, active admins of the event's snapshotted TODA, and the
+  affected driver. Deduplicate deliveries and persist attempted/succeeded
+  status.
+- [x] Add an Admin web FCM service worker, token registration, notification
+  permission flow, and deep link such as
+  `?page=violations&case=<violationId>`. Keep an in-app realtime listener and
+  durable inbox; five-second visible-page polling alone is insufficient.
+- [x] Extract a shared Admin operations map using
+  `mapbox://styles/mapbox/dark-v11` so Live Drivers, Safety Incidents, and
+  Violations use the same style as the zone editor.
+- [ ] Extend the map contract beyond simple points to support a red immutable
+  event marker, restriction MultiPolygon, optional current-driver marker, and
+  a short privacy-limited breadcrumb. Reconcile markers by ID to avoid
+  five-second refresh flicker.
+- [x] Add a separate `Violations` navigation page for both Developer Admin and
+  TODA Admin. Reuse the Live Drivers two-column layout and Safety Incident
+  acknowledge/respond/resolve pattern, but never mix routine violations into
+  SOS records.
+- [x] Show open/acknowledged/responding/resolved/dismissed status, confidence
+  and source, idle/trip context, restriction name/revision, booking link when
+  applicable, occurrence time, accuracy, alert delivery, and map selection.
+- [ ] Add filters for open state, event class, TODA (developer only), driver,
+  restriction, booking context, confidence, and date. Export/reporting must
+  preserve the event snapshot rather than substituting the driver's current
+  location.
+- [ ] Overlay an open-case badge on Live Drivers and provide a link to the
+  case, while keeping the full workflow on the dedicated Violations page.
+
+### Phase 4 - driver/admin case chat
+
+- [ ] Extract reusable message-list/composer/read-state presentation from the
+  booking chat without changing the existing passenger-driver contract.
+- [x] Add the shared case thread to the Admin side panel and a driver
+  restriction-case screen. Display sender name and role, timestamps, unread
+  state, and the related event map summary.
+- [ ] Add system status messages to the shared violation-case thread.
+- [x] Deliver new case-message notifications to the driver and authorized
+  admins with a case deep link. Do not notify or grant access to the passenger.
+- [ ] Keep disciplinary notes, evidence review, and any enforcement decision
+  in an admin-only audited record; the shared chat is for warning,
+  clarification, and response.
+
+### Phase 5 - tests, field validation, and controlled release
+
+- [x] Add pure tests for approach/entry/exit state, boundary points,
+  consecutive-fix confirmation, accuracy rejection, hysteresis, cooldown,
+  exit/re-entry, advisory-versus-violation labeling, and stable
+  deduplication.
+- [ ] Add emulator coverage for spoof-resistant validation limits,
+  server-owned event creation, developer/TODA/driver/passenger access,
+  cross-TODA non-disclosure, message validation, unread state, audit records,
+  FCM recipient selection, and Admin list indexes.
+- [ ] Add Flutter controller/widget tests for online-idle, active booking,
+  default native-navigation mode, foreground/background warnings, haptic
+  transitions, offline privacy, notification taps, and case chat.
+- [ ] Add Admin tests for role navigation, server scope, dark map marker and
+  polygon layers, filters, selected-event persistence, alerts, response
+  actions, chat, and deep links.
+- [ ] Field-test real Bacolod routes and GPS on physical driver/passenger
+  devices with the screen visible, backgrounded, and locked. Include legal
+  perpendicular highway crossings, no-go polygon approach/entry/exit, poor
+  GPS, native rerouting, app restart, and disabled notification vibration.
+- [ ] Run provider highway avoidance and the legacy corridor system in
+  comparison/shadow mode first. Archive rather than delete old corridors only
+  after the official road list, exceptions, and field results are reviewed.
+- [ ] Enable strict booking rejection and confirmed polygon alerts gradually,
+  monitor false positives and delivery failures, and keep a rollback flag.
+- [ ] Implement confirmed live highway-travel violations only after a later
+  Mapbox map-matching or official-road-data phase can distinguish sustained
+  travel from legal crossings. Mapbox basemap display alone is not evidence.
+- [ ] Complete the directly related earlier work: live Google Routes device
+  verification, native custom-route/stop-guidance policy, App Check,
+  restriction-warning widget coverage, Admin map interaction tests, and a
+  controlled joint Functions/rules/Hosting release.
+- [ ] Keep geo-indexed dispatch, a global multi-booking optimizer, and the
+  proposed app-wide Rust bridge as separate projects; they are not blockers
+  for this safety/operations feature.

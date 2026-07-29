@@ -68,6 +68,16 @@ class NotificationService {
     importance: Importance.max,
     sound: RawResourceAndroidNotificationSound('booking_ringtone'),
   );
+  static const _driverRestrictionChannel = AndroidNotificationChannel(
+    'driver_restriction_alerts_v1',
+    'Driver restricted-area alerts',
+    description:
+        'Warnings while an online driver approaches or enters an e-trike '
+        'restricted area',
+    importance: Importance.max,
+    enableVibration: true,
+  );
+  static const int _driverRestrictionNotificationId = 9101;
   int? _activeIncomingNotificationId;
 
   Future<void> initialize() async {
@@ -117,6 +127,7 @@ class NotificationService {
     await android?.createNotificationChannel(_chatChannel);
     await android?.createNotificationChannel(_callChannel);
     await android?.createNotificationChannel(_safetyChannel);
+    await android?.createNotificationChannel(_driverRestrictionChannel);
     final launchDetails = await _localNotifications
         .getNotificationAppLaunchDetails();
     final payload = launchDetails?.notificationResponse?.payload;
@@ -168,6 +179,43 @@ class NotificationService {
     if (type == 'incoming_call') {
       _scheduleData(message.data);
     }
+  }
+
+  Future<void> showDriverRestrictionAlert({
+    required String restrictionName,
+    required bool inside,
+  }) async {
+    final title = inside
+        ? 'Restricted e-trike area entered'
+        : 'Restricted e-trike area ahead';
+    final body = inside
+        ? 'Leave $restrictionName using the nearest permitted street. '
+              'This event is being sent to safety administrators.'
+        : 'Do not enter $restrictionName. Follow the permitted route.';
+    await _localNotifications.show(
+      id: _driverRestrictionNotificationId,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _driverRestrictionChannel.id,
+          _driverRestrictionChannel.name,
+          channelDescription: _driverRestrictionChannel.description,
+          importance: Importance.max,
+          priority: Priority.max,
+          icon: 'ic_stat_voltrike',
+          enableVibration: true,
+          category: AndroidNotificationCategory.navigation,
+          ongoing: inside,
+          autoCancel: !inside,
+        ),
+      ),
+      payload: jsonEncode({'type': 'driver_restriction', 'target': 'driver'}),
+    );
+  }
+
+  Future<void> clearDriverRestrictionAlert() {
+    return _localNotifications.cancel(id: _driverRestrictionNotificationId);
   }
 
   Future<void> syncUser(String userId) async {
@@ -243,9 +291,21 @@ class NotificationService {
 
   void _navigateData(Map<Object?, Object?> data) {
     final bookingId = data['bookingId'] as String?;
-    if (bookingId == null || bookingId.isEmpty) return;
     final target = data['target'] as String?;
     final type = data['type'] as String?;
+    final violationId =
+        data['violationId'] as String? ?? data['caseId'] as String?;
+    if (type == 'driver_violation' ||
+        type == 'driver_violation_message' ||
+        (type == 'driver_restriction' && target == 'driver')) {
+      if (violationId == null || violationId.isEmpty) {
+        appRouter.go(AppRoutes.driverViolations);
+      } else {
+        appRouter.go('${AppRoutes.driverViolations}/$violationId');
+      }
+      return;
+    }
+    if (bookingId == null || bookingId.isEmpty) return;
     if (target == 'driver' && type == 'booking_offer') {
       appRouter.go(AppRoutes.driverHome);
       return;
@@ -301,6 +361,9 @@ class NotificationService {
       'chat_message' => _chatChannel,
       'incoming_call' => _callChannel,
       'safety_incident' => _safetyChannel,
+      'driver_violation' ||
+      'driver_violation_message' ||
+      'driver_restriction' => _driverRestrictionChannel,
       _ => _bookingChannel,
     };
   }

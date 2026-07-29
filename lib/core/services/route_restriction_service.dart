@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,87 +6,62 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../data/models/route_restriction.dart';
 
-/// Caches developer-controlled road and area restrictions for route selection.
-class RouteRestrictionService {
-  RouteRestrictionService._();
+/// Pure, deterministic restriction geometry shared by runtime code and tests.
+class RouteRestrictionMatcher {
+  const RouteRestrictionMatcher._();
 
-  static final RouteRestrictionService instance = RouteRestrictionService._();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  List<RouteRestriction>? _cache;
-  DateTime? _loadedAt;
-  RouteRestriction? _lastConflict;
-
-  RouteRestriction? get lastConflict => _lastConflict;
-
-  Future<List<RouteRestriction>> activeRestrictions() async {
-    if (_cache != null &&
-        _loadedAt != null &&
-        DateTime.now().difference(_loadedAt!) < const Duration(minutes: 5)) {
-      return _cache!;
+  static bool isEnforcedPolygon(RouteRestriction restriction) {
+    if (!restriction.isActive || restriction.geometryType == 'corridor') {
+      return false;
     }
-    final snapshot = await _firestore
-        .collection('routeRestrictions')
-        .where('isActive', isEqualTo: true)
-        .get();
-    _cache = snapshot.docs.map(RouteRestriction.fromFirestore).toList();
-    _loadedAt = DateTime.now();
-    return _cache!;
+    return restriction.type == 'no_service_area' ||
+        restriction.type == 'restricted_crossing' ||
+        restriction.type == 'restricted_driving_area';
   }
 
-  void invalidate() {
-    _cache = null;
-    _loadedAt = null;
+  static bool routeConflicts(List<LatLng> route, RouteRestriction restriction) {
+    if (!isEnforcedPolygon(restriction) || route.length < 2) return false;
+    return restriction.areas.any(
+      (area) => area.length >= 3 && _routeIntersects(route, area),
+    );
   }
 
-  void markConflict(RouteRestriction restriction) {
-    _lastConflict = restriction;
+  static bool pointConflicts(LatLng point, RouteRestriction restriction) {
+    if (!isEnforcedPolygon(restriction)) return false;
+    return restriction.areas.any(
+      (area) => area.length >= 3 && _contains(point, area),
+    );
   }
 
-  void clearLastConflict() => _lastConflict = null;
-
-  Future<RouteRestriction?> routeConflict(List<LatLng> route) async {
-    final restrictions = await activeRestrictions();
-    for (final restriction in restrictions) {
-      final conflicts = restriction.geometryType == 'corridor'
-          ? restriction.polygon.length >= 2 &&
-                _routeNearCorridor(
-                  route,
-                  restriction.polygon,
-                  restriction.bufferMeters,
-                )
-          : restriction.areas.any(
-              (area) => area.length >= 3 && _routeIntersects(route, area),
-            );
-      if (conflicts) {
-        _lastConflict = restriction;
-        return restriction;
+  /// Distance to the closest polygon edge. A point inside returns zero.
+  ///
+  /// Legacy highway corridors are deliberately excluded from this API. They
+  /// cannot distinguish legal perpendicular crossings from highway travel and
+  /// therefore must never create a live driver violation.
+  static double distanceToEnforcedPolygonMeters(
+    LatLng point,
+    RouteRestriction restriction,
+  ) {
+    if (!isEnforcedPolygon(restriction)) return double.infinity;
+    var closest = double.infinity;
+    for (final area in restriction.areas) {
+      if (area.length < 3) continue;
+      if (_contains(point, area)) return 0;
+      for (var index = 0; index < area.length; index++) {
+        closest = math.min(
+          closest,
+          _pointToSegmentMeters(
+            point,
+            area[index],
+            area[(index + 1) % area.length],
+          ),
+        );
       }
     }
-    return null;
+    return closest;
   }
 
-  Future<RouteRestriction?> pointConflict(LatLng point) async {
-    final restrictions = await activeRestrictions();
-    for (final restriction in restrictions) {
-      final conflicts = restriction.geometryType == 'corridor'
-          ? restriction.polygon.length >= 2 &&
-                _nearCorridor(
-                  point,
-                  restriction.polygon,
-                  restriction.bufferMeters,
-                )
-          : restriction.areas.any(
-              (area) => area.length >= 3 && _contains(point, area),
-            );
-      if (conflicts) {
-        _lastConflict = restriction;
-        return restriction;
-      }
-    }
-    return null;
-  }
-
-  bool _contains(LatLng point, List<LatLng> polygon) {
+  static bool _contains(LatLng point, List<LatLng> polygon) {
     var inside = false;
     for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
       final a = polygon[i];
@@ -103,42 +79,7 @@ class RouteRestrictionService {
     return inside;
   }
 
-  bool _routeNearCorridor(
-    List<LatLng> route,
-    List<LatLng> centreline,
-    int bufferMeters,
-  ) {
-    if (route.any((point) => _nearCorridor(point, centreline, bufferMeters))) {
-      return true;
-    }
-    for (var routeIndex = 1; routeIndex < route.length; routeIndex++) {
-      for (
-        var corridorIndex = 1;
-        corridorIndex < centreline.length;
-        corridorIndex++
-      ) {
-        final routeStart = route[routeIndex - 1];
-        final routeEnd = route[routeIndex];
-        final corridorStart = centreline[corridorIndex - 1];
-        final corridorEnd = centreline[corridorIndex];
-        if (_segmentsIntersect(
-              routeStart,
-              routeEnd,
-              corridorStart,
-              corridorEnd,
-            ) ||
-            _pointToSegmentMeters(corridorStart, routeStart, routeEnd) <=
-                bufferMeters ||
-            _pointToSegmentMeters(corridorEnd, routeStart, routeEnd) <=
-                bufferMeters) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  bool _routeIntersects(List<LatLng> route, List<LatLng> polygon) {
+  static bool _routeIntersects(List<LatLng> route, List<LatLng> polygon) {
     if (route.any((point) => _contains(point, polygon))) return true;
     for (var i = 1; i < route.length; i++) {
       for (var j = 0; j < polygon.length; j++) {
@@ -155,33 +96,11 @@ class RouteRestrictionService {
     return false;
   }
 
-  /// Checks a buffered road centreline in metres. This avoids pretending a
-  /// highway is an area while still catching GPS samples near curved roads.
-  bool _nearCorridor(LatLng point, List<LatLng> centreline, int bufferMeters) {
-    for (var index = 1; index < centreline.length; index++) {
-      if (_pointToSegmentMeters(
-            point,
-            centreline[index - 1],
-            centreline[index],
-          ) <=
-          bufferMeters) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  double _pointToSegmentMeters(LatLng point, LatLng start, LatLng end) {
+  static double _pointToSegmentMeters(LatLng point, LatLng start, LatLng end) {
     const metresPerDegree = 111320.0;
     final referenceLatitude =
-        (point.latitude + start.latitude + end.latitude) /
-        3 *
-        3.141592653589793 /
-        180;
-    final scaleLongitude =
-        metresPerDegree *
-        // Equirectangular projection is accurate enough for short road spans.
-        math.cos(referenceLatitude);
+        (point.latitude + start.latitude + end.latitude) / 3 * math.pi / 180;
+    final scaleLongitude = metresPerDegree * math.cos(referenceLatitude);
     final px = (point.longitude - start.longitude) * scaleLongitude;
     final py = (point.latitude - start.latitude) * metresPerDegree;
     final sx = (end.longitude - start.longitude) * scaleLongitude;
@@ -194,7 +113,7 @@ class RouteRestrictionService {
     return math.sqrt(dx * dx + dy * dy);
   }
 
-  bool _segmentsIntersect(LatLng a, LatLng b, LatLng c, LatLng d) {
+  static bool _segmentsIntersect(LatLng a, LatLng b, LatLng c, LatLng d) {
     final abC = _orientation(a, b, c);
     final abD = _orientation(a, b, d);
     final cdA = _orientation(c, d, a);
@@ -206,7 +125,7 @@ class RouteRestrictionService {
         (cdB == 0 && _pointOnSegment(b, c, d));
   }
 
-  int _orientation(LatLng a, LatLng b, LatLng c) {
+  static int _orientation(LatLng a, LatLng b, LatLng c) {
     final value =
         (b.longitude - a.longitude) * (c.latitude - a.latitude) -
         (b.latitude - a.latitude) * (c.longitude - a.longitude);
@@ -214,7 +133,7 @@ class RouteRestrictionService {
     return value > 0 ? 1 : -1;
   }
 
-  bool _pointOnSegment(LatLng point, LatLng start, LatLng end) {
+  static bool _pointOnSegment(LatLng point, LatLng start, LatLng end) {
     const epsilon = 1e-10;
     final cross =
         (point.latitude - start.latitude) * (end.longitude - start.longitude) -
@@ -224,5 +143,98 @@ class RouteRestrictionService {
         point.latitude <= math.max(start.latitude, end.latitude) + epsilon &&
         point.longitude >= math.min(start.longitude, end.longitude) - epsilon &&
         point.longitude <= math.max(start.longitude, end.longitude) + epsilon;
+  }
+}
+
+/// Caches developer-controlled road and area restrictions for route selection.
+class RouteRestrictionService {
+  RouteRestrictionService._();
+
+  static final RouteRestrictionService instance = RouteRestrictionService._();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<RouteRestriction>? _cache;
+  DateTime? _loadedAt;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subscription;
+  RouteRestriction? _lastConflict;
+
+  RouteRestriction? get lastConflict => _lastConflict;
+
+  Future<List<RouteRestriction>> activeRestrictions() async {
+    _ensureLiveUpdates();
+    if (_cache != null &&
+        _loadedAt != null &&
+        DateTime.now().difference(_loadedAt!) < const Duration(seconds: 30)) {
+      return _cache!;
+    }
+    final snapshot = await _activeQuery.get();
+    _replaceCache(snapshot);
+    return _cache!;
+  }
+
+  Query<Map<String, dynamic>> get _activeQuery => _firestore
+      .collection('routeRestrictions')
+      .where('isActive', isEqualTo: true);
+
+  void _ensureLiveUpdates() {
+    _subscription ??= _activeQuery.snapshots().listen(
+      _replaceCache,
+      onError: (_) {
+        // The bounded fetch above remains the fallback while Firestore
+        // reconnects or the current account is not allowed to subscribe.
+        _subscription = null;
+      },
+      onDone: () => _subscription = null,
+      cancelOnError: true,
+    );
+  }
+
+  void _replaceCache(QuerySnapshot<Map<String, dynamic>> snapshot) {
+    _cache = snapshot.docs.map(RouteRestriction.fromFirestore).toList();
+    _loadedAt = DateTime.now();
+  }
+
+  void invalidate() {
+    _cache = null;
+    _loadedAt = null;
+  }
+
+  void markConflict(RouteRestriction restriction) {
+    _lastConflict = restriction;
+  }
+
+  void clearLastConflict() => _lastConflict = null;
+
+  Future<RouteRestriction?> routeConflict(List<LatLng> route) async {
+    final restrictions = await activeRestrictions();
+    for (final restriction in restrictions) {
+      if (RouteRestrictionMatcher.routeConflicts(route, restriction)) {
+        _lastConflict = restriction;
+        return restriction;
+      }
+    }
+    return null;
+  }
+
+  Future<RouteRestriction?> pointConflict(LatLng point) async {
+    final restrictions = await activeRestrictions();
+    for (final restriction in restrictions) {
+      if (RouteRestrictionMatcher.pointConflicts(point, restriction)) {
+        _lastConflict = restriction;
+        return restriction;
+      }
+    }
+    return null;
+  }
+
+  Future<RouteRestriction?> bookingEndpointConflict(LatLng point) async {
+    final restrictions = await activeRestrictions();
+    for (final restriction in restrictions) {
+      if (RouteRestrictionMatcher.isEnforcedPolygon(restriction) &&
+          RouteRestrictionMatcher.pointConflicts(point, restriction)) {
+        _lastConflict = restriction;
+        return restriction;
+      }
+    }
+    return null;
   }
 }

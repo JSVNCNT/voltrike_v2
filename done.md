@@ -421,3 +421,267 @@ No Firebase deployment or production data mutation was performed.
 - The native Navigation SDK may independently reroute away from the backend
   polyline. Live point warnings remain a safety backstop, not physical vehicle
   enforcement or a verified custom-route handoff.
+
+## Open-zone mutual aid and segmented-highway follow-up
+
+Status on 2026-07-30: implemented and verified in the isolated
+`demo-voltrike` Firebase project. This section supersedes the strict
+uncovered-pickup rejection and pickup-TODA-only fallback described above. No
+production deployment was performed in this pass.
+
+### Authoritative coverage and fare outcomes
+
+| Pickup / destination | Driver search order | Outside TODA fee |
+| --- | --- | --- |
+| No approved zones exist anywhere | Any eligible active-TODA driver | No |
+| Both endpoints share one or more TODAs | All shared TODAs are primary; other active TODAs are fallback | No |
+| Pickup in A, destination in B | A primary, B secondary, other active TODAs fallback | Once |
+| Pickup covered, destination uncovered | Pickup TODA set primary, other active TODAs fallback | Once |
+| Pickup uncovered, destination covered | Destination TODA set primary, other active TODAs fallback | Once |
+| Both endpoints uncovered while zones exist elsewhere | Any eligible active-TODA driver at equal fallback priority | Once |
+
+- Matching TODA IDs are sorted and recorded. In an overlap, every TODA shared
+  by both endpoints remains primary; no arbitrary Firestore read order decides
+  ownership.
+- The backend calculates and snapshots the fee. A client-supplied TODA ID,
+  outside flag, distance, or fare cannot grant eligibility or remove/add the
+  surcharge.
+- An active driver from any TODA can receive an open or mutual-aid offer only
+  when the driver is approved, online, available, suitably documented and
+  equipped, has a fresh accurate location, has no active booking, and is
+  within five kilometres of the pickup.
+
+### Balanced driver and passenger matching
+
+- The first batch contains at most five drivers. When available, it reserves
+  one place for the nearest secondary and one for the nearest fallback driver,
+  then fills the remaining places using the award comparator.
+- Accept claims collected in the 1.5-second arbitration window are ordered by
+  TODA service tier, 100-metre distance band, fewer awards today, smoothed
+  completion/cancellation reliability, smoothed rating, exact pickup distance,
+  server acceptance time, and driver ID.
+- This means pickup jurisdiction remains a hard priority. Within the same tier
+  and distance band, a driver with fewer rides today can win before an
+  otherwise similar slightly nearer driver; acceptance time resolves only the
+  remaining tie.
+- Dispatch counters and the scoring snapshot are updated in the same trusted
+  transaction as the award. Firestore rules prevent a registering driver from
+  seeding rating, earnings, trip, active-booking, or dispatch-stat fields.
+- If one driver sees several offers, the app lists the passenger who entered
+  the queue earliest first, followed by service tier, pickup distance, and a
+  stable ID. This is deterministic per driver, but it is not yet a global
+  many-driver/many-passenger optimization solver.
+
+### Segmented highway behavior
+
+- A prohibited highway can contain up to 20 disconnected buffered
+  centrelines. The administrator ends a segment with Enter or the add-segment
+  button and starts another after an intended legal crossing.
+- Every red segment is blocked. A continuous red line also blocks
+  perpendicular crossings, so an allowable street must be represented as a
+  real blank gap wider than twice the selected buffer plus positioning margin.
+- Both backend and Flutter checks inspect every segment, including sparse
+  route segments that cross a narrow restriction. Wide gaps remain routable;
+  narrow gaps whose endpoint buffers still touch remain blocked.
+- Google route alternatives that touch a restriction are rejected. If a later
+  alternative is safe, its rejected restriction names are returned and shown
+  as a persistent passenger advisory. If none is safe, booking creation fails
+  instead of pricing a prohibited route.
+- The Material warning icon is used. The 2100-by-2100 warning PNG was not
+  introduced into the small banner.
+
+### Validation and supplied-output review
+
+- Functions policy suite: 53 of 53 tests passed.
+- Functions, emulator seed, and lifecycle scripts passed `node --check`.
+- The isolated Firebase lifecycle completed with exit code 0 and shut down its
+  Auth, Firestore, Realtime Database, and Functions emulators. It covered the
+  no-zone pilot fallback, two TODAs/drivers, A-to-B mutual aid, fully uncovered
+  configured-network fallback, one boundary surcharge, competing acceptance,
+  dispatch-stat updates, segmented corridors, and legal gaps.
+- Full `flutter analyze` passed with no issues, and all 122 Flutter tests
+  passed. The focused coverage/offer/restriction/fare widget group accounts
+  for 27 of those tests.
+- The admin production build passed (47 modules transformed) and refreshed the
+  tracked hashed assets. Vite retained its non-blocking large-chunk warning:
+  the Mapbox bundle is about 1,825 kB and the main bundle about 581 kB before
+  gzip.
+- `git diff --check` passed; Git emitted only local LF-to-CRLF normalization
+  notices.
+- The supplied Firebase output shows a successful Vite/Hosting build and
+  active Node 22 Functions revisions with `GOOGLE_ROUTES_API_KEY` attached.
+  Its repeated App Check messages explicitly show invalid or missing tokens
+  being allowed because enforcement is off; they are warnings, not the cause
+  of the earlier coverage internal error.
+
+### Known limits after this pass
+
+- The driver query still reads at most 500 candidates and normally has only
+  one useful offer round before the passenger's 60-second timeout.
+- Native Navigation can independently reroute after booking. The stored route
+  validation and warning system is not physical geofence enforcement.
+- Real Google Routes alternatives and both device apps still need a controlled
+  Bacolod field test; the emulator uses deterministic routing.
+- Flutter currently lacks an injected HTTP-client test for rejected Google
+  alternatives, and the admin project lacks an interaction-test harness for
+  Enter/max-20 map editing. Pure geometry, callable parsing, advisory widgets,
+  TypeScript, and production build coverage passed.
+- Flutter App Check is not integrated, so enforcement must remain disabled
+  until a provider is registered, released, and monitored.
+- The proposed Rust bridge remains deferred. Firebase authentication,
+  transactions, routing, notifications, Flutter presentation, and admin calls
+  stay in their existing Dart/JavaScript/TypeScript boundaries for this
+  focused rollout.
+
+## Violation monitoring and administrator communication planning baseline
+
+Status on 2026-07-30: read-only architecture/repository audit completed. Only
+the appended roadmap documentation was changed for this planning pass; no
+runtime feature, Firebase schema/rule, Admin screen, mobile monitor, build,
+deployment, or production mutation was performed.
+
+### Verified reusable foundations
+
+- Online and idle drivers already use one location session tied to the online
+  toggle, publish fresh RTDB coordinates, and remove the location when going
+  offline.
+- Active booking guidance already has polygon conflict parsing and a visual
+  warning path, but the check is screen-specific, is skipped by the default
+  native-guidance path, and has no transition state, vibration, notification,
+  audit event, or online-idle banner.
+- Flutter already initializes FCM and local booking/chat/call/SOS notification
+  channels. A dedicated restriction channel, haptic transition API, case deep
+  link, and background disclosure are still required.
+- Developer and TODA Admin already share role-scoped Live Drivers and Safety
+  Incident patterns. The live map supports selectable markers, while the
+  Safety page demonstrates browser alerts, vibration, response actions, and
+  immutable incident locations.
+- The Admin location map currently uses light `streets-v12`; the zone editor
+  already uses the requested dark `dark-v11` Mapbox style. A shared dark
+  operations map can serve Live Drivers, Safety Incidents, and Violations.
+- Passenger-driver booking chat is real-time and reusable at the presentation
+  level, but its Firestore membership is intentionally limited to two booking
+  participants. It cannot safely serve driver/TODA/developer case chat.
+- Existing safety Functions provide useful patterns for server-owned incident
+  creation, TODA scoping, audited response transitions, recipient selection,
+  FCM delivery, and immutable location snapshots.
+
+### Decisions and limits recorded
+
+- Confirmed entry into a retained no-service/restricted-driving MultiPolygon
+  is a violation only after reliable samples and backend validation.
+  Approaching a boundary is a local warning, not an administrative case.
+- A Google partially-ignored highway restriction is a route advisory, not
+  proof that a driver drove along a highway. A legal perpendicular crossing
+  must not create a violation.
+- Developer Admin will have platform-wide review. TODA Admin will be limited
+  to the driver's TODA snapshotted at occurrence, including during mutual-aid
+  trips. Drivers see their own case/chat and passengers see neither.
+- The event marker must preserve the occurrence location; current driver
+  location is a separate optional marker. Internal evidence/disciplinary notes
+  stay separate from the shared driver-admin conversation.
+- Client-written RTDB GPS is useful operational telemetry but can be spoofed,
+  suppressed, or future-dated under the current rules. It is not tamper-proof
+  legal evidence; location hardening, App Check, backend transition
+  validation, security-rule tests, and a false-positive/appeal policy are
+  prerequisites for enforcement.
+- The exact phased implementation, migration, warning copy, data ownership,
+  dark Mapbox reuse, case chat, alerts, testing, and field rollout are now
+  recorded as section 15 of `todo.md`.
+
+## Restricted-area monitoring and violation operations implementation
+
+Status on 2026-07-30: implemented locally across Firebase Functions/rules,
+Flutter, and the Admin portal. This work has not been deployed or field-tested
+in Bacolod yet.
+
+### Booking and navigation policy
+
+- New manual `prohibited_highway` creation is removed from the active Admin
+  editor and rejected by the backend. Existing corridor records remain
+  readable and visible for audit, but no longer block bookings or create live
+  violations.
+- `no_service_area` and legacy `restricted_crossing` MultiPolygons both block
+  pickup, destination, and any candidate route that enters or crosses them.
+  The Admin label for the latter is now `Restricted driving area`.
+- Functions and Flutter request Google driving alternatives with
+  `avoidHighways: true`, retain the route-level
+  `routeRestrictionsPartiallyIgnored` advisory, and never treat that advisory
+  as proof of live highway travel.
+- Native Google Navigation receives the locally revalidated route token.
+  Automatic native reroutes are stopped and replaced only after obtaining a
+  fresh polygon-safe, highway-avoidance route token.
+- Existing TODA overlap, open-zone mutual aid, deterministic dispatch
+  arbitration, and outside-TODA fare behavior remain in place.
+
+### Online driver warnings and operational telemetry
+
+- One app-wide driver restriction monitor now runs while the driver is online
+  whether idle, travelling to pickup, or on an active trip. Going offline or
+  signing out shuts down monitoring, status, listeners, and GPS publication.
+- Fresh fixes must use distinct GPS observation timestamps and no worse than
+  35 metre accuracy. The mobile transition engine adds approach distance,
+  two-sample entry/exit confirmation, hysteresis, cooldown, amber/red banners,
+  haptics, and a dedicated Android notification channel.
+- An RTDB `onValueWritten` Function independently evaluates active retained
+  polygons and maintains backend-only transition state. The client callable
+  is now only an immediate/backstop path while inside or confirming exit, so
+  ordinary online-idle fixes do not duplicate a callable invocation.
+- Cases preserve the immutable event location and restriction snapshot while
+  the current online driver marker remains separate. Source/confidence text
+  explicitly says that two fresh driver-reported GPS fixes matched server
+  geometry; this is operational telemetry and not tamper-proof legal or
+  disciplinary evidence.
+- Driver and authorized administrators receive separate FCM delivery
+  attempts. Driver/Admin case messages are isolated from passenger booking
+  chat and have server-stamped identity, role, time, audit, read state, and
+  role-scoped access.
+
+### Developer and TODA Admin operations
+
+- Both admin roles now have a dedicated Violations page using the shared dark
+  Mapbox operations map. Developer Admin sees platform scope; TODA Admin is
+  server-limited to the driver's snapshotted TODA.
+- The page shows immutable event and optional current-driver markers,
+  restriction geometry, workflow actions, delivery evidence, route advisory,
+  case chat, filters, server-side cursor pagination, and scoped by-ID deep
+  links for older notification cases.
+- Admin web push uses an FCM service worker and a trusted callable-owned
+  SHA-256 token registry. Signing into another Admin account transfers the
+  exact browser token atomically instead of leaving both accounts subscribed;
+  direct registry and Admin device-token writes are denied.
+- Firebase Hosting is configured to serve the messaging service worker with
+  no-cache headers. Production web push still requires the public Firebase Web
+  Push VAPID key in `VITE_FIREBASE_VAPID_KEY` at Admin build time.
+
+### Verification and remaining limits
+
+- Full `flutter analyze`: no issues.
+- Full `flutter test`: 127 tests passed.
+- Focused post-cleanup restriction analysis and tests: no issues; 3 tests
+  passed.
+- Functions `npm test`: 66 tests passed.
+- Node syntax checks passed for Functions, route/violation policy, emulator
+  lifecycle, and Admin service worker scripts.
+- Admin TypeScript/Vite production build passed (52 modules transformed);
+  only the existing large Mapbox/main chunk advisory remains.
+- Android `:app:assembleDebug` passed, including Flutter compilation, Google
+  Navigation route-token integration, dexing, native libraries, and APK
+  packaging. Dependency deprecation and Play Services D8 warnings remain
+  non-blocking.
+- Firebase JSON configuration files parsed successfully and
+  `git diff --check -- . ':!admin/dist/**'` reported no source whitespace
+  errors. Vite's generated minified bundle contains one dependency-generated
+  trailing-space sequence.
+- The Firebase CLI is not installed in this workspace, so the final expanded
+  violation emulator lifecycle was not rerun after the last evidence-label
+  and pagination cleanup.
+- Android background monitoring still depends on user permission, the
+  foreground location service, and OEM battery policy. Force-stopping the app
+  prevents monitoring until the driver reopens it.
+- No live highway-entry violation exists. A later official-road/map-matching
+  phase is still required to distinguish sustained highway travel from legal
+  perpendicular crossings.
+- App Check, production rollout flags, full Admin interaction automation,
+  private disciplinary notes, physical-device route tests, retention/appeal
+  policy, and the broader Rust migration remain open.

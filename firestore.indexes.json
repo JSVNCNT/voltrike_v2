@@ -124,6 +124,75 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "endsAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerTodaId", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "driverId", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventClass", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "eventClass", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerTodaId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerTodaId", "order": "ASCENDING" },
+        { "fieldPath": "eventClass", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "driverViolations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerTodaId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "eventClass", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

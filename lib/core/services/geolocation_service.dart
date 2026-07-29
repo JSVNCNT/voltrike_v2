@@ -80,8 +80,10 @@ class GeolocationService {
             distanceFilter: 0,
             intervalDuration: const Duration(seconds: 5),
             foregroundNotificationConfig: const ForegroundNotificationConfig(
-              notificationTitle: 'VolTrike ride location active',
-              notificationText: 'Sharing driver location for the active ride.',
+              notificationTitle: 'VolTrike driver safety location active',
+              notificationText:
+                  'While you are online, location supports dispatch, '
+                  'navigation, and restricted-area safety alerts.',
               enableWakeLock: true,
             ),
           )
@@ -89,9 +91,7 @@ class GeolocationService {
             accuracy: LocationAccuracy.best,
             distanceFilter: 0,
           );
-    return Geolocator.getPositionStream(
-      locationSettings: settings,
-    );
+    return Geolocator.getPositionStream(locationSettings: settings);
   }
 
   /// Opens the device location settings.

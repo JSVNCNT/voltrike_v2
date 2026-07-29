@@ -14,6 +14,7 @@ const {
 
 const password = 'VolTrike123!';
 const todaId = 'test-toda-bacolod';
+const secondaryTodaId = 'test-toda-east';
 const accounts = Object.freeze({
   passenger: {
     uid: 'passenger-test-001',
@@ -36,7 +37,7 @@ const accounts = Object.freeze({
     firstName: 'Diego',
     lastName: 'Driver',
     role: 'driver',
-    todaId,
+    todaId: secondaryTodaId,
   },
   developer: {
     uid: 'developer-admin-test-001',
@@ -123,7 +124,7 @@ async function seedDriver(account, vehicleNumber, plateNumber) {
   const batch = db.batch();
   batch.set(db.collection('drivers').doc(account.uid), {
     uid: account.uid,
-    todaId,
+    todaId: account.todaId,
     vehicleId,
     licenseNumber: `N01-TEST-${account.uid.slice(-3)}`,
     licenseExpiry: Timestamp.fromDate(
@@ -190,6 +191,19 @@ async function main() {
     provinceCode: 'NEG',
     regionCode: '06',
     adminUid: accounts.todaAdmin.uid,
+    status: 'approved',
+    isActive: true,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+  batch.set(db.collection('todas').doc(secondaryTodaId), {
+    id: secondaryTodaId,
+    name: 'VolTrike East Test TODA',
+    barangayCode: '064501033',
+    cityCode: 'BACOLOD',
+    provinceCode: 'NEG',
+    regionCode: '06',
+    adminUid: null,
     status: 'approved',
     isActive: true,
     createdAt: FieldValue.serverTimestamp(),

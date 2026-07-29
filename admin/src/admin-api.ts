@@ -1,9 +1,39 @@
 import { httpsCallable } from 'firebase/functions';
-import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  type Unsubscribe,
+} from 'firebase/firestore';
 import { db, functions } from './firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
-import type { AdminMetrics, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, PageResult, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaCommission, ZoneRequest } from './types';
+import type {
+  AdminMetrics,
+  BookingOperation,
+  Driver,
+  DriverRatingRecord,
+  DriverViolation,
+  DriverViolationStatus,
+  FareConfig,
+  LiveDriver,
+  PageResult,
+  Point,
+  Report,
+  RouteRestriction,
+  SafetyIncident,
+  Toda,
+  TodaCommission,
+  ViolationFilters,
+  ViolationMessage,
+  ZoneRequest,
+} from './types';
 
 async function call<T>(name: string, data: Record<string, unknown>): Promise<T> {
   try {
@@ -27,6 +57,21 @@ function finiteNumber(value: unknown): number | null {
   }
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function dateString(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  const source = asRecord(value);
+  if (typeof source.toDate === 'function') {
+    const converted = (source.toDate as () => unknown)();
+    return converted instanceof Date ? converted.toISOString() : null;
+  }
+  const seconds = finiteNumber(source.seconds ?? source._seconds);
+  if (seconds !== null) return new Date(seconds * 1000).toISOString();
+  return null;
 }
 
 function decodePoint(value: unknown): Point | null {
@@ -121,6 +166,173 @@ function normalizeRouteRestriction(id: string, value: unknown): RouteRestriction
   };
 }
 
+function normalizeViolationStatus(value: unknown): DriverViolationStatus {
+  if (value === 'acknowledged' || value === 'responding' ||
+      value === 'resolved' || value === 'dismissed') return value;
+  if (value === 'investigating') return 'responding';
+  return 'open';
+}
+
+function normalizeDriverViolation(id: string, value: unknown): DriverViolation {
+  const source = asRecord(value);
+  const rawLocation = asRecord(
+    source.eventLocation ?? source.location ?? source.driverLocation,
+  );
+  const rawRestriction = asRecord(
+    source.restriction ?? source.restrictionSnapshot,
+  );
+  const hasRestriction = Object.keys(rawRestriction).length > 0
+    || typeof source.restrictionId === 'string'
+    || typeof source.restrictionName === 'string'
+    || typeof source.restrictionType === 'string';
+  const latitude = finiteNumber(
+    rawLocation.latitude ?? rawLocation.lat ?? source.latitude,
+  ) ?? 0;
+  const longitude = finiteNumber(
+    rawLocation.longitude ?? rawLocation.lng ?? source.longitude,
+  ) ?? 0;
+  const decodedAreas = decodeAreas(rawRestriction.areas);
+  const decodedPolygon = decodeArea(
+    rawRestriction.polygon ?? rawRestriction.coordinates,
+  );
+  const restrictionAreas = decodedAreas.length > 0
+    ? decodedAreas
+    : decodedPolygon.length > 0 ? [decodedPolygon] : [];
+
+  return {
+    id,
+    schemaVersion: finiteNumber(source.schemaVersion) ?? undefined,
+    eventClass: typeof source.eventClass === 'string'
+      ? source.eventClass
+      : typeof source.type === 'string' ? source.type : 'unknown',
+    status: normalizeViolationStatus(source.status),
+    severity: typeof source.severity === 'string' ? source.severity : undefined,
+    driverId: typeof source.driverId === 'string' ? source.driverId : '',
+    driverName: typeof source.driverName === 'string' ? source.driverName : null,
+    ownerTodaId: typeof source.ownerTodaId === 'string'
+      ? source.ownerTodaId
+      : typeof source.todaId === 'string' ? source.todaId : null,
+    ownerTodaName: typeof source.ownerTodaName === 'string'
+      ? source.ownerTodaName
+      : typeof source.todaName === 'string' ? source.todaName : null,
+    bookingId: typeof source.bookingId === 'string' ? source.bookingId : null,
+    bookingStatus: typeof source.bookingStatus === 'string'
+      ? source.bookingStatus
+      : null,
+    context: typeof source.context === 'string'
+      ? source.context
+      : typeof source.bookingStatus === 'string' ? source.bookingStatus : 'unknown',
+    restriction: hasRestriction ? {
+      id: typeof rawRestriction.id === 'string'
+        ? rawRestriction.id
+        : typeof rawRestriction.restrictionId === 'string'
+          ? rawRestriction.restrictionId
+          : typeof source.restrictionId === 'string'
+            ? source.restrictionId
+            : null,
+      name: typeof rawRestriction.name === 'string'
+        ? rawRestriction.name
+        : typeof source.restrictionName === 'string'
+          ? source.restrictionName
+          : 'Restricted area',
+      type: typeof rawRestriction.type === 'string'
+        ? rawRestriction.type
+        : typeof source.restrictionType === 'string'
+          ? source.restrictionType
+          : null,
+      revision: finiteNumber(
+        rawRestriction.revision ?? source.restrictionRevision,
+      ),
+      geometryVersion: finiteNumber(rawRestriction.geometryVersion),
+      polygon: decodedPolygon,
+      areas: restrictionAreas,
+    } : null,
+    eventLocation: {
+      latitude,
+      longitude,
+      accuracy: finiteNumber(rawLocation.accuracy),
+      bearing: finiteNumber(rawLocation.bearing ?? rawLocation.heading),
+      speed: finiteNumber(rawLocation.speed),
+      timestamp: finiteNumber(rawLocation.timestamp ?? rawLocation.capturedAt),
+      observedAt: finiteNumber(
+        rawLocation.observedAt ?? source.locationObservedAt,
+      ),
+    },
+    evidence: Object.keys(asRecord(source.evidence)).length > 0
+      ? asRecord(source.evidence)
+      : null,
+    source: typeof source.source === 'string' ? source.source : null,
+    confidence: typeof source.confidence === 'string' ||
+      typeof source.confidence === 'number' ? source.confidence : null,
+    routeAdvisory: typeof source.routeAdvisory === 'string'
+      ? source.routeAdvisory
+      : null,
+    enteredAt: dateString(source.enteredAt),
+    exitedAt: dateString(source.exitedAt),
+    occurredAt: dateString(source.occurredAt),
+    createdAt: dateString(source.createdAt),
+    updatedAt: dateString(source.updatedAt),
+    acknowledgedAt: dateString(source.acknowledgedAt),
+    resolvedAt: dateString(source.resolvedAt),
+    delivery: normalizeViolationDelivery(source.delivery),
+    driverDelivery: normalizeViolationDelivery(source.driverDelivery),
+    resolutionNote: typeof source.resolutionNote === 'string'
+      ? source.resolutionNote
+      : null,
+    latestAdminNote: typeof source.latestAdminNote === 'string'
+      ? source.latestAdminNote
+      : typeof asRecord(source.response).note === 'string'
+        ? asRecord(source.response).note as string
+        : null,
+    unreadMessageCount: finiteNumber(source.unreadMessageCount) ?? 0,
+    messageCount: finiteNumber(source.messageCount) ?? 0,
+    lastMessage: typeof source.lastMessage === 'string'
+      ? source.lastMessage
+      : null,
+    lastMessageAt: dateString(source.lastMessageAt),
+  };
+}
+
+function normalizeViolationDelivery(value: unknown) {
+  const source = asRecord(value);
+  if (Object.keys(source).length === 0) return null;
+  return {
+    status: typeof source.status === 'string' ? source.status : null,
+    recipientCount: finiteNumber(source.recipientCount) ?? 0,
+    attemptedCount: finiteNumber(source.attemptedCount) ?? 0,
+    successCount: finiteNumber(source.successCount) ?? 0,
+    lastAttemptAt: dateString(source.lastAttemptAt),
+  };
+}
+
+function normalizeViolationMessage(id: string, value: unknown): ViolationMessage {
+  const source = asRecord(value);
+  return {
+    id,
+    violationId: typeof source.violationId === 'string'
+      ? source.violationId
+      : '',
+    senderId: typeof source.senderId === 'string' ? source.senderId : '',
+    senderName: typeof source.senderName === 'string'
+      ? source.senderName
+      : typeof source.senderRole === 'string'
+        ? source.senderRole.split('_').join(' ')
+        : 'Case participant',
+    senderRole: typeof source.senderRole === 'string'
+      ? source.senderRole
+      : 'unknown',
+    text: typeof source.body === 'string'
+      ? source.body
+      : typeof source.text === 'string' ? source.text : '',
+    createdAt: dateString(source.sentAt ?? source.createdAt),
+    readBy: Array.isArray(source.seenBy)
+      ? source.seenBy.filter((entry): entry is string => typeof entry === 'string')
+      : Array.isArray(source.readBy)
+        ? source.readBy.filter((entry): entry is string => typeof entry === 'string')
+        : [],
+  };
+}
+
 function callableErrorMessage(name: string, error: unknown): string {
   const source = asRecord(error);
   const code = typeof source.code === 'string' ? source.code : '';
@@ -149,6 +361,15 @@ function callableErrorMessage(name: string, error: unknown): string {
   }
   if (name === 'adminSetRouteRestrictionStatus') {
     return 'The server could not change this route restriction status. Refresh the restriction list and try again.';
+  }
+  if (name === 'adminListDriverViolations') {
+    return 'The server could not load restriction violations for this administrator scope. Refresh and try again.';
+  }
+  if (name === 'adminUpdateDriverViolation') {
+    return 'The server could not update this violation case. Refresh the case and try again.';
+  }
+  if (name === 'sendDriverViolationMessage') {
+    return 'The server could not send this case message. Your draft was kept; retry when the connection is restored.';
   }
   return 'The server could not complete this administrator action. Refresh and try again.';
 }
@@ -250,6 +471,86 @@ export const adminApi = {
     'adminUpdateSafetyIncidentResponse',
     { incidentId, action, note },
   ),
+  async violationPage(
+    cursor?: string | null,
+    filters: ViolationFilters = {},
+  ): Promise<PageResult<DriverViolation>> {
+    const result = await call<{
+      items?: unknown[];
+      nextCursor?: unknown;
+    }>('adminListDriverViolations', {
+      cursor: cursor || '',
+      limit: 50,
+      status: filters.status || '',
+      eventClass: filters.eventClass || '',
+    });
+    const items = (result.items || [])
+      .map((entry) => {
+        const source = asRecord(entry);
+        const id = typeof source.id === 'string'
+          ? source.id
+          : typeof source.violationId === 'string' ? source.violationId : '';
+        return normalizeDriverViolation(id, source);
+      })
+      .filter((entry) => Boolean(entry.id));
+    return {
+      items,
+      nextCursor: typeof result.nextCursor === 'string' &&
+          result.nextCursor.trim()
+        ? result.nextCursor
+        : null,
+    };
+  },
+  async violation(violationId: string): Promise<DriverViolation> {
+    const result = await call<{ item?: unknown }>('adminGetDriverViolation', {
+      violationId,
+    });
+    const source = asRecord(result.item);
+    const id = typeof source.id === 'string'
+      ? source.id
+      : typeof source.violationId === 'string'
+        ? source.violationId
+        : violationId;
+    if (!Object.keys(source).length || !id) {
+      throw new Error('The violation case is unavailable in your administrator scope.');
+    }
+    return normalizeDriverViolation(id, source);
+  },
+  updateViolation: (
+    violationId: string,
+    action: 'acknowledge' | 'respond' | 'resolve' | 'dismiss',
+    note = '',
+  ) => call<{ violationId: string; status: DriverViolationStatus }>(
+    'adminUpdateDriverViolation',
+    { violationId, action, note },
+  ),
+  sendViolationMessage: (violationId: string, messageId: string, message: string) =>
+    call<{ violationId: string; messageId: string; idempotent: boolean }>(
+      'sendDriverViolationMessage',
+      { violationId, messageId, message },
+    ),
+  markViolationMessagesRead: (violationId: string) =>
+    call<{ markedRead: number }>('markDriverViolationMessagesRead', {
+      violationId,
+    }),
+  listenViolationMessages(
+    violationId: string,
+    onMessages: (messages: ViolationMessage[]) => void,
+    onError: (error: Error) => void,
+  ): Unsubscribe {
+    const source = collection(db, 'driverViolations', violationId, 'messages');
+    return onSnapshot(
+      query(source, orderBy('createdAt', 'asc'), limit(250)),
+      (snapshot) => {
+        onMessages(snapshot.docs.map((entry) =>
+          normalizeViolationMessage(entry.id, entry.data())));
+      },
+      (error) => onError(new Error(callableErrorMessage(
+        'listenDriverViolationMessages',
+        error,
+      ))),
+    );
+  },
   async zones(todaId?: string): Promise<ZoneRequest[]> {
     const source = collection(db, 'zoneRequests');
     const snapshot = await getDocs(

@@ -33,11 +33,22 @@ void main() {
         'distanceFare': 10,
         'boundarySurcharge': 17.5,
       },
+      'avoidedRouteRestrictionNames': [
+        ' Circumferential Road ',
+        '',
+        'Circumferential Road',
+        'Downtown no-service area',
+        42,
+      ],
     }, fallback: fallback);
 
     expect(result.distanceMeters, 1800);
     expect(result.estimatedFare, 47.5);
     expect(result.isOutsideToda, isTrue);
     expect(result.fareBreakdown['boundarySurcharge'], 17.5);
+    expect(result.avoidedRouteRestrictionNames, [
+      'Circumferential Road',
+      'Downtown no-service area',
+    ]);
   });
 }

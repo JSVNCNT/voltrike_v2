@@ -1,4 +1,5 @@
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onValueWritten } = require('firebase-functions/v2/database');
 const { createHash, randomUUID } = require('node:crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
@@ -42,14 +43,35 @@ const {
 const {
   classifyTripCoverage,
   decodePolyline,
-  firstNoServiceEndpointConflict,
+  firstRestrictedEndpointConflict,
   firstRouteConflict,
   firestoreGeometry,
   firestoreRestrictionGeometry,
   normalizeGeometry,
+  recordContainsPoint,
 } = require('./service-area-policy');
 const {
+  DRIVER_VIOLATION_EVENT_CLASS,
+  DRIVER_VIOLATION_STATUS,
+  actorCanAccessDriverViolation,
+  driverViolationContext,
+  nextDriverViolationStatus,
+  nextRestrictionObservation,
+  normalizeDriverLocation,
+  validIdentifier: validDriverViolationIdentifier,
+} = require('./driver-violation-policy');
+const {
+  GOOGLE_ROUTES_FIELD_MASK,
+  googleDrivingRouteRequest,
+  googleHighwayRouteAdvisory,
+} = require('./routes-policy');
+const {
+  bookingDriverServicePriority,
   compareDispatchClaims,
+  driverDispatchStats,
+  dispatchScoreSnapshot,
+  nextDriverDispatchStats,
+  selectDispatchBatch,
 } = require('./dispatch-policy');
 const {
   SAFETY_RESPONSE_STATUS,
@@ -263,7 +285,7 @@ function isAtLeast18(value, now = Date.now()) {
 }
 
 async function trustedRoute(pickup, destination, restrictions = []) {
-  const endpointConflict = firstNoServiceEndpointConflict(
+  const endpointConflict = firstRestrictedEndpointConflict(
     pickup,
     destination,
     restrictions,
@@ -271,8 +293,15 @@ async function trustedRoute(pickup, destination, restrictions = []) {
   if (endpointConflict) {
     throw new HttpsError(
       'failed-precondition',
-      `Pickup and destination must be outside ${endpointConflict.name ||
-        'the configured no-service area'}.`,
+      `E-trikes cannot pick up, drop off, or travel through ${
+        endpointConflict.name || 'this restricted area'
+      }. Move the pin outside the red boundary.`,
+      {
+        restrictionIds: endpointConflict.id ? [endpointConflict.id] : [],
+        restrictionNames: endpointConflict.name
+          ? [endpointConflict.name]
+          : [],
+      },
     );
   }
   // The demo project deliberately has no live Google credentials. Keep
@@ -290,13 +319,26 @@ async function trustedRoute(pickup, destination, restrictions = []) {
     if (conflict) {
       throw new HttpsError(
         'failed-precondition',
-        `No approved route avoids ${conflict.name || 'an active restriction'}.`,
+        'No permitted e-trike route is available for this trip.',
+        {
+          restrictionIds: conflict.id ? [conflict.id] : [],
+          restrictionNames: conflict.name ? [conflict.name] : [],
+        },
       );
     }
     return {
       distanceMeters: routeDistanceMeters,
       duration: `${Math.max(60, Math.round(routeDistanceMeters / 6))}s`,
       encodedPolyline: null,
+      avoidedRestrictionIds: [],
+      avoidedRestrictionNames: [],
+      highwayRouteAdvisory: {
+        requestedAvoidHighways: true,
+        provider: 'emulator',
+        routeRestrictionsPartiallyIgnored: null,
+        status: 'not_evaluated_emulator',
+        confirmedViolation: false,
+      },
       restrictionIdsChecked: restrictions
         .filter((restriction) => restriction.isActive !== false)
         .map((restriction) => restriction.id)
@@ -310,33 +352,12 @@ async function trustedRoute(pickup, destination, restrictions = []) {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': googleRoutesApiKey.value(),
-        'X-Goog-FieldMask':
-          'routes.distanceMeters,routes.duration,' +
-          'routes.polyline.encodedPolyline',
+        'X-Goog-FieldMask': GOOGLE_ROUTES_FIELD_MASK,
       },
-      body: JSON.stringify({
-        origin: {
-          location: {
-            latLng: {
-              latitude: pickup.latitude,
-              longitude: pickup.longitude,
-            },
-          },
-        },
-        destination: {
-          location: {
-            latLng: {
-              latitude: destination.latitude,
-              longitude: destination.longitude,
-            },
-          },
-        },
-        travelMode: 'DRIVE',
-        routingPreference: 'TRAFFIC_AWARE',
-        computeAlternativeRoutes: true,
-        languageCode: 'en-PH',
-        units: 'METRIC',
-      }),
+      body: JSON.stringify(googleDrivingRouteRequest(
+        pickup,
+        destination,
+      )),
     },
   );
   if (!response.ok) {
@@ -352,6 +373,9 @@ async function trustedRoute(pickup, destination, restrictions = []) {
   const payload = await response.json();
   const routes = Array.isArray(payload.routes) ? payload.routes : [];
   let sawValidRoute = false;
+  let advisoryFallback = null;
+  const avoidedRestrictionIds = new Set();
+  const avoidedRestrictionNames = new Set();
   for (const route of routes) {
     if (!Number.isInteger(route?.distanceMeters) ||
         route.distanceMeters <= 0) {
@@ -370,21 +394,46 @@ async function trustedRoute(pickup, destination, restrictions = []) {
     }
     if (routePoints.length < 2) continue;
     sawValidRoute = true;
-    if (firstRouteConflict(routePoints, restrictions)) continue;
-    return {
+    const conflict = firstRouteConflict(routePoints, restrictions);
+    if (conflict) {
+      if (conflict.id) avoidedRestrictionIds.add(conflict.id);
+      if (conflict.name) avoidedRestrictionNames.add(conflict.name);
+      continue;
+    }
+    const highwayRouteAdvisory = googleHighwayRouteAdvisory(route);
+    const candidate = {
       distanceMeters: route.distanceMeters,
       duration: typeof route.duration === 'string' ? route.duration : null,
       encodedPolyline,
+      avoidedRestrictionIds: [...avoidedRestrictionIds],
+      avoidedRestrictionNames: [...avoidedRestrictionNames],
       restrictionIdsChecked: restrictions
         .filter((restriction) => restriction.isActive !== false)
         .map((restriction) => restriction.id)
         .filter(Boolean),
+      // Google exposes a route-level advisory, not proof that the driver
+      // entered or travelled along a legally prohibited Bacolod road.
+      highwayRouteAdvisory,
     };
+    if (!highwayRouteAdvisory.routeRestrictionsPartiallyIgnored) {
+      return candidate;
+    }
+    advisoryFallback ??= candidate;
+  }
+  // Pilot policy: retain a usable polygon-safe route when Google says its
+  // soft highway preference may have been ignored, but persist a strong,
+  // explicitly unconfirmed advisory for both clients and operations.
+  if (advisoryFallback) {
+    return advisoryFallback;
   }
   if (sawValidRoute) {
     throw new HttpsError(
       'failed-precondition',
-      'No approved route avoids the active route restrictions.',
+      'No permitted e-trike route is available for this trip.',
+      {
+        restrictionIds: [...avoidedRestrictionIds],
+        restrictionNames: [...avoidedRestrictionNames],
+      },
     );
   }
   if (routes.length === 0) {
@@ -451,11 +500,6 @@ function vehicleCanServeBooking(vehicle, booking) {
 
 async function rankedDispatchDrivers(booking) {
   const pickup = normalizeCoordinate(booking.pickup, 'Pickup');
-  const eligibleTodaIds = new Set(
-    Array.isArray(booking.eligibleTodaIds)
-      ? booking.eligibleTodaIds.filter((value) => typeof value === 'string')
-      : [],
-  );
   const [drivers, locations] = await Promise.all([
     db.collection('drivers')
       .where('driverStatus', '==', 'approved')
@@ -479,10 +523,9 @@ async function rankedDispatchDrivers(booking) {
         driverData.currentBookingId != null) {
       return null;
     }
-    if (eligibleTodaIds.size > 0 &&
-        !eligibleTodaIds.has(driverData.todaId)) {
-      return null;
-    }
+    const servicePriority =
+      bookingDriverServicePriority(booking, driverData.todaId);
+    if (servicePriority == null) return null;
     const location = locationMap[driver.id];
     if (!location || location.online !== true ||
         !Number.isFinite(Number(location.timestamp)) ||
@@ -500,13 +543,29 @@ async function rankedDispatchDrivers(booking) {
       return null;
     }
     const proximity = distanceMeters(pickup, point);
-    return proximity <= dispatchRadiusMeters
-      ? {
-        driver,
-        distanceMeters: Math.round(proximity),
-        servicePriority: 0,
-      }
-      : null;
+    if (proximity > dispatchRadiusMeters) return null;
+    const distance = Math.round(proximity);
+    const stats = driverDispatchStats(driverData, now);
+    const dispatchScore = dispatchScoreSnapshot({
+      driverId: driver.id,
+      servicePriority,
+      distanceMeters: distance,
+      dailyAwards: stats.dailyAwardCount,
+      completedAssignments: stats.completedAssignments,
+      driverFaultCancellations: stats.driverFaultCancellations,
+      rating: driverData.rating,
+      ratingCount: driverData.ratingCount,
+    });
+    return {
+      driver,
+      driverId: driver.id,
+      distanceMeters: distance,
+      servicePriority,
+      dailyAwards: dispatchScore.dailyAwards,
+      reliabilityScore: dispatchScore.reliabilityScore,
+      qualityScore: dispatchScore.qualityScore,
+      dispatchScore,
+    };
   }).filter(Boolean);
 
   if (nearby.length === 0) return [];
@@ -532,10 +591,7 @@ async function rankedDispatchDrivers(booking) {
       licenseExpiry != null &&
       licenseExpiry >= now;
   });
-  eligible.sort((a, b) =>
-    a.servicePriority - b.servicePriority ||
-    a.distanceMeters - b.distanceMeters ||
-    a.driver.id.localeCompare(b.driver.id));
+  eligible.sort(compareDispatchClaims);
   return eligible;
 }
 
@@ -562,8 +618,10 @@ async function dispatchNextOfferBatch(bookingId) {
   if (!claimedBooking) return 0;
   const booking = claimedBooking;
 
-  const candidates = (await rankedDispatchDrivers(booking))
-    .slice(0, dispatchBatchSize);
+  const candidates = selectDispatchBatch(
+    await rankedDispatchDrivers(booking),
+    dispatchBatchSize,
+  );
   const previousDrivers = Array.isArray(booking.offeredDriverIds)
     ? booking.offeredDriverIds
     : [];
@@ -596,6 +654,10 @@ async function dispatchNextOfferBatch(bookingId) {
         driver,
         distanceMeters: proximity,
         servicePriority,
+        dailyAwards,
+        reliabilityScore,
+        qualityScore,
+        dispatchScore,
       }, index) => {
         const zoneRevision = Number(
           booking.coverageDecision?.geofenceRevisions?.[
@@ -610,6 +672,22 @@ async function dispatchNextOfferBatch(bookingId) {
             todaId: driver.data().todaId,
             distanceMeters: proximity,
             servicePriority,
+            serviceTier:
+              Array.isArray(booking.primaryTodaIds) &&
+              booking.primaryTodaIds.length > 0
+                ? servicePriority === 0
+                  ? 'primary'
+                  : servicePriority === 1
+                    ? 'secondary'
+                    : 'fallback'
+                : booking.coverageDecision?.configured === false
+                  ? 'open'
+                  : 'fallback',
+            dailyAwards,
+            reliabilityScore,
+            qualityScore,
+            dispatchScore,
+            dispatchPolicyVersion: 3,
             dispatchRank: index + 1,
             zoneRevision:
               Number.isInteger(zoneRevision) && zoneRevision >= 0
@@ -617,6 +695,9 @@ async function dispatchNextOfferBatch(bookingId) {
                 : 0,
             offerRound,
             status: 'offered',
+            queueEnteredAt:
+              booking.queueEnteredAt || booking.createdAt || timestamp(),
+            bookingCreatedAt: booking.createdAt || timestamp(),
             createdAt: timestamp(),
             updatedAt: timestamp(),
             expiresAt,
@@ -769,6 +850,8 @@ async function sendToUser(userId, title, body, data) {
       ? 'incoming_calls_v2'
       : type === 'safety_incident'
         ? 'safety_incidents'
+        : ['driver_violation', 'driver_violation_message'].includes(type)
+          ? 'driver_restriction_alerts_v1'
       : 'booking_updates';
   const sound = type === 'chat_message'
     ? 'chat_ringtone'
@@ -795,6 +878,186 @@ async function sendToUser(userId, title, body, data) {
     succeeded: response.successCount,
   };
 }
+
+function adminWebPushToken(value) {
+  if (typeof value !== 'string' ||
+      value.length < 1 ||
+      value.length > 4096 ||
+      value.trim() !== value) {
+    throw new HttpsError(
+      'invalid-argument',
+      'A valid Firebase web push token is required.',
+    );
+  }
+  return value;
+}
+
+function optionalFirestoreDocumentId(value, name, maximumLength = 512) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string' ||
+      value.length > maximumLength ||
+      value.includes('/')) {
+    throw new HttpsError(
+      'invalid-argument',
+      `${name} is invalid.`,
+    );
+  }
+  return value;
+}
+
+function adminWebPushDeviceId(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+exports.registerAdminWebPushToken = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const token = adminWebPushToken(request.data?.token);
+    const deviceId = adminWebPushDeviceId(token);
+    const previousUid = optionalFirestoreDocumentId(
+      request.data?.previousUid,
+      'Previous administrator ID',
+      128,
+    );
+    const previousDeviceId = optionalFirestoreDocumentId(
+      request.data?.previousDeviceId,
+      'Previous web push device ID',
+    );
+    if (previousDeviceId && !previousUid) {
+      throw new HttpsError(
+        'invalid-argument',
+        'A previous administrator ID is required with a previous device ID.',
+      );
+    }
+
+    const registryRef = db.collection('adminWebPushTokens').doc(deviceId);
+    const currentDeviceRef = db.collection('users')
+      .doc(actor.uid)
+      .collection('devices')
+      .doc(deviceId);
+    const result = await db.runTransaction(async (transaction) => {
+      const registry = await transaction.get(registryRef);
+      const currentDevice = await transaction.get(currentDeviceRef);
+      const registryOwnerUid = registry.exists &&
+        typeof registry.data().ownerUid === 'string'
+        ? registry.data().ownerUid
+        : '';
+
+      // A locally remembered previous UID is accepted only for the first
+      // migration, before a trusted registry record exists. Once registered,
+      // registry ownership is the sole source used for cross-account cleanup.
+      let priorDeviceRef = null;
+      if (registryOwnerUid && registryOwnerUid !== actor.uid) {
+        priorDeviceRef = db.collection('users')
+          .doc(registryOwnerUid)
+          .collection('devices')
+          .doc(deviceId);
+      } else if (!registry.exists && previousUid) {
+        priorDeviceRef = db.collection('users')
+          .doc(previousUid)
+          .collection('devices')
+          .doc(previousDeviceId || deviceId);
+      }
+      if (priorDeviceRef?.path === currentDeviceRef.path) {
+        priorDeviceRef = null;
+      }
+      const priorDevice = priorDeviceRef
+        ? await transaction.get(priorDeviceRef)
+        : null;
+
+      let removedPreviousOwner = false;
+      if (priorDevice?.exists && priorDevice.data().token === token) {
+        transaction.delete(priorDevice.ref);
+        removedPreviousOwner = true;
+      }
+      transaction.set(currentDeviceRef, {
+        token,
+        platform: 'web',
+        managedBy: 'trusted_admin_callable',
+        ownerUid: actor.uid,
+        adminRole: actor.role,
+        updatedAt: timestamp(),
+        ...(!currentDevice.exists ? { createdAt: timestamp() } : {}),
+      }, { merge: true });
+      transaction.set(registryRef, {
+        schemaVersion: 1,
+        tokenHash: deviceId,
+        ownerUid: actor.uid,
+        ownerRole: actor.role,
+        ownerTodaId: actor.todaId || null,
+        updatedAt: timestamp(),
+        ...(!registry.exists ? { createdAt: timestamp() } : {}),
+      }, { merge: true });
+      return {
+        previousOwnerUid: registryOwnerUid ||
+          (!registry.exists ? previousUid : ''),
+        removedPreviousOwner,
+      };
+    });
+    await adminAudit(db.collection('auditLogs').doc(), {
+      actor,
+      action: 'register_admin_web_push_token',
+      targetType: 'adminWebPushToken',
+      targetId: deviceId,
+      details: {
+        migratedFromPreviousAccount: result.removedPreviousOwner,
+        previousOwnerUid: result.previousOwnerUid || null,
+      },
+    });
+    return { registered: true, deviceId };
+  },
+);
+
+exports.unregisterAdminWebPushToken = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const token = adminWebPushToken(request.data?.token);
+    const deviceId = adminWebPushDeviceId(token);
+    const requestedDeviceId = optionalFirestoreDocumentId(
+      request.data?.deviceId,
+      'Web push device ID',
+    );
+    if (requestedDeviceId && requestedDeviceId !== deviceId) {
+      throw new HttpsError(
+        'invalid-argument',
+        'The web push token does not match the device ID.',
+      );
+    }
+
+    const registryRef = db.collection('adminWebPushTokens').doc(deviceId);
+    const currentDeviceRef = db.collection('users')
+      .doc(actor.uid)
+      .collection('devices')
+      .doc(deviceId);
+    const unregistered = await db.runTransaction(async (transaction) => {
+      const [registry, currentDevice] = await Promise.all([
+        transaction.get(registryRef),
+        transaction.get(currentDeviceRef),
+      ]);
+      const registryOwned = registry.exists &&
+        registry.data().ownerUid === actor.uid;
+      const currentOwned = currentDevice.exists &&
+        currentDevice.data().token === token &&
+        (!currentDevice.data().ownerUid ||
+          currentDevice.data().ownerUid === actor.uid);
+      if (!registryOwned || !currentOwned) return false;
+      transaction.delete(currentDeviceRef);
+      transaction.delete(registryRef);
+      return true;
+    });
+    if (unregistered) {
+      await adminAudit(db.collection('auditLogs').doc(), {
+        actor,
+        action: 'unregister_admin_web_push_token',
+        targetType: 'adminWebPushToken',
+        targetId: deviceId,
+      });
+    }
+    return { unregistered, deviceId };
+  },
+);
 
 async function safetyAdminRecipients(todaId) {
   const [developers, todaCandidates] = await Promise.all([
@@ -1785,6 +2048,15 @@ exports.adminSetDriverStatus = onCall({ region: 'asia-southeast1' }, async (requ
     licenseNumber: verifiedLicenseNumber,
     licenseExpiry: verifiedLicenseExpiry,
   });
+  if (status === 'approved' && driver.data().driverStatus === 'pending') {
+    Object.assign(update, {
+      rating: 0,
+      ratingCount: 0,
+      completedTrips: 0,
+      totalEarnings: 0,
+      dispatchStats: driverDispatchStats({}),
+    });
+  }
   if (status !== 'approved') Object.assign(update, { isOnline: false, isAvailable: false });
   await driverRef.update(update);
   await adminAudit(db.collection('auditLogs').doc(), {
@@ -2172,18 +2444,35 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
   const developer = await requireDeveloperAdmin(request);
   const name = requiredString(request.data?.name, 'Restriction name');
   const type = request.data?.type;
-  if (!['prohibited_highway', 'no_service_area', 'restricted_crossing'].includes(type)) {
+  if (type === 'prohibited_highway') {
+    throw new HttpsError(
+      'failed-precondition',
+      'New manual highway corridors are disabled. Highway avoidance is now requested from the routing provider; existing corridors remain available for history and status management.',
+    );
+  }
+  if (!['no_service_area', 'restricted_crossing'].includes(type)) {
     throw new HttpsError('invalid-argument', 'Unsupported restriction type.');
   }
-  const geometryType = request.data?.geometryType === 'corridor' ? 'corridor' : 'polygon';
+  if (request.data?.geometryType === 'corridor') {
+    throw new HttpsError(
+      'invalid-argument',
+      'No-service and restricted-driving areas require polygon geometry.',
+    );
+  }
+  const geometryType = 'polygon';
   let areas;
   try {
     areas = normalizeGeometry({
-      areas: geometryType === 'polygon' ? request.data?.areas : null,
+      areas: request.data?.areas,
       polygon: request.data?.polygon,
     }, { geometryType });
   } catch {
-    throw new HttpsError('invalid-argument', geometryType === 'corridor' ? 'A corridor needs 2 to 200 centreline points.' : 'A polygon needs 3 to 200 points.');
+    throw new HttpsError(
+      'invalid-argument',
+      geometryType === 'corridor'
+        ? 'A corridor needs 1 to 20 centreline segments of 2 to 200 points each.'
+        : 'A polygon needs 3 to 200 points.',
+    );
   }
   const bufferMeters = geometryType === 'corridor'
     ? validPositiveInteger(request.data?.bufferMeters, 'Corridor buffer', 5, 200)
@@ -2226,6 +2515,1045 @@ exports.adminSetRouteRestrictionStatus = onCall({ region: 'asia-southeast1' }, a
   return { updated: true };
 });
 
+function driverViolationDocument(id, data) {
+  const response = data.response || {};
+  const delivery = data.delivery || {};
+  return {
+    ...data,
+    violationId: data.violationId || id,
+    enteredAt: adminDate(data.enteredAt),
+    exitedAt: adminDate(data.exitedAt),
+    occurredAt: adminDate(data.occurredAt),
+    createdAt: adminDate(data.createdAt),
+    updatedAt: adminDate(data.updatedAt),
+    response: {
+      ...response,
+      lastActionAt: adminDate(response.lastActionAt),
+      acknowledgedAt: adminDate(response.acknowledgedAt),
+      respondingAt: adminDate(response.respondingAt),
+      resolvedAt: adminDate(response.resolvedAt),
+      dismissedAt: adminDate(response.dismissedAt),
+    },
+    delivery: {
+      ...delivery,
+      lastAttemptAt: adminDate(delivery.lastAttemptAt),
+    },
+  };
+}
+
+async function driverViolationAdminRecipientIds(ownerTodaId) {
+  const [developers, todaUsers] = await Promise.all([
+    db.collection('users')
+      .where('role', '==', 'developer_admin')
+      .limit(100)
+      .get(),
+    ownerTodaId
+      ? db.collection('users').where('todaId', '==', ownerTodaId)
+        .limit(100)
+        .get()
+      : Promise.resolve({ docs: [] }),
+  ]);
+  return [...new Set([...developers.docs, ...todaUsers.docs]
+    .filter((entry) => {
+      const data = entry.data();
+      return data.isActive !== false &&
+        (data.role === 'developer_admin' ||
+          (data.role === 'toda_admin' &&
+            data.todaId === ownerTodaId));
+    })
+    .map((entry) => entry.id))];
+}
+
+async function deliverDriverViolationPush({
+  recipientIds,
+  title,
+  body,
+  violationId,
+  messageId = '',
+  type = 'driver_violation',
+}) {
+  const uniqueRecipients = [...new Set(recipientIds)].filter(Boolean);
+  const deliveries = await Promise.all(uniqueRecipients.map((recipientId) =>
+    sendToUser(recipientId, title, body, {
+      type,
+      violationId,
+      ...(messageId ? { messageId } : {}),
+    }).catch((error) => {
+      logger.error('Could not deliver driver violation notification.', {
+        violationId,
+        messageId,
+        recipientId,
+        error,
+      });
+      return { attempted: 0, succeeded: 0 };
+    })));
+  return {
+    recipientCount: uniqueRecipients.length,
+    attemptedCount: deliveries.reduce(
+      (sum, delivery) => sum + Number(delivery.attempted || 0),
+      0,
+    ),
+    successCount: deliveries.reduce(
+      (sum, delivery) => sum + Number(delivery.succeeded || 0),
+      0,
+    ),
+  };
+}
+
+async function activeDriverIdentityForUid(uid) {
+  const [user, driver] = await Promise.all([
+    db.collection('users').doc(uid).get(),
+    db.collection('drivers').doc(uid).get(),
+  ]);
+  if (!user.exists || user.data().role !== 'driver' ||
+      user.data().isActive === false || !driver.exists ||
+      driver.data().driverStatus !== 'approved') {
+    throw new HttpsError(
+      'permission-denied',
+      'An active approved driver account is required.',
+    );
+  }
+  return {
+    uid,
+    user: user.data(),
+    driver: driver.data(),
+  };
+}
+
+async function activeDriverIdentity(request) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in as a driver first.');
+  }
+  return activeDriverIdentityForUid(request.auth.uid);
+}
+
+function driverViolationActor(request, userData) {
+  const actor = {
+    uid: request.auth.uid,
+    role: userData.role,
+    todaId: userData.todaId || null,
+    isActive: userData.isActive !== false,
+  };
+  if (['developer_admin', 'toda_admin'].includes(actor.role) &&
+      !adminIdentityMatches(userData, request.auth.token)) {
+    throw new HttpsError(
+      'permission-denied',
+      'Administrator permissions changed. Sign out and sign in again.',
+    );
+  }
+  return actor;
+}
+
+function driverViolationSenderName(userData, actorRole) {
+  const profileName = [
+    userData.firstName,
+    userData.middleName,
+    userData.lastName,
+  ]
+    .filter((value) =>
+      typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim())
+    .join(' ');
+  if (profileName) return profileName;
+  if (typeof userData.displayName === 'string' &&
+      userData.displayName.trim().length > 0) {
+    return userData.displayName.trim();
+  }
+  return actorRole === 'driver'
+    ? 'Driver'
+    : actorRole === 'toda_admin'
+      ? 'TODA Administrator'
+      : 'Developer Administrator';
+}
+
+function driverViolationRestrictionSnapshot(restriction) {
+  const normalizedAreas = normalizeGeometry(restriction);
+  const areas = normalizedAreas.map((points) => ({
+    points: points.map((point) => ({
+      latitude: point.latitude,
+      longitude: point.longitude,
+    })),
+  }));
+  const revision = Number(
+    restriction.revision ?? restriction.geometryVersion ?? 0,
+  );
+  if (Buffer.byteLength(JSON.stringify(areas), 'utf8') > 700000) {
+    throw new TypeError(
+      'Restriction geometry is too large to preserve in a violation case.',
+    );
+  }
+  return {
+    id: restriction.id,
+    name: restriction.name || 'Restricted area',
+    type: restriction.type,
+    revision: Number.isFinite(revision) ? revision : 0,
+    geometryVersion: Number(restriction.geometryVersion || 1),
+    areas,
+    polygon: areas[0]?.points || [],
+  };
+}
+
+// The driver supplies no polygon decision. Processing reads trusted account,
+// booking, TODA, and restriction records and creates at most one case per
+// observed enter/exit cycle.
+async function processDriverRestrictionPosition(identity, rawLocation) {
+  if (identity.driver.isOnline !== true) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Go online before checking restricted-area position.',
+    );
+  }
+  let location;
+  try {
+    location = normalizeDriverLocation(rawLocation, {
+      maximumAgeMs: driverLocationMaxAgeMs,
+      maximumAccuracyMeters: 35,
+      requireObservedAt: true,
+      maximumObservedAgeMs: driverLocationMaxAgeMs,
+    });
+  } catch (error) {
+    throw new HttpsError('failed-precondition', error.message);
+  }
+    const [restrictionDocuments, stateDocuments, todaDocument,
+      bookingDocument] = await Promise.all([
+      db.collection('routeRestrictions')
+        .where('isActive', '==', true)
+        .limit(200)
+        .get(),
+      db.collection('driverRestrictionStates')
+        .doc(identity.uid)
+        .collection('restrictions')
+        .limit(200)
+        .get(),
+      identity.driver.todaId
+        ? db.collection('todas').doc(identity.driver.todaId).get()
+        : Promise.resolve(null),
+      typeof identity.driver.currentBookingId === 'string' &&
+        identity.driver.currentBookingId.length > 0
+        ? db.collection('bookings')
+          .doc(identity.driver.currentBookingId)
+          .get()
+        : Promise.resolve(null),
+    ]);
+    const restrictions = restrictionDocuments.docs
+      .map((document) => ({ id: document.id, ...document.data() }))
+      .filter((restriction) =>
+        ['no_service_area', 'restricted_crossing']
+          .includes(restriction.type) &&
+        restriction.geometryType !== 'corridor');
+    const insideRestrictions = restrictions.filter((restriction) =>
+      recordContainsPoint(restriction, location));
+    const insideIds = new Set(
+      insideRestrictions.map((restriction) => restriction.id),
+    );
+    const stateById = new Map(
+      stateDocuments.docs.map((document) => [
+        document.id,
+        { ref: document.ref, data: document.data() },
+      ]),
+    );
+    const driverName = [
+      identity.user.firstName,
+      identity.user.middleName,
+      identity.user.lastName,
+    ].filter((value) =>
+      typeof value === 'string' && value.trim().length > 0).join(' ') ||
+      'Driver';
+    const ownerTodaId = identity.driver.todaId || null;
+    const ownerTodaName = todaDocument?.exists
+      ? todaDocument.data().name || null
+      : null;
+    const bookingId = bookingDocument?.exists
+      ? bookingDocument.id
+      : null;
+    const bookingStatus = bookingDocument?.exists
+      ? bookingDocument.data().status || null
+      : null;
+    const created = [];
+    const exited = [];
+    const pending = [];
+    const observationNow = Date.now();
+
+    for (const restriction of restrictions) {
+      const isInside = insideIds.has(restriction.id);
+      const preloadedState = stateById.get(restriction.id);
+      // Most drivers are outside almost every restriction. Avoid starting a
+      // Firestore transaction unless the point is inside or state already
+      // exists from an earlier candidate/entry.
+      if (!isInside && !preloadedState) continue;
+      const stateRef = db.collection('driverRestrictionStates')
+        .doc(identity.uid)
+        .collection('restrictions')
+        .doc(restriction.id);
+      const proposedViolationId = `violation_${randomUUID()
+        .replaceAll('-', '')}`;
+      const violationRef = db.collection('driverViolations')
+        .doc(proposedViolationId);
+      const transactionResult = await db.runTransaction(
+        async (transaction) => {
+          const currentState = await transaction.get(stateRef);
+          const state = currentState.exists ? currentState.data() : {};
+          if (!currentState.exists && !isInside) {
+            return { transition: 'outside', violationId: null };
+          }
+          const stableOutsideState = !isInside &&
+            state.inside !== true &&
+            !state.activeViolationId &&
+            Number(state.candidateInsideSamples || 0) <= 0 &&
+            Number(state.candidateOutsideSamples || 0) <= 0 &&
+            Number(state.reentryAllowedAtMillis || 0) <= observationNow;
+          if (stableOutsideState) {
+            transaction.delete(stateRef);
+            return { transition: 'outside', violationId: null };
+          }
+          const decision = nextRestrictionObservation(state, {
+            inside: isInside,
+            observedAt: location.observedAt,
+            now: observationNow,
+          });
+          if (decision.transition === 'ignored') {
+            return {
+              transition: decision.transition,
+              violationId: null,
+            };
+          }
+          const restrictionSnapshot =
+            driverViolationRestrictionSnapshot(restriction);
+          const stateUpdate = {
+            schemaVersion: 1,
+            driverId: identity.uid,
+            restrictionId: restriction.id,
+            restrictionType: restriction.type,
+            ...decision.updates,
+            lastObservedAt: timestamp(),
+            updatedAt: timestamp(),
+          };
+          if (decision.transition === 'enter') {
+            transaction.create(violationRef, {
+              schemaVersion: 1,
+              violationId: proposedViolationId,
+              eventClass: DRIVER_VIOLATION_EVENT_CLASS.restrictedAreaEntry,
+              status: DRIVER_VIOLATION_STATUS.open,
+              driverId: identity.uid,
+              driverName,
+              ownerTodaId,
+              ownerTodaName,
+              bookingId,
+              bookingStatus,
+              context: driverViolationContext(bookingId, bookingStatus),
+              restrictionId: restriction.id,
+              restrictionName: restrictionSnapshot.name,
+              restrictionType: restriction.type,
+              restrictionRevision: restrictionSnapshot.revision,
+              restrictionSnapshot,
+              eventLocation: {
+                latitude: location.latitude,
+                longitude: location.longitude,
+                accuracy: location.accuracy,
+                bearing: location.bearing,
+                speed: location.speed,
+                timestamp: location.timestamp,
+                observedAt: location.observedAt,
+              },
+              evidence: {
+                ...(decision.evidence || {}),
+                publishTimestamp: location.timestamp,
+                clock: 'gps_observed_at',
+                policy: 'two_distinct_fresh_gps_inside_samples',
+              },
+              source: 'driver_reported_gps_server_polygon_match',
+              confidence:
+                'two_fresh_driver_reported_gps_fixes_server_geometry_match',
+              enteredAt: timestamp(),
+              exitedAt: null,
+              occurredAt: timestamp(),
+              response: {
+                status: DRIVER_VIOLATION_STATUS.open,
+                lastAction: null,
+                lastActionBy: null,
+                lastActionAt: null,
+                note: null,
+              },
+              delivery: {
+                status: 'pending',
+                recipientCount: 0,
+                attemptedCount: 0,
+                successCount: 0,
+                lastAttemptAt: null,
+              },
+              driverDelivery: {
+                status: 'pending',
+                recipientCount: 1,
+                attemptedCount: 0,
+                successCount: 0,
+                lastAttemptAt: null,
+              },
+              messageCount: 0,
+              createdAt: timestamp(),
+              updatedAt: timestamp(),
+            });
+            stateUpdate.activeViolationId = proposedViolationId;
+            stateUpdate.enteredAt = timestamp();
+            stateUpdate.exitedAt = null;
+            transaction.create(db.collection('auditLogs').doc(), {
+              type: 'driver_restriction_event',
+              actorId: identity.uid,
+              actorRole: 'driver',
+              actorTodaId: ownerTodaId,
+              action: 'operational_restricted_area_entry_match',
+              targetType: 'driverViolation',
+              targetId: proposedViolationId,
+              details: {
+                restrictionId: restriction.id,
+                bookingId,
+                source: 'backend_polygon_match',
+                evidenceSampleCount: decision.evidence?.sampleCount || 2,
+              },
+              createdAt: timestamp(),
+            });
+          } else if (decision.transition === 'exit') {
+            const activeViolationId = state.activeViolationId || null;
+            stateUpdate.activeViolationId = null;
+            stateUpdate.exitedAt = timestamp();
+            if (activeViolationId) {
+              transaction.set(
+                db.collection('driverViolations').doc(activeViolationId),
+                {
+                  exitedAt: timestamp(),
+                  exitEvidence: {
+                    policy: 'two_distinct_fresh_gps_outside_samples',
+                    clock: 'gps_observed_at',
+                    confirmingObservedAt: location.observedAt,
+                    publishTimestamp: location.timestamp,
+                  },
+                  updatedAt: timestamp(),
+                },
+                { merge: true },
+              );
+            }
+          }
+          transaction.set(stateRef, stateUpdate, { merge: true });
+          return {
+            transition: decision.transition,
+            violationId: decision.transition === 'enter'
+              ? proposedViolationId
+              : decision.transition === 'exit'
+                ? state.activeViolationId || null
+                : null,
+          };
+        },
+      );
+      if (transactionResult.transition === 'enter' &&
+          transactionResult.violationId) {
+        created.push(transactionResult.violationId);
+      } else if (transactionResult.transition === 'exit' &&
+          transactionResult.violationId) {
+        exited.push(transactionResult.violationId);
+      } else if ([
+        'candidate_entry',
+        'candidate_exit',
+        'reentry_cooldown',
+      ].includes(transactionResult.transition)) {
+        pending.push(restriction.id);
+      }
+    }
+
+    // A disabled/deleted restriction is treated as outside for any retained
+    // server state, but still requires two distinct observations before the
+    // active case receives an exitedAt timestamp.
+    const activeRestrictionIds = new Set(
+      restrictions.map((restriction) => restriction.id),
+    );
+    const inactiveStates = [...stateById.entries()].filter(
+      ([restrictionId, state]) =>
+        !activeRestrictionIds.has(restrictionId) &&
+        (state.data.inside === true ||
+          Number(state.data.candidateInsideSamples || 0) > 0),
+    );
+    for (const [restrictionId, stateEntry] of inactiveStates) {
+      const stateRef = stateEntry.ref;
+      const result = await db.runTransaction(async (transaction) => {
+        const currentState = await transaction.get(stateRef);
+        if (!currentState.exists) {
+          return { transition: 'ignored', violationId: null };
+        }
+        const state = currentState.data();
+        const decision = nextRestrictionObservation(state, {
+          inside: false,
+          observedAt: location.observedAt,
+          now: observationNow,
+        });
+        if (decision.transition === 'ignored') {
+          return { transition: 'ignored', violationId: null };
+        }
+        const activeViolationId = state.activeViolationId || null;
+        transaction.set(stateRef, {
+          ...decision.updates,
+          ...(decision.transition === 'exit'
+            ? {
+              activeViolationId: null,
+              exitedAt: timestamp(),
+            }
+            : {}),
+          lastObservedAt: timestamp(),
+          updatedAt: timestamp(),
+        }, { merge: true });
+        if (decision.transition === 'exit' && activeViolationId) {
+          transaction.set(
+            db.collection('driverViolations').doc(activeViolationId),
+            {
+              exitedAt: timestamp(),
+              exitEvidence: {
+                policy: 'two_distinct_fresh_gps_outside_samples',
+                clock: 'gps_observed_at',
+                confirmingObservedAt: location.observedAt,
+                publishTimestamp: location.timestamp,
+                restrictionInactive: true,
+              },
+              updatedAt: timestamp(),
+            },
+            { merge: true },
+          );
+        }
+        return {
+          transition: decision.transition,
+          violationId: decision.transition === 'exit'
+            ? activeViolationId
+            : null,
+        };
+      });
+      if (result.transition === 'exit' && result.violationId) {
+        exited.push(result.violationId);
+      } else if (result.transition === 'candidate_exit') {
+        pending.push(restrictionId);
+      }
+    }
+
+    const adminRecipientIds = created.length > 0
+      ? await driverViolationAdminRecipientIds(ownerTodaId)
+      : [];
+    for (const violationId of created) {
+      const [delivery, driverDelivery] = await Promise.all([
+        deliverDriverViolationPush({
+          recipientIds: adminRecipientIds,
+          title: 'Restricted-area entry detected',
+          body: `${driverName} entered a mapped e-trike restricted area.`,
+          violationId,
+        }),
+        // This server-originated alert is a safety fallback when the driver's
+        // local restriction cache has not yet received an admin activation.
+        deliverDriverViolationPush({
+          recipientIds: [identity.uid],
+          title: 'Restricted e-trike area entered',
+          body: 'Leave the restricted area using the nearest permitted street.',
+          violationId,
+          type: 'driver_violation',
+        }),
+      ]);
+      await db.collection('driverViolations').doc(violationId).set({
+        delivery: {
+          status: delivery.successCount > 0
+            ? 'delivered'
+            : delivery.attemptedCount > 0
+              ? 'delivery_failed'
+              : 'no_registered_admin_device',
+          ...delivery,
+          lastAttemptAt: timestamp(),
+        },
+        driverDelivery: {
+          status: driverDelivery.successCount > 0
+            ? 'delivered'
+            : driverDelivery.attemptedCount > 0
+              ? 'delivery_failed'
+              : 'no_registered_driver_device',
+          ...driverDelivery,
+          lastAttemptAt: timestamp(),
+        },
+        updatedAt: timestamp(),
+      }, { merge: true });
+    }
+    return {
+      activeRestrictionIds: insideRestrictions.map(
+        (restriction) => restriction.id,
+      ),
+      createdViolationIds: created,
+      exitedViolationIds: exited,
+      pendingRestrictionIds: [...new Set(pending)],
+      locationTimestamp: location.timestamp,
+      locationObservedAt: location.observedAt,
+      evidenceClock: 'gps_observed_at',
+    };
+}
+
+// The callable gives the signed-in driver immediate UI feedback. The RTDB
+// trigger below is the authoritative fallback, so a modified client cannot
+// suppress monitoring merely by omitting this callable.
+exports.driverReportRestrictionPosition = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const identity = await activeDriverIdentity(request);
+    const locationSnapshot = await realtime
+      .ref(`driver_locations/${identity.uid}`)
+      .get();
+    return processDriverRestrictionPosition(
+      identity,
+      locationSnapshot.exists() ? locationSnapshot.val() : null,
+    );
+  },
+);
+
+exports.monitorDriverRestrictionPosition = onValueWritten(
+  {
+    ref: '/driver_locations/{driverId}',
+    // The isolated demo emulator creates RTDB in us-central1; production
+    // VolTrike RTDB is in asia-southeast1.
+    region: functionsEmulator ? 'us-central1' : 'asia-southeast1',
+    retry: false,
+  },
+  async (event) => {
+    if (!event.data.after.exists()) return;
+    const rawLocation = event.data.after.val();
+    // Legacy APKs remain dispatch-visible during rollout but cannot create
+    // confirmed cases until they provide a true GPS observation timestamp.
+    if (rawLocation?.online !== true ||
+        !Number.isFinite(Number(rawLocation?.observedAt))) {
+      return;
+    }
+    const previousObservedAt = Number(
+      event.data.before.exists()
+        ? event.data.before.val()?.observedAt
+        : null,
+    );
+    if (Number.isFinite(previousObservedAt) &&
+        previousObservedAt === Number(rawLocation.observedAt)) {
+      return;
+    }
+    try {
+      const identity = await activeDriverIdentityForUid(
+        event.params.driverId,
+      );
+      await processDriverRestrictionPosition(identity, rawLocation);
+    } catch (error) {
+      if (error instanceof HttpsError &&
+          ['failed-precondition', 'permission-denied']
+            .includes(error.code)) {
+        logger.info('Ignored ineligible restriction position publication.', {
+          driverId: event.params.driverId,
+          reason: error.message,
+        });
+        return;
+      }
+      logger.error('Restriction position trigger failed.', {
+        driverId: event.params.driverId,
+        error,
+      });
+      throw error;
+    }
+  },
+);
+
+exports.adminListDriverViolations = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const requestedLimit = adminPageSize(request.data?.limit);
+    let query = db.collection('driverViolations');
+    if (actor.role === 'toda_admin') {
+      query = query.where('ownerTodaId', '==', actor.todaId);
+    }
+    const statusFilter = typeof request.data?.status === 'string'
+      ? request.data.status
+      : '';
+    const eventClassFilter = typeof request.data?.eventClass === 'string'
+      ? request.data.eventClass
+      : '';
+    if (statusFilter &&
+        !Object.values(DRIVER_VIOLATION_STATUS).includes(statusFilter)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'The driver violation status filter is invalid.',
+      );
+    }
+    if (eventClassFilter &&
+        !Object.values(DRIVER_VIOLATION_EVENT_CLASS)
+          .includes(eventClassFilter)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'The driver violation event filter is invalid.',
+      );
+    }
+    if (statusFilter) {
+      query = query.where('status', '==', statusFilter);
+    }
+    if (eventClassFilter) {
+      query = query.where('eventClass', '==', eventClassFilter);
+    }
+    query = query.orderBy('occurredAt', 'desc');
+    const cursor = typeof request.data?.cursor === 'string'
+      ? request.data.cursor.trim()
+      : '';
+    if (cursor) {
+      if (!validDriverViolationIdentifier(cursor)) {
+        throw new HttpsError(
+          'invalid-argument',
+          'The driver violation cursor is invalid.',
+        );
+      }
+      const cursorDocument = await db.collection('driverViolations')
+        .doc(cursor)
+        .get();
+      if (!cursorDocument.exists ||
+          !actorCanAccessDriverViolation(actor, cursorDocument.data())) {
+        throw new HttpsError(
+          'invalid-argument',
+          'The driver violation cursor is unavailable in this scope.',
+        );
+      }
+      query = query.startAfter(cursorDocument);
+    }
+    const snapshot = await query.limit(requestedLimit + 1).get();
+    const pageDocuments = snapshot.docs.slice(0, requestedLimit);
+    const items = pageDocuments
+      .map((document) =>
+        driverViolationDocument(document.id, document.data()));
+    const nextCursor = snapshot.size > requestedLimit &&
+        pageDocuments.length > 0
+      ? pageDocuments[pageDocuments.length - 1].id
+      : null;
+    return { items, nextCursor };
+  },
+);
+
+exports.adminGetDriverViolation = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const violationId = request.data?.violationId;
+    if (!validDriverViolationIdentifier(violationId)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'A valid driver violation ID is required.',
+      );
+    }
+    const violation = await db.collection('driverViolations')
+      .doc(violationId)
+      .get();
+    if (!violation.exists) {
+      throw new HttpsError(
+        'not-found',
+        'Driver violation case not found.',
+      );
+    }
+    if (!actorCanAccessDriverViolation(actor, violation.data())) {
+      throw new HttpsError(
+        'permission-denied',
+        'This driver violation is outside your TODA.',
+      );
+    }
+    return {
+      item: driverViolationDocument(violation.id, violation.data()),
+    };
+  },
+);
+
+exports.listMyDriverViolations = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const identity = await activeDriverIdentity(request);
+    const requestedLimit = adminPageSize(request.data?.limit);
+    const includeClosed = request.data?.includeClosed === true;
+    const snapshot = await db.collection('driverViolations')
+      .where('driverId', '==', identity.uid)
+      .orderBy('occurredAt', 'desc')
+      .limit(100)
+      .get();
+    const items = snapshot.docs
+      .filter((document) => includeClosed || ![
+        DRIVER_VIOLATION_STATUS.resolved,
+        DRIVER_VIOLATION_STATUS.dismissed,
+      ].includes(document.data().status))
+      .slice(0, requestedLimit)
+      .map((document) =>
+        driverViolationDocument(document.id, document.data()));
+    return { items };
+  },
+);
+
+exports.adminUpdateDriverViolation = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const violationId = request.data?.violationId;
+    if (!validDriverViolationIdentifier(violationId)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'A valid driver violation ID is required.',
+      );
+    }
+    const action = requiredString(
+      request.data?.action,
+      'Driver violation action',
+    );
+    const note = typeof request.data?.note === 'string'
+      ? request.data.note.trim().slice(0, 1000)
+      : '';
+    if (['resolve', 'dismiss'].includes(action) && note.length < 5) {
+      throw new HttpsError(
+        'invalid-argument',
+        'A resolution or dismissal note of at least five characters is required.',
+      );
+    }
+    const violationRef = db.collection('driverViolations').doc(violationId);
+    const result = await db.runTransaction(async (transaction) => {
+      const violation = await transaction.get(violationRef);
+      if (!violation.exists) {
+        throw new HttpsError(
+          'not-found',
+          'Driver violation case not found.',
+        );
+      }
+      const data = violation.data();
+      if (!actorCanAccessDriverViolation(actor, data)) {
+        throw new HttpsError(
+          'permission-denied',
+          'This driver violation is outside your TODA.',
+        );
+      }
+      let nextStatus;
+      try {
+        nextStatus = nextDriverViolationStatus(data.status, action);
+      } catch (error) {
+        throw new HttpsError('failed-precondition', error.message);
+      }
+      const canonicalAction = action === 'investigate'
+        ? 'respond'
+        : action;
+      const response = {
+        ...(data.response || {}),
+        status: nextStatus,
+        lastAction: canonicalAction,
+        lastActionBy: actor.uid,
+        lastActionRole: actor.role,
+        lastActionAt: timestamp(),
+        note: note || data.response?.note || null,
+      };
+      if (canonicalAction === 'acknowledge') {
+        response.acknowledgedAt = timestamp();
+        response.acknowledgedBy = actor.uid;
+      } else if (canonicalAction === 'respond') {
+        response.respondingAt = timestamp();
+        response.respondingBy = actor.uid;
+      } else if (canonicalAction === 'resolve') {
+        response.resolvedAt = timestamp();
+        response.resolvedBy = actor.uid;
+      } else {
+        response.dismissedAt = timestamp();
+        response.dismissedBy = actor.uid;
+      }
+      transaction.update(violationRef, {
+        status: nextStatus,
+        response,
+        updatedAt: timestamp(),
+      });
+      transaction.create(db.collection('auditLogs').doc(), {
+        type: 'admin_action',
+        actorId: actor.uid,
+        actorRole: actor.role,
+        actorTodaId: actor.todaId || null,
+        action: `driver_violation_${canonicalAction}`,
+        targetType: 'driverViolation',
+        targetId: violationId,
+        details: {
+          driverId: data.driverId,
+          ownerTodaId: data.ownerTodaId,
+          note,
+        },
+        createdAt: timestamp(),
+      });
+      return {
+        status: nextStatus,
+        driverId: data.driverId,
+      };
+    });
+    await deliverDriverViolationPush({
+      recipientIds: [result.driverId],
+      title: result.status === DRIVER_VIOLATION_STATUS.resolved
+        ? 'Restricted-area case resolved'
+        : result.status === DRIVER_VIOLATION_STATUS.dismissed
+          ? 'Restricted-area case dismissed'
+          : 'Restricted-area case updated',
+      body: note || 'An administrator updated your restricted-area case.',
+      violationId,
+    });
+    return { violationId, status: result.status };
+  },
+);
+
+exports.sendDriverViolationMessage = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before messaging.');
+    }
+    const violationId = request.data?.violationId;
+    const messageId = request.data?.messageId;
+    if (!validDriverViolationIdentifier(violationId) ||
+        !validDriverViolationIdentifier(messageId)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Valid violation and message IDs are required.',
+      );
+    }
+    const body = requiredString(
+      request.data?.message ?? request.data?.body,
+      'Message',
+    ).slice(0, 2000);
+    const user = await db.collection('users').doc(request.auth.uid).get();
+    if (!user.exists || user.data().isActive === false) {
+      throw new HttpsError(
+        'permission-denied',
+        'An active account is required.',
+      );
+    }
+    const actor = driverViolationActor(request, user.data());
+    const senderName = driverViolationSenderName(user.data(), actor.role);
+    const violationRef = db.collection('driverViolations').doc(violationId);
+    const messageRef = violationRef.collection('messages').doc(messageId);
+    const result = await db.runTransaction(async (transaction) => {
+      const [violation, existingMessage] = await Promise.all([
+        transaction.get(violationRef),
+        transaction.get(messageRef),
+      ]);
+      if (!violation.exists ||
+          !actorCanAccessDriverViolation(actor, violation.data())) {
+        throw new HttpsError(
+          'permission-denied',
+          'You cannot access this driver violation case.',
+        );
+      }
+      if (existingMessage.exists) {
+        if (existingMessage.data().senderId === actor.uid) {
+          return {
+            idempotent: true,
+            driverId: violation.data().driverId,
+            ownerTodaId: violation.data().ownerTodaId,
+          };
+        }
+        throw new HttpsError(
+          'already-exists',
+          'This message ID is already in use.',
+        );
+      }
+      transaction.create(messageRef, {
+        schemaVersion: 1,
+        messageId,
+        violationId,
+        senderId: actor.uid,
+        senderRole: actor.role,
+        senderName,
+        senderTodaId: actor.todaId || null,
+        body,
+        seenBy: [actor.uid],
+        delivery: {
+          status: 'pending',
+          recipientCount: 0,
+          attemptedCount: 0,
+          successCount: 0,
+        },
+        sentAt: timestamp(),
+        createdAt: timestamp(),
+      });
+      transaction.update(violationRef, {
+        lastMessage: body.slice(0, 240),
+        lastMessageAt: timestamp(),
+        lastMessageBy: actor.uid,
+        messageCount: FieldValue.increment(1),
+        updatedAt: timestamp(),
+      });
+      return {
+        idempotent: false,
+        driverId: violation.data().driverId,
+        ownerTodaId: violation.data().ownerTodaId,
+      };
+    });
+    if (!result.idempotent) {
+      const adminIds = await driverViolationAdminRecipientIds(
+        result.ownerTodaId,
+      );
+      const recipients = new Set([result.driverId, ...adminIds]);
+      recipients.delete(actor.uid);
+      const delivery = await deliverDriverViolationPush({
+        recipientIds: [...recipients],
+        title: 'New restricted-area case message',
+        // Avoid exposing full case text on a lock screen or overflowing FCM's
+        // payload budget. Authorized members fetch it from the case thread.
+        body: 'Open VolTrike to read the new case message.',
+        violationId,
+        messageId,
+        type: 'driver_violation_message',
+      });
+      await messageRef.set({
+        delivery: {
+          status: delivery.successCount > 0
+            ? 'delivered'
+            : delivery.attemptedCount > 0
+              ? 'delivery_failed'
+              : 'no_registered_recipient_device',
+          ...delivery,
+          lastAttemptAt: timestamp(),
+        },
+      }, { merge: true });
+    }
+    return { violationId, messageId, idempotent: result.idempotent };
+  },
+);
+
+exports.markDriverViolationMessagesRead = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before messaging.');
+    }
+    const violationId = request.data?.violationId;
+    if (!validDriverViolationIdentifier(violationId)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'A valid driver violation ID is required.',
+      );
+    }
+    const [user, violation] = await Promise.all([
+      db.collection('users').doc(request.auth.uid).get(),
+      db.collection('driverViolations').doc(violationId).get(),
+    ]);
+    if (!user.exists || !violation.exists) {
+      throw new HttpsError('not-found', 'Driver violation case not found.');
+    }
+    const actor = driverViolationActor(request, user.data());
+    if (!actorCanAccessDriverViolation(actor, violation.data())) {
+      throw new HttpsError(
+        'permission-denied',
+        'You cannot access this driver violation case.',
+      );
+    }
+    const messages = await violation.ref.collection('messages')
+      .orderBy('sentAt', 'desc')
+      .limit(100)
+      .get();
+    if (!messages.empty) {
+      const batch = db.batch();
+      messages.docs.forEach((message) => {
+        if (!(message.data().seenBy || []).includes(actor.uid)) {
+          batch.update(message.ref, {
+            seenBy: FieldValue.arrayUnion(actor.uid),
+          });
+        }
+      });
+      await batch.commit();
+    }
+    return { markedRead: messages.size };
+  },
+);
+
 function adminPageSize(value) {
   return Number.isInteger(value) && value >= 1 && value <= 100 ? value : 25;
 }
@@ -2246,11 +3574,11 @@ exports.getSystemDiagnostics = onCall(
     }
     return {
       compatible: true,
-      functionsProtocolVersion: 3,
+      functionsProtocolVersion: 4,
       minimumClientProtocolVersion: 3,
       bookingSchemaVersion: 2,
-      firestoreRulesVersion: 3,
-      realtimeRulesVersion: 2,
+      firestoreRulesVersion: 4,
+      realtimeRulesVersion: 4,
       storageRulesVersion: 2,
       region: 'asia-southeast1',
       projectId: process.env.GCLOUD_PROJECT || null,
@@ -2585,10 +3913,15 @@ exports.adminListSafetyIncidents = onCall(
         const live = liveLocations.get(incident.driverId);
         const liveTimestamp = Number(live?.timestamp || live?.updatedAt);
         const liveLocation = live &&
+          live.online === true &&
           Number.isFinite(Number(live.latitude)) &&
           Number.isFinite(Number(live.longitude)) &&
+          Number.isFinite(Number(live.accuracy)) &&
+          Number(live.accuracy) >= 0 &&
+          Number(live.accuracy) <= 100 &&
           Number.isFinite(liveTimestamp) &&
-          now - liveTimestamp <= driverLocationMaxAgeMs
+          now - liveTimestamp <= driverLocationMaxAgeMs &&
+          liveTimestamp <= now + 10000
           ? {
             latitude: Number(live.latitude),
             longitude: Number(live.longitude),
@@ -2748,11 +4081,28 @@ exports.adminListLiveDrivers = onCall(
         .where('isOnline', '==', true)
         .limit(200);
     }
-    const [drivers, locations] = await Promise.all([
-      query.get(),
-      realtime.ref('driver_locations').get(),
-    ]);
-    const locationMap = locations.val() || {};
+    let drivers;
+    let locationMap;
+    if (actor.role === 'toda_admin') {
+      drivers = await query.get();
+      const locationSnapshots = await Promise.all(
+        drivers.docs.map((entry) =>
+          realtime.ref(`driver_locations/${entry.id}`).get()),
+      );
+      locationMap = Object.fromEntries(drivers.docs.map((entry, index) => [
+        entry.id,
+        locationSnapshots[index].exists()
+          ? locationSnapshots[index].val()
+          : null,
+      ]));
+    } else {
+      const [driverSnapshot, locations] = await Promise.all([
+        query.get(),
+        realtime.ref('driver_locations').get(),
+      ]);
+      drivers = driverSnapshot;
+      locationMap = locations.val() || {};
+    }
     const now = Date.now();
     const candidates = drivers.docs.filter((entry) => {
       const location = locationMap[entry.id];
@@ -2760,8 +4110,12 @@ exports.adminListLiveDrivers = onCall(
         location.online === true &&
         Number.isFinite(Number(location.latitude)) &&
         Number.isFinite(Number(location.longitude)) &&
+        Number.isFinite(Number(location.accuracy)) &&
+        Number(location.accuracy) >= 0 &&
+        Number(location.accuracy) <= 100 &&
         Number.isFinite(Number(location.timestamp)) &&
-        now - Number(location.timestamp) <= driverLocationMaxAgeMs;
+        now - Number(location.timestamp) <= driverLocationMaxAgeMs &&
+        Number(location.timestamp) <= now + 10000;
     });
     if (candidates.length === 0) return { items: [] };
     const [profiles, vehicles] = await Promise.all([
@@ -3120,8 +4474,24 @@ exports.createBookingLifecycle = onCall(
         isOutsideToda: existingBooking.data()?.isOutsideToda ?? null,
         coverageClass:
           existingBooking.data()?.coverageDecision?.coverageClass ?? null,
+        coveragePolicyVersion:
+          existingBooking.data()?.coveragePolicyVersion ?? null,
+        routePolicyVersion:
+          existingBooking.data()?.routePolicyVersion ?? null,
+        primaryTodaIds:
+          existingBooking.data()?.primaryTodaIds ?? [],
+        secondaryTodaIds:
+          existingBooking.data()?.secondaryTodaIds ?? [],
+        allowAnyActiveToda:
+          existingBooking.data()?.allowAnyActiveToda === true,
         eligibleTodaIds:
           existingBooking.data()?.eligibleTodaIds ?? [],
+        avoidedRouteRestrictionIds:
+          existingBooking.data()?.avoidedRouteRestrictionIds ?? [],
+        avoidedRouteRestrictionNames:
+          existingBooking.data()?.avoidedRouteRestrictionNames ?? [],
+        highwayRouteAdvisory:
+          existingBooking.data()?.highwayRouteAdvisory ?? null,
       };
     }
 
@@ -3141,18 +4511,16 @@ exports.createBookingLifecycle = onCall(
     const restrictions = restrictionDocuments.docs.map((document) => ({
       id: document.id,
       ...document.data(),
-    })).filter((restriction) => restriction.isActive !== false);
+    })).filter((restriction) =>
+      restriction.isActive !== false &&
+      ['no_service_area', 'restricted_crossing']
+        .includes(restriction.type) &&
+      restriction.geometryType !== 'corridor');
     const coverage = classifyTripCoverage(
       geofences,
       pickup,
       destination,
     );
-    if (!coverage.serviceable) {
-      throw new HttpsError(
-        'failed-precondition',
-        'The pickup is outside every approved TODA coverage area.',
-      );
-    }
     const route = await trustedRoute(pickup, destination, restrictions);
     const pricing = fareSnapshot(
       fareDocument.exists ? fareDocument.data() : null,
@@ -3239,7 +4607,10 @@ exports.createBookingLifecycle = onCall(
         estimatedDuration: route.duration,
         authoritativeRoutePolyline: route.encodedPolyline,
         routeRestrictionIdsChecked: route.restrictionIdsChecked,
-        routePolicyVersion: 2,
+        avoidedRouteRestrictionIds: route.avoidedRestrictionIds,
+        avoidedRouteRestrictionNames: route.avoidedRestrictionNames,
+        highwayRouteAdvisory: route.highwayRouteAdvisory,
+        routePolicyVersion: 4,
         fareSnapshot: pricing,
         fareBreakdown,
         clientEstimate: {
@@ -3251,20 +4622,28 @@ exports.createBookingLifecycle = onCall(
         baggageCount,
         isOutsideToda: coverage.isOutsideToda,
         coverageDecision: {
-          version: 2,
+          version: 3,
           configured: coverage.configured,
           coverageClass: coverage.coverageClass,
           pickupTodaIds: coverage.pickupTodaIds,
           destinationTodaIds: coverage.destinationTodaIds,
           sharedTodaIds: coverage.sharedTodaIds,
+          primaryTodaIds: coverage.primaryTodaIds,
+          secondaryTodaIds: coverage.secondaryTodaIds,
+          allowAnyActiveToda: coverage.allowAnyActiveToda,
           eligibleTodaIds: coverage.eligibleTodaIds,
           serviceTodaId: coverage.serviceTodaId,
           geofenceRevisions: coverage.geofenceRevisions,
         },
+        coveragePolicyVersion: 3,
+        primaryTodaIds: coverage.primaryTodaIds,
+        secondaryTodaIds: coverage.secondaryTodaIds,
+        allowAnyActiveToda: coverage.allowAnyActiveToda,
         eligibleTodaIds: coverage.eligibleTodaIds,
         serviceTodaId: coverage.serviceTodaId,
         geofenceRevisions: coverage.geofenceRevisions,
         searchExpiresAt,
+        queueEnteredAt: timestamp(),
         status: BOOKING_STATUS.pending,
         createdAt: timestamp(),
         updatedAt: timestamp(),
@@ -3308,7 +4687,15 @@ exports.createBookingLifecycle = onCall(
       fareBreakdown,
       isOutsideToda: coverage.isOutsideToda,
       coverageClass: coverage.coverageClass,
+      coveragePolicyVersion: 3,
+      routePolicyVersion: 4,
+      primaryTodaIds: coverage.primaryTodaIds,
+      secondaryTodaIds: coverage.secondaryTodaIds,
+      allowAnyActiveToda: coverage.allowAnyActiveToda,
       eligibleTodaIds: coverage.eligibleTodaIds,
+      avoidedRouteRestrictionIds: route.avoidedRestrictionIds,
+      avoidedRouteRestrictionNames: route.avoidedRestrictionNames,
+      highwayRouteAdvisory: route.highwayRouteAdvisory,
       searchExpiresAt: searchExpiresAt.toDate().toISOString(),
       ...result,
     };
@@ -3316,10 +4703,7 @@ exports.createBookingLifecycle = onCall(
 );
 
 function bookingAllowsDriverToda(booking, todaId) {
-  const eligibleTodaIds = Array.isArray(booking.eligibleTodaIds)
-    ? booking.eligibleTodaIds
-    : [];
-  return eligibleTodaIds.length === 0 || eligibleTodaIds.includes(todaId);
+  return bookingDriverServicePriority(booking, todaId) != null;
 }
 
 function validDriverAwardCandidate({
@@ -3355,10 +4739,10 @@ function validDriverAwardCandidate({
 }
 
 // Drivers submit an accept intent during a short server-owned arbitration
-// window. The transaction then awards the request by service priority,
-// distance, acceptance time, and finally driver ID. This preserves fast
-// simultaneous offers without letting network latency make a farther driver
-// beat a nearer driver who accepted in the same window.
+// window. The transaction awards by service tier, 100 m proximity band,
+// trusted daily workload, smoothed reliability/quality, exact distance,
+// acceptance time, and finally driver ID. This preserves fast simultaneous
+// offers while keeping the result deterministic and auditable.
 exports.acceptBookingLifecycle = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
@@ -3521,14 +4905,21 @@ exports.acceptBookingLifecycle = onCall(
           updatedAt: timestamp(),
         });
       }
+      const offerScore = dispatchScoreSnapshot(offer.data());
       transaction.set(claimRef, {
         bookingId,
         driverId: uid,
         operationId,
         offerRound,
         todaId: driver.data().todaId,
-        servicePriority: Number(offer.data().servicePriority || 0),
-        distanceMeters: Number(offer.data().distanceMeters),
+        servicePriority: offerScore.servicePriority,
+        distanceMeters: offerScore.distanceMeters,
+        dailyAwards: offerScore.dailyAwards,
+        reliabilityScore: offerScore.reliabilityScore,
+        qualityScore: offerScore.qualityScore,
+        dispatchScore: offerScore,
+        dispatchPolicyVersion:
+          Number(offer.data().dispatchPolicyVersion || 3),
         acceptedAt: Timestamp.fromMillis(now),
         status: 'submitted',
         createdAt: timestamp(),
@@ -3699,6 +5090,8 @@ exports.acceptBookingLifecycle = onCall(
             ? configuredCommission
             : 0;
         const winnerId = winner.claim.driverId;
+        const winningDispatchScore =
+          dispatchScoreSnapshot(winner.claim);
         transaction.update(bookingRef, {
           driverId: winnerId,
           driverName: driverName || profile.email || 'Driver',
@@ -3709,9 +5102,13 @@ exports.acceptBookingLifecycle = onCall(
             winner.vehicle.vehicleNumber || winner.vehicle.model || '',
           plateNumber: winner.vehicle.plateNumber || '',
           todaId: winner.driver.todaId,
+          driverTodaId: winner.driver.todaId,
           todaName: winner.toda.name || '',
           commissionPercent,
-          awardPolicyVersion: 2,
+          awardPolicyVersion: 3,
+          winningDispatchScore,
+          winningServicePriority:
+            winningDispatchScore.servicePriority,
           winningOfferDistanceMeters:
             Number(winner.claim.distanceMeters || 0),
           winningZoneRevision:
@@ -3726,6 +5123,8 @@ exports.acceptBookingLifecycle = onCall(
         transaction.update(winner.driverRef, {
           currentBookingId: bookingId,
           isAvailable: false,
+          dispatchStats:
+            nextDriverDispatchStats(winner.driver, 'assigned', now),
           updatedAt: timestamp(),
         });
         transaction.set(winner.offerRef, {
@@ -3745,6 +5144,8 @@ exports.acceptBookingLifecycle = onCall(
           actorId: winnerId,
           action: 'accept',
           resultStatus: BOOKING_STATUS.driverAssigned,
+          awardPolicyVersion: 3,
+          dispatchScore: winningDispatchScore,
           createdAt: timestamp(),
         });
         transaction.create(auditReference(
@@ -3759,8 +5160,10 @@ exports.acceptBookingLifecycle = onCall(
           actorRole: 'driver',
           fromStatus: BOOKING_STATUS.pending,
           toStatus: BOOKING_STATUS.driverAssigned,
-          awardPolicyVersion: 2,
+          awardPolicyVersion: 3,
           distanceMeters: Number(winner.claim.distanceMeters || 0),
+          servicePriority: winningDispatchScore.servicePriority,
+          dispatchScore: winningDispatchScore,
           createdAt: timestamp(),
         });
         claims.forEach((claim) => transaction.set(claim.ref, {
@@ -3795,7 +5198,7 @@ exports.acceptBookingLifecycle = onCall(
     if (result.winnerDriverId !== uid) {
       throw new HttpsError(
         'aborted',
-        'A nearer eligible driver accepted during the same award window.',
+        'A higher-ranked eligible driver accepted during the same award window.',
       );
     }
     return {
@@ -4207,6 +5610,17 @@ exports.transitionBookingLifecycle = onCall(
           request.data?.reasonDetail || '',
         ).trim().slice(0, 500);
       }
+      const driverFaultCancellation =
+        cancellationCode === 'driver_no_show' ||
+        (isDriver && cancellationCode != null &&
+          cancellationCode !== 'passenger_no_show');
+      const driverStatsOutcome = action === 'complete'
+        ? 'completed'
+        : nextStatus === BOOKING_STATUS.cancelled
+          ? (driverFaultCancellation
+            ? 'driver_fault_cancelled'
+            : 'cancelled')
+          : null;
       transaction.update(bookingRef, lifecycleUpdate);
       if (driverRef && driver?.exists &&
           driver.data().currentBookingId === bookingId) {
@@ -4214,6 +5628,29 @@ exports.transitionBookingLifecycle = onCall(
           currentBookingId: null,
           isAvailable: driver.data().isOnline === true &&
             driver.data().driverStatus === 'approved',
+          updatedAt: timestamp(),
+        };
+        if (driverStatsOutcome != null) {
+          driverUpdate.dispatchStats = nextDriverDispatchStats(
+            driver.data(),
+            driverStatsOutcome,
+          );
+        }
+        if (action === 'complete') {
+          driverUpdate.pendingReceiptBookingId = bookingId;
+          driverUpdate.completedTrips = FieldValue.increment(1);
+          driverUpdate.totalEarnings = FieldValue.increment(
+            lifecycleUpdate.driverNetEarnings,
+          );
+        }
+        transaction.update(driverRef, driverUpdate);
+      } else if (driverRef && driver?.exists &&
+          driverStatsOutcome != null) {
+        const driverUpdate = {
+          dispatchStats: nextDriverDispatchStats(
+            driver.data(),
+            driverStatsOutcome,
+          ),
           updatedAt: timestamp(),
         };
         if (action === 'complete') {
@@ -4224,15 +5661,6 @@ exports.transitionBookingLifecycle = onCall(
           );
         }
         transaction.update(driverRef, driverUpdate);
-      } else if (driverRef && driver?.exists && action === 'complete') {
-        transaction.update(driverRef, {
-          pendingReceiptBookingId: bookingId,
-          completedTrips: FieldValue.increment(1),
-          totalEarnings: FieldValue.increment(
-            lifecycleUpdate.driverNetEarnings,
-          ),
-          updatedAt: timestamp(),
-        });
       }
       if (action === 'complete' && passenger?.exists) {
         transaction.update(passengerRef, {
@@ -4466,16 +5894,12 @@ exports.createSafetyIncident = onCall(
       ]);
       todaId = todaId || (driver.exists ? driver.data().todaId || null : null);
       const locationData = location.exists() ? location.val() : null;
-      if (locationData && typeof locationData === 'object') {
-        driverLocation = {
-          latitude: Number(locationData.latitude),
-          longitude: Number(locationData.longitude),
-          accuracy: Number(locationData.accuracy),
-          bearing: Number(locationData.bearing || 0),
-          speed: Number(locationData.speed || 0),
-          timestamp: Number(locationData.timestamp || locationData.updatedAt),
-          online: locationData.online === true,
-        };
+      try {
+        driverLocation = normalizeDriverLocation(locationData, {
+          maximumAgeMs: driverLocationMaxAgeMs,
+        });
+      } catch {
+        driverLocation = null;
       }
     }
     if (todaId && !todaName) {

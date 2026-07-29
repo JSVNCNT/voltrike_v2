@@ -144,7 +144,7 @@ void main() {
       }
     });
 
-    test('configured pickup outside every zone is blocked', () {
+    test('configured uncovered pickup is allowed with outside fee policy', () {
       final decision = TodaCoverageService.classify(
         pickup: const LatLng(10.70, 123.02),
         destination: const LatLng(10.67, 122.95),
@@ -152,9 +152,23 @@ void main() {
       );
 
       expect(decision.status, TodaTripCoverageStatus.pickupOutside);
-      expect(decision.pickupAllowed, isFalse);
-      expect(decision.isOutsideToda, isFalse);
+      expect(decision.pickupAllowed, isTrue);
+      expect(decision.isOutsideToda, isTrue);
       expect(decision.destinationTodaIds, ['toda-a']);
+      expect(decision.serviceTodaId, 'toda-a');
+    });
+
+    test('configured endpoints outside every zone still incur outside fee', () {
+      final decision = TodaCoverageService.classify(
+        pickup: const LatLng(10.70, 123.02),
+        destination: const LatLng(10.71, 123.03),
+        zones: [todaA, todaB],
+      );
+
+      expect(decision.status, TodaTripCoverageStatus.pickupOutside);
+      expect(decision.pickupAllowed, isTrue);
+      expect(decision.isOutsideToda, isTrue);
+      expect(decision.serviceTodaId, isNull);
     });
 
     test('missing valid coverage remains available for pilot testing', () {
