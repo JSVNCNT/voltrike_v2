@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// Displays information about the passenger.
 ///
 /// This widget is intentionally presentation-only.
-/// Ride actions (Call, Message, Report) are handled by RideActionsCard.
+/// Compact ride actions may be placed beside the passenger identity.
 /// ===========================================================================
 class PassengerInformationCard extends StatelessWidget {
   const PassengerInformationCard({
@@ -14,6 +14,7 @@ class PassengerInformationCard extends StatelessWidget {
     required this.passengerName,
     this.photoUrl,
     this.compact = false,
+    this.actions,
   });
 
   /// Passenger's display name.
@@ -22,6 +23,7 @@ class PassengerInformationCard extends StatelessWidget {
   /// Optional passenger profile photo.
   final String? photoUrl;
   final bool compact;
+  final Widget? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +84,14 @@ class PassengerInformationCard extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.person_pin_circle_outlined, color: colorScheme.primary),
+            if (actions != null) ...[
+              const SizedBox(width: 8),
+              actions!,
+            ] else
+              Icon(
+                Icons.person_pin_circle_outlined,
+                color: colorScheme.primary,
+              ),
           ],
         ),
       ),

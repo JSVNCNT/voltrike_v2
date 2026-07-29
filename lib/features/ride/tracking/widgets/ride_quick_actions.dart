@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_colors.dart';
+
 /// Compact, glanceable actions that stay near the other ride participant.
 ///
 /// Pickup coordination exposes call/chat. Once the trip starts, those actions
@@ -13,6 +15,7 @@ class RideQuickActions extends StatelessWidget {
     this.onSos,
     this.onSafetyUpdate,
     this.messageBadge = 0,
+    this.buttonSize = 42,
   });
 
   final VoidCallback? onCall;
@@ -21,6 +24,7 @@ class RideQuickActions extends StatelessWidget {
   final VoidCallback? onSos;
   final VoidCallback? onSafetyUpdate;
   final int messageBadge;
+  final double buttonSize;
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +35,8 @@ class RideQuickActions extends StatelessWidget {
           icon: Icons.call_rounded,
           label: 'Call',
           onPressed: onCall!,
+          foregroundColor: Colors.white,
+          backgroundColor: AppColors.callAction,
         ),
       if (onChat != null)
         _QuickAction(
@@ -38,16 +44,18 @@ class RideQuickActions extends StatelessWidget {
           label: 'Chat',
           onPressed: onChat!,
           badge: messageBadge,
+          foregroundColor: Colors.white,
+          backgroundColor: AppColors.chatAction,
         ),
       if (onReport != null)
         _QuickAction(
-          icon: Icons.assignment_late_outlined,
+          icon: Icons.description_outlined,
           label: 'Report',
           onPressed: onReport!,
-          foregroundColor: colorScheme.error,
-          backgroundColor: colorScheme.errorContainer,
+          foregroundColor: Colors.white,
+          backgroundColor: AppColors.reportAction,
         ),
-      if (onSos != null)
+      if (onSos != null && onSafetyUpdate == null)
         _QuickAction(
           icon: Icons.sos_rounded,
           label: 'SOS',
@@ -57,11 +65,11 @@ class RideQuickActions extends StatelessWidget {
         ),
       if (onSafetyUpdate != null)
         _QuickAction(
-          icon: Icons.health_and_safety_outlined,
+          icon: Icons.gpp_good_rounded,
           label: 'Update safety status',
           onPressed: onSafetyUpdate!,
-          foregroundColor: colorScheme.error,
-          backgroundColor: colorScheme.errorContainer,
+          foregroundColor: Colors.white,
+          backgroundColor: AppColors.safetyAction,
         ),
     ];
 
@@ -72,9 +80,20 @@ class RideQuickActions extends StatelessWidget {
       label: 'Ride actions',
       child: Wrap(
         alignment: WrapAlignment.center,
-        spacing: 12,
+        spacing: 8,
         runSpacing: 8,
-        children: actions,
+        children: [
+          for (final action in actions)
+            _QuickAction(
+              icon: action.icon,
+              label: action.label,
+              onPressed: action.onPressed,
+              foregroundColor: action.foregroundColor,
+              backgroundColor: action.backgroundColor,
+              badge: action.badge,
+              size: buttonSize,
+            ),
+        ],
       ),
     );
   }
@@ -88,6 +107,7 @@ class _QuickAction extends StatelessWidget {
     this.foregroundColor,
     this.backgroundColor,
     this.badge = 0,
+    this.size = 42,
   });
 
   final IconData icon;
@@ -96,6 +116,7 @@ class _QuickAction extends StatelessWidget {
   final Color? foregroundColor;
   final Color? backgroundColor;
   final int badge;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -108,14 +129,15 @@ class _QuickAction extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            IconButton.filledTonal(
+            IconButton(
               onPressed: onPressed,
               icon: Icon(icon),
-              color: foregroundColor ?? colorScheme.primary,
               style: IconButton.styleFrom(
+                foregroundColor: foregroundColor ?? colorScheme.primary,
                 backgroundColor:
                     backgroundColor ?? colorScheme.primaryContainer,
-                minimumSize: const Size.square(48),
+                fixedSize: Size.square(size),
+                minimumSize: Size.square(size),
               ),
             ),
             if (badge > 0)

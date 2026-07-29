@@ -8,7 +8,7 @@ import '../../../common/presentation/widgets/star_rating.dart';
 /// Displays information about the assigned driver.
 ///
 /// This widget is intentionally presentation-only.
-/// Ride actions (Call, Message, Report) are handled by RideActionsCard.
+/// Compact ride actions may be placed beside the driver identity.
 /// ===========================================================================
 class DriverInformationCard extends StatelessWidget {
   const DriverInformationCard({
@@ -20,6 +20,7 @@ class DriverInformationCard extends StatelessWidget {
     this.photoUrl,
     this.rating,
     this.compact = false,
+    this.actions,
   });
 
   final String driverName;
@@ -29,6 +30,7 @@ class DriverInformationCard extends StatelessWidget {
   final String? photoUrl;
   final double? rating;
   final bool compact;
+  final Widget? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +90,7 @@ class DriverInformationCard extends StatelessWidget {
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      if (rating != null) ...[
+                      if (rating != null && !compact) ...[
                         const SizedBox(height: 5),
                         Row(
                           children: [
@@ -106,12 +108,31 @@ class DriverInformationCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(
-                  Icons.electric_rickshaw_rounded,
-                  color: colorScheme.primary,
-                ),
+                if (actions != null) ...[
+                  const SizedBox(width: 8),
+                  actions!,
+                ] else
+                  Icon(
+                    Icons.electric_rickshaw_rounded,
+                    color: colorScheme.primary,
+                  ),
               ],
             ),
+            if (compact && rating != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  StarRating(rating: rating!, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    rating!.toStringAsFixed(1),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (compact) ...[
               const SizedBox(height: 8),
               Text(

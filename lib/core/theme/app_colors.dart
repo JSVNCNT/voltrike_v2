@@ -46,6 +46,13 @@ class AppColors {
   static const Color error = Color(0xFFD32F2F);
   static const Color info = Color(0xFF1976D2);
 
+  // Ride communication and safety actions. Kept semantic so a future dark
+  // color scheme can replace them centrally without changing ride widgets.
+  static const Color callAction = Color(0xFF2E7D32);
+  static const Color chatAction = Color(0xFF0288D1);
+  static const Color reportAction = Color(0xFFF57C00);
+  static const Color safetyAction = Color(0xFF006F73);
+
   // ---------------------------------------------------------------------------
   // Border
   // ---------------------------------------------------------------------------

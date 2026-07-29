@@ -226,50 +226,9 @@ class _DriverBookingTrackingScreenState
           await controller.startTrip(booking);
           break;
         case BookingStatus.passengerOnBoard:
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Drop off passenger?'),
-              content: const Text(
-                'Confirm only after reaching the destination. Cash will be '
-                'confirmed in the next step.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Not yet'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Confirm drop off'),
-                ),
-              ],
-            ),
-          );
-          if (confirmed == true) await controller.confirmDropOff(booking);
+          await controller.confirmDropOff(booking);
           break;
         case BookingStatus.paymentConfirmation:
-          final received = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Cash received?'),
-              content: Text(
-                'Confirm receipt of ₱${booking.amountDue.toStringAsFixed(2)} '
-                'to complete the trip.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Not yet'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Cash received'),
-                ),
-              ],
-            ),
-          );
-          if (received != true) return;
           _finishingBookingId = booking.bookingId;
           await controller.completeTrip(booking);
           break;
@@ -284,6 +243,7 @@ class _DriverBookingTrackingScreenState
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not update trip: $error')));
+      rethrow;
     }
   }
 
@@ -416,7 +376,10 @@ class _DriverBookingTrackingScreenState
               )
             : null,
         onReport: stage.allowReport ? () => _reportPassenger(booking) : null,
-        onSos: stage.allowSos && !_sosSubmitting
+        onSos:
+            stage.allowSos &&
+                !_sosSubmitting &&
+                _safetyIncident?.isActive != true
             ? () => _triggerSos(booking)
             : null,
         onSafetyUpdate:
@@ -534,9 +497,8 @@ class _DriverBookingTrackingScreenState
                   passengerName: booking.passengerName ?? 'Passenger',
                   photoUrl: booking.passengerPhotoUrl,
                   compact: true,
+                  actions: _quickRideActions(booking),
                 ),
-                const SizedBox(height: 8),
-                _quickRideActions(booking),
                 if (navigation.instruction?.isNotEmpty == true) ...[
                   const SizedBox(height: 10),
                   Card(

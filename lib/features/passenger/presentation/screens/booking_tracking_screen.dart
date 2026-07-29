@@ -306,7 +306,10 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
         onCall: stage.allowContact ? () => _openCall(booking) : null,
         onChat: stage.allowContact ? () => _openChat(booking) : null,
         onReport: stage.allowReport ? () => _reportDriver(booking) : null,
-        onSos: stage.allowSos && !_sosSubmitting
+        onSos:
+            stage.allowSos &&
+                !_sosSubmitting &&
+                _safetyIncident?.isActive != true
             ? () => _triggerSos(booking)
             : null,
         onSafetyUpdate:
@@ -511,9 +514,8 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                   photoUrl: booking.driverPhotoUrl,
                   rating: booking.driverRating,
                   compact: true,
+                  actions: _quickRideActions(booking),
                 ),
-                const SizedBox(height: 8),
-                _quickRideActions(booking),
                 const SizedBox(height: 10),
                 TripInformationCard(
                   pickup: booking.pickupAddress,
