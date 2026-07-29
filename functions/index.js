@@ -36,9 +36,21 @@ const {
   canManageToda,
 } = require('./admin-policy');
 const {
-  calculateFare,
+  calculateFareBreakdown,
   fareSnapshot,
 } = require('./fare-policy');
+const {
+  classifyTripCoverage,
+  decodePolyline,
+  firstNoServiceEndpointConflict,
+  firstRouteConflict,
+  firestoreGeometry,
+  firestoreRestrictionGeometry,
+  normalizeGeometry,
+} = require('./service-area-policy');
+const {
+  compareDispatchClaims,
+} = require('./dispatch-policy');
 const {
   SAFETY_RESPONSE_STATUS,
   SOS_ACKNOWLEDGEMENT_MS,
@@ -250,7 +262,19 @@ function isAtLeast18(value, now = Date.now()) {
   return eighteenthBirthday.getTime() <= today.getTime();
 }
 
-async function trustedRoute(pickup, destination) {
+async function trustedRoute(pickup, destination, restrictions = []) {
+  const endpointConflict = firstNoServiceEndpointConflict(
+    pickup,
+    destination,
+    restrictions,
+  );
+  if (endpointConflict) {
+    throw new HttpsError(
+      'failed-precondition',
+      `Pickup and destination must be outside ${endpointConflict.name ||
+        'the configured no-service area'}.`,
+    );
+  }
   // The demo project deliberately has no live Google credentials. Keep
   // lifecycle tests deterministic and isolated while production continues to
   // require the trusted Routes API.
@@ -261,9 +285,22 @@ async function trustedRoute(pickup, destination) {
       1,
       Math.round(straightLineMeters * 1.2),
     );
+    const routePoints = [pickup, destination];
+    const conflict = firstRouteConflict(routePoints, restrictions);
+    if (conflict) {
+      throw new HttpsError(
+        'failed-precondition',
+        `No approved route avoids ${conflict.name || 'an active restriction'}.`,
+      );
+    }
     return {
       distanceMeters: routeDistanceMeters,
       duration: `${Math.max(60, Math.round(routeDistanceMeters / 6))}s`,
+      encodedPolyline: null,
+      restrictionIdsChecked: restrictions
+        .filter((restriction) => restriction.isActive !== false)
+        .map((restriction) => restriction.id)
+        .filter(Boolean),
     };
   }
   const response = await fetch(
@@ -273,7 +310,9 @@ async function trustedRoute(pickup, destination) {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': googleRoutesApiKey.value(),
-        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration',
+        'X-Goog-FieldMask':
+          'routes.distanceMeters,routes.duration,' +
+          'routes.polyline.encodedPolyline',
       },
       body: JSON.stringify({
         origin: {
@@ -294,7 +333,7 @@ async function trustedRoute(pickup, destination) {
         },
         travelMode: 'DRIVE',
         routingPreference: 'TRAFFIC_AWARE',
-        computeAlternativeRoutes: false,
+        computeAlternativeRoutes: true,
         languageCode: 'en-PH',
         units: 'METRIC',
       }),
@@ -311,17 +350,53 @@ async function trustedRoute(pickup, destination) {
     );
   }
   const payload = await response.json();
-  const route = payload.routes?.[0];
-  if (!Number.isInteger(route?.distanceMeters) || route.distanceMeters <= 0) {
+  const routes = Array.isArray(payload.routes) ? payload.routes : [];
+  let sawValidRoute = false;
+  for (const route of routes) {
+    if (!Number.isInteger(route?.distanceMeters) ||
+        route.distanceMeters <= 0) {
+      continue;
+    }
+    const encodedPolyline = route.polyline?.encodedPolyline;
+    if (typeof encodedPolyline !== 'string' ||
+        encodedPolyline.length === 0) {
+      continue;
+    }
+    let routePoints;
+    try {
+      routePoints = decodePolyline(encodedPolyline);
+    } catch {
+      continue;
+    }
+    if (routePoints.length < 2) continue;
+    sawValidRoute = true;
+    if (firstRouteConflict(routePoints, restrictions)) continue;
+    return {
+      distanceMeters: route.distanceMeters,
+      duration: typeof route.duration === 'string' ? route.duration : null,
+      encodedPolyline,
+      restrictionIdsChecked: restrictions
+        .filter((restriction) => restriction.isActive !== false)
+        .map((restriction) => restriction.id)
+        .filter(Boolean),
+    };
+  }
+  if (sawValidRoute) {
+    throw new HttpsError(
+      'failed-precondition',
+      'No approved route avoids the active route restrictions.',
+    );
+  }
+  if (routes.length === 0) {
     throw new HttpsError(
       'failed-precondition',
       'No valid driving route is available for these locations.',
     );
   }
-  return {
-    distanceMeters: route.distanceMeters,
-    duration: typeof route.duration === 'string' ? route.duration : null,
-  };
+  throw new HttpsError(
+    'unavailable',
+    'The returned route could not be validated. Please try again.',
+  );
 }
 
 async function expireBookingOffers(bookingId, status) {
@@ -343,10 +418,12 @@ async function expireBookingOffers(bookingId, status) {
 const dispatchRadiusMeters = 5000;
 const driverLocationMaxAgeMs = 35000;
 const dispatchBatchSize = 5;
-// Thirty seconds was too short once notification delivery, app rendering,
-// and a driver's decision time were included. Keep the offer authoritative
-// on the backend, but provide a practical response window.
-const offerDurationMs = 120000;
+const bookingSearchDurationMs = 60000;
+// Keep offers inside the passenger's authoritative search lifetime. This
+// leaves a small margin for timeout cancellation and offer cleanup.
+const offerDurationMs = 55000;
+const acceptanceWindowMs = 1500;
+const acceptanceFinalizationGraceMs = 500;
 
 function vehicleCanServeBooking(vehicle, booking) {
   const requiredSeats = Number(booking.additionalPassengers || 0) + 1;
@@ -356,22 +433,35 @@ function vehicleCanServeBooking(vehicle, booking) {
       capacity < requiredSeats) {
     return false;
   }
-  const type = String(vehicle.vehicleNumber || '')
+  const type = String(
+    vehicle.vehicleType ||
+    vehicle.type ||
+    vehicle.model ||
+    vehicle.vehicleNumber ||
+    '',
+  )
     .trim()
     .toLowerCase()
     .replace(/[^a-z]/g, '');
-  const electricTuktuk = type === 'electrictuktuk' || type === 'etuktuk';
+  const electricTuktuk = type === 'electrictuktuk' ||
+    type === 'etuktuk' ||
+    type === 'electrictricycle';
   return requiredSeats <= 2 || electricTuktuk;
 }
 
 async function rankedDispatchDrivers(booking) {
   const pickup = normalizeCoordinate(booking.pickup, 'Pickup');
+  const eligibleTodaIds = new Set(
+    Array.isArray(booking.eligibleTodaIds)
+      ? booking.eligibleTodaIds.filter((value) => typeof value === 'string')
+      : [],
+  );
   const [drivers, locations] = await Promise.all([
     db.collection('drivers')
       .where('driverStatus', '==', 'approved')
       .where('isOnline', '==', true)
       .where('isAvailable', '==', true)
-      .limit(100)
+      .limit(500)
       .get(),
     realtime.ref('driver_locations').get(),
   ]);
@@ -381,10 +471,23 @@ async function rankedDispatchDrivers(booking) {
     Array.isArray(booking.offeredDriverIds) ? booking.offeredDriverIds : [],
   );
   const nearby = drivers.docs.map((driver) => {
+    const driverData = driver.data();
+    if (typeof driverData.todaId !== 'string' ||
+        driverData.todaId.trim().length === 0 ||
+        typeof driverData.vehicleId !== 'string' ||
+        driverData.vehicleId.trim().length === 0 ||
+        driverData.currentBookingId != null) {
+      return null;
+    }
+    if (eligibleTodaIds.size > 0 &&
+        !eligibleTodaIds.has(driverData.todaId)) {
+      return null;
+    }
     const location = locationMap[driver.id];
     if (!location || location.online !== true ||
         !Number.isFinite(Number(location.timestamp)) ||
         now - Number(location.timestamp) > driverLocationMaxAgeMs ||
+        Number(location.timestamp) > now + 10000 ||
         !Number.isFinite(Number(location.accuracy)) ||
         Number(location.accuracy) > 100 ||
         excluded.has(driver.id)) {
@@ -398,7 +501,11 @@ async function rankedDispatchDrivers(booking) {
     }
     const proximity = distanceMeters(pickup, point);
     return proximity <= dispatchRadiusMeters
-      ? { driver, distanceMeters: Math.round(proximity) }
+      ? {
+        driver,
+        distanceMeters: Math.round(proximity),
+        servicePriority: 0,
+      }
       : null;
   }).filter(Boolean);
 
@@ -425,7 +532,10 @@ async function rankedDispatchDrivers(booking) {
       licenseExpiry != null &&
       licenseExpiry >= now;
   });
-  eligible.sort((a, b) => a.distanceMeters - b.distanceMeters);
+  eligible.sort((a, b) =>
+    a.servicePriority - b.servicePriority ||
+    a.distanceMeters - b.distanceMeters ||
+    a.driver.id.localeCompare(b.driver.id));
   return eligible;
 }
 
@@ -437,6 +547,8 @@ async function dispatchNextOfferBatch(bookingId) {
       return null;
     }
     const current = snapshot.data();
+    const searchExpiresAt = snapshotDateMillis(current.searchExpiresAt);
+    if (searchExpiresAt != null && searchExpiresAt <= Date.now()) return null;
     const nextDispatchAt = snapshotDateMillis(current.nextDispatchAt);
     if (nextDispatchAt != null && nextDispatchAt > Date.now()) return null;
     transaction.update(bookingRef, {
@@ -455,49 +567,83 @@ async function dispatchNextOfferBatch(bookingId) {
   const previousDrivers = Array.isArray(booking.offeredDriverIds)
     ? booking.offeredDriverIds
     : [];
-  const batch = db.batch();
-  previousDrivers.forEach((driverId) => {
-    batch.set(
-      db.doc(`drivers/${driverId}/bookingOffers/${bookingId}`),
-      { status: 'expired', updatedAt: timestamp() },
-      { merge: true },
-    );
-  });
   const expiresAt = Timestamp.fromMillis(
-    Date.now() + offerDurationMs,
-  );
-  candidates.forEach(({ driver, distanceMeters: proximity }) => {
-    batch.set(db.doc(`drivers/${driver.id}/bookingOffers/${bookingId}`), {
-      bookingId,
-      driverId: driver.id,
-      todaId: driver.data().todaId,
-      distanceMeters: proximity,
-      status: 'offered',
-      createdAt: timestamp(),
-      updatedAt: timestamp(),
-      expiresAt,
-    });
-  });
-  const bookingUpdate = {
-    offerRound: Number(booking.offerRound || 0) + 1,
-    lastOfferAt: timestamp(),
-    nextDispatchAt: Timestamp.fromMillis(
+    Math.min(
       Date.now() + offerDurationMs,
+      snapshotDateMillis(booking.searchExpiresAt) ??
+        Date.now() + offerDurationMs,
     ),
-    updatedAt: timestamp(),
-  };
-  if (candidates.length > 0) {
-    bookingUpdate.offeredDriverIds = FieldValue.arrayUnion(
-      ...candidates.map(({ driver }) => driver.id),
-    );
-  }
-  batch.set(
-    bookingRef,
-    bookingUpdate,
-    { merge: true },
   );
-  await batch.commit();
-  await Promise.all(candidates.map(({ driver, distanceMeters: proximity }) =>
+  const dispatchedCandidates = await db.runTransaction(
+    async (transaction) => {
+      const currentSnapshot = await transaction.get(bookingRef);
+      if (!currentSnapshot.exists ||
+          currentSnapshot.data().status !== BOOKING_STATUS.pending) {
+        return [];
+      }
+      const current = currentSnapshot.data();
+      const searchExpiresAt = snapshotDateMillis(current.searchExpiresAt);
+      if (searchExpiresAt != null && searchExpiresAt <= Date.now()) return [];
+      const offerRound = Number(current.offerRound || 0) + 1;
+      previousDrivers.forEach((driverId) => {
+        transaction.set(
+          db.doc(`drivers/${driverId}/bookingOffers/${bookingId}`),
+          { status: 'expired', updatedAt: timestamp() },
+          { merge: true },
+        );
+      });
+      candidates.forEach(({
+        driver,
+        distanceMeters: proximity,
+        servicePriority,
+      }, index) => {
+        const zoneRevision = Number(
+          booking.coverageDecision?.geofenceRevisions?.[
+            driver.data().todaId
+          ] ?? 0,
+        );
+        transaction.set(
+          db.doc(`drivers/${driver.id}/bookingOffers/${bookingId}`),
+          {
+            bookingId,
+            driverId: driver.id,
+            todaId: driver.data().todaId,
+            distanceMeters: proximity,
+            servicePriority,
+            dispatchRank: index + 1,
+            zoneRevision:
+              Number.isInteger(zoneRevision) && zoneRevision >= 0
+                ? zoneRevision
+                : 0,
+            offerRound,
+            status: 'offered',
+            createdAt: timestamp(),
+            updatedAt: timestamp(),
+            expiresAt,
+          },
+        );
+      });
+      const bookingUpdate = {
+        offerRound,
+        currentOfferDriverIds:
+          candidates.map(({ driver }) => driver.id),
+        lastOfferAt: timestamp(),
+        nextDispatchAt: expiresAt,
+        awardWindowEndsAt: null,
+        awardWindowRound: null,
+        updatedAt: timestamp(),
+      };
+      if (candidates.length > 0) {
+        bookingUpdate.offeredDriverIds = FieldValue.arrayUnion(
+          ...candidates.map(({ driver }) => driver.id),
+        );
+      }
+      transaction.set(bookingRef, bookingUpdate, { merge: true });
+      return candidates;
+    },
+  );
+  await Promise.all(dispatchedCandidates
+    .map(({ driver, distanceMeters: proximity }) =>
     sendToUser(
       driver.id,
       'New VolTrike booking',
@@ -508,11 +654,11 @@ async function dispatchNextOfferBatch(bookingId) {
     )));
   logger.info('Distance-ranked booking offers dispatched', {
     bookingId,
-    count: candidates.length,
+    count: dispatchedCandidates.length,
     radiusMeters: dispatchRadiusMeters,
     offerRound: Number(booking.offerRound || 0) + 1,
   });
-  return candidates.length;
+  return dispatchedCandidates.length;
 }
 
 function slugify(value) {
@@ -571,7 +717,23 @@ function adminAudit(ref, {
   targetId,
   details = {},
 }) {
-  return ref.set({
+  return ref.set(adminAuditData({
+    actor,
+    action,
+    targetType,
+    targetId,
+    details,
+  }));
+}
+
+function adminAuditData({
+  actor,
+  action,
+  targetType,
+  targetId,
+  details = {},
+}) {
+  return {
     type: 'admin_action',
     actorId: actor.uid,
     actorRole: actor.role,
@@ -581,7 +743,7 @@ function adminAudit(ref, {
     targetId,
     details,
     createdAt: timestamp(),
-  });
+  };
 }
 
 async function activeDriverBooking(driverData) {
@@ -1366,13 +1528,31 @@ exports.adminSetTodaStatus = onCall({ region: 'asia-southeast1' }, async (reques
         'This TODA has an active ride. Suspend it after all active rides finish.',
       );
     }
-    await ref.update({ isActive: false, updatedAt: timestamp() });
+    const geofenceRef = db.collection('geofences').doc(todaId);
+    await Promise.all([
+      ref.update({ isActive: false, updatedAt: timestamp() }),
+      geofenceRef.get().then((geofence) => geofence.exists
+        ? geofenceRef.set({
+          isActive: false,
+          updatedAt: timestamp(),
+        }, { merge: true })
+        : null),
+    ]);
     const writer = db.bulkWriter();
     drivers.docs.forEach((driver) => writer.update(driver.ref, { driverStatus: 'suspended', isOnline: false, isAvailable: false, updatedAt: timestamp() }));
     await writer.close();
   } else {
     // Restoring a TODA never restores individually suspended drivers.
-    await ref.update({ isActive: true, updatedAt: timestamp() });
+    const geofenceRef = db.collection('geofences').doc(todaId);
+    await Promise.all([
+      ref.update({ isActive: true, updatedAt: timestamp() }),
+      geofenceRef.get().then((geofence) => geofence.exists
+        ? geofenceRef.set({
+          isActive: true,
+          updatedAt: timestamp(),
+        }, { merge: true })
+        : null),
+    ]);
   }
   await adminAudit(db.collection('auditLogs').doc(), {
     actor: developer,
@@ -1765,13 +1945,38 @@ exports.adminSubmitZoneRequest = onCall({ region: 'asia-southeast1' }, async (re
   const profile = await requireAdmin(request);
   const todaId = requiredString(request.data?.todaId, 'TODA ID');
   await assertTodaScope(profile, todaId);
-  const areas = Array.isArray(request.data?.areas) ? request.data.areas : [request.data?.polygon];
-  const validArea = (area) => Array.isArray(area) && area.length >= 3 && area.length <= 200 &&
-      area.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite));
-  if (areas.length === 0 || areas.length > 20 || !areas.every(validArea)) {
+  let areas;
+  try {
+    areas = normalizeGeometry({
+      areas: request.data?.areas,
+      polygon: request.data?.polygon,
+    });
+  } catch (error) {
+    logger.warn('Coverage request geometry was rejected.', {
+      todaId,
+      actorId: profile.uid,
+      error: String(error?.message || error),
+    });
     throw new HttpsError('invalid-argument', 'One to 20 polygons with 3 to 200 valid points each are required.');
   }
-  const zone = await db.collection('zoneRequests').add({ todaId, polygon: areas[0], areas, status: 'pending', notes: String(request.data?.notes || '').slice(0, 1000), requestedBy: profile.uid, createdAt: timestamp(), updatedAt: timestamp() });
+  const toda = await db.collection('todas').doc(todaId).get();
+  if (!toda.exists || toda.data().isActive !== true) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Coverage can be requested only for an active TODA.',
+    );
+  }
+  const geometry = firestoreGeometry(areas);
+  const zone = await db.collection('zoneRequests').add({
+    todaId,
+    ...geometry,
+    status: 'pending',
+    revision: 1,
+    notes: String(request.data?.notes || '').slice(0, 1000),
+    requestedBy: profile.uid,
+    createdAt: timestamp(),
+    updatedAt: timestamp(),
+  });
   await adminAudit(db.collection('auditLogs').doc(), {
     actor: profile,
     action: 'submit_zone_request',
@@ -1788,46 +1993,177 @@ exports.adminReviewZoneRequest = onCall({ region: 'asia-southeast1' }, async (re
   const status = request.data?.status;
   if (!['approved', 'declined'].includes(status)) throw new HttpsError('invalid-argument', 'Unsupported zone decision.');
   const ref = db.collection('zoneRequests').doc(id);
-  const requestSnapshot = await ref.get();
-  if (!requestSnapshot.exists) throw new HttpsError('not-found', 'Zone request not found.');
-  const zone = requestSnapshot.data();
-  const batch = db.batch();
-  batch.update(ref, { status, reviewedBy: developer.uid, reviewedAt: timestamp(), updatedAt: timestamp() });
-  if (status === 'approved') {
-    const areas = Array.isArray(zone.areas) ? zone.areas : [zone.polygon];
-    batch.set(db.collection('geofences').doc(zone.todaId), { todaId: zone.todaId, polygon: areas[0], areas, sourceRequestId: id, updatedBy: developer.uid, updatedAt: timestamp() }, { merge: true });
-  }
-  await batch.commit();
-  await adminAudit(db.collection('auditLogs').doc(), {
-    actor: developer,
-    action: `${status}_zone_request`,
-    targetType: 'zoneRequest',
-    targetId: id,
-    details: { todaId: zone.todaId },
+  const activeRefFor = (todaId) =>
+    db.collection('geofences').doc(todaId);
+  const auditRef = db.collection('auditLogs').doc();
+  const result = await db.runTransaction(async (transaction) => {
+    const requestSnapshot = await transaction.get(ref);
+    if (!requestSnapshot.exists) {
+      throw new HttpsError('not-found', 'Zone request not found.');
+    }
+    const zone = requestSnapshot.data();
+    if (zone.status !== 'pending') {
+      if (zone.status === status) {
+        return {
+          updated: false,
+          idempotent: true,
+          todaId: zone.todaId,
+        };
+      }
+      throw new HttpsError(
+        'failed-precondition',
+        'Only a pending coverage request can be reviewed.',
+      );
+    }
+    let activeSnapshot = null;
+    let areas = null;
+    if (status === 'approved') {
+      try {
+        areas = normalizeGeometry(zone);
+      } catch (error) {
+        logger.warn('Coverage approval geometry was rejected.', {
+          zoneRequestId: id,
+          todaId: zone.todaId,
+          actorId: developer.uid,
+          error: String(error?.message || error),
+        });
+        throw new HttpsError(
+          'failed-precondition',
+          'This request has invalid geometry. Edit it before approval.',
+        );
+      }
+      const [activeCoverage, todaSnapshot] = await Promise.all([
+        transaction.get(activeRefFor(zone.todaId)),
+        transaction.get(db.collection('todas').doc(zone.todaId)),
+      ]);
+      if (!todaSnapshot.exists || todaSnapshot.data().isActive !== true) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Coverage can be approved only for an active TODA.',
+        );
+      }
+      activeSnapshot = activeCoverage;
+      const active = activeSnapshot.exists ? activeSnapshot.data() : {};
+      const activeSourceCreatedAt = snapshotDateMillis(
+        active.sourceRequestCreatedAt,
+      );
+      const requestCreatedAt = snapshotDateMillis(zone.createdAt);
+      if (activeSourceCreatedAt != null &&
+          requestCreatedAt != null &&
+          activeSourceCreatedAt > requestCreatedAt) {
+        throw new HttpsError(
+          'failed-precondition',
+          'A newer coverage request is already active for this TODA.',
+        );
+      }
+    }
+    const currentCoverageRevision = activeSnapshot?.exists
+      ? Number(activeSnapshot.data().coverageRevision || 0)
+      : 0;
+    const safeCurrentCoverageRevision =
+      Number.isInteger(currentCoverageRevision) &&
+      currentCoverageRevision >= 0
+        ? currentCoverageRevision
+        : 0;
+    const coverageRevision = status === 'approved'
+      ? safeCurrentCoverageRevision + 1
+      : null;
+    transaction.update(ref, {
+      status,
+      reviewedBy: developer.uid,
+      reviewedAt: timestamp(),
+      approvedCoverageRevision: coverageRevision,
+      updatedAt: timestamp(),
+    });
+    if (status === 'approved') {
+      transaction.set(activeRefFor(zone.todaId), {
+        todaId: zone.todaId,
+        ...firestoreGeometry(areas),
+        coverageRevision,
+        isActive: true,
+        sourceRequestId: id,
+        sourceRequestRevision: Number(zone.revision || 1),
+        sourceRequestCreatedAt: zone.createdAt || timestamp(),
+        approvedAt: timestamp(),
+        updatedBy: developer.uid,
+        updatedAt: timestamp(),
+      }, { merge: true });
+    }
+    transaction.create(auditRef, adminAuditData({
+      actor: developer,
+      action: `${status}_zone_request`,
+      targetType: 'zoneRequest',
+      targetId: id,
+      details: {
+        todaId: zone.todaId,
+        coverageRevision,
+        requestRevision: Number(zone.revision || 1),
+      },
+    }));
+    return {
+      updated: true,
+      idempotent: false,
+      todaId: zone.todaId,
+      coverageRevision,
+    };
   });
-  return { updated: true };
+  return result;
 });
 
 exports.adminUpdateZoneRequest = onCall({ region: 'asia-southeast1' }, async (request) => {
-  const developer = await requireDeveloperAdmin(request);
+  const profile = await requireAdmin(request);
   const id = requiredString(request.data?.zoneRequestId, 'Zone request ID');
-  const areas = Array.isArray(request.data?.areas) ? request.data.areas : [request.data?.polygon];
-  const validArea = (area) => Array.isArray(area) && area.length >= 3 && area.length <= 200 &&
-      area.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite));
-  if (areas.length === 0 || areas.length > 20 || !areas.every(validArea)) {
+  let areas;
+  try {
+    areas = normalizeGeometry({
+      areas: request.data?.areas,
+      polygon: request.data?.polygon,
+    });
+  } catch (error) {
+    logger.warn('Coverage request update geometry was rejected.', {
+      zoneRequestId: id,
+      actorId: profile.uid,
+      error: String(error?.message || error),
+    });
     throw new HttpsError('invalid-argument', 'One to 20 polygons with 3 to 200 valid points each are required.');
   }
   const ref = db.collection('zoneRequests').doc(id);
-  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Zone request not found.');
-  await ref.update({ polygon: areas[0], areas, notes: String(request.data?.notes || '').slice(0, 1000), updatedAt: timestamp() });
-  await adminAudit(db.collection('auditLogs').doc(), {
-    actor: developer,
-    action: 'update_zone_request_geometry',
-    targetType: 'zoneRequest',
-    targetId: id,
-    details: { areaCount: areas.length },
+  const auditRef = db.collection('auditLogs').doc();
+  const result = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) {
+      throw new HttpsError('not-found', 'Zone request not found.');
+    }
+    const zone = snapshot.data();
+    await assertTodaScope(profile, zone.todaId);
+    if (zone.status !== 'pending') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Only a pending coverage request can be edited. Submit a new revision for an approved area.',
+      );
+    }
+    const revision = Number(zone.revision || 1) + 1;
+    transaction.update(ref, {
+      ...firestoreGeometry(areas),
+      revision,
+      notes: String(request.data?.notes || '').slice(0, 1000),
+      updatedBy: profile.uid,
+      updatedAt: timestamp(),
+    });
+    transaction.create(auditRef, adminAuditData({
+      actor: profile,
+      action: 'update_zone_request_geometry',
+      targetType: 'zoneRequest',
+      targetId: id,
+      details: {
+        todaId: zone.todaId,
+        areaCount: areas.length,
+        revision,
+      },
+    }));
+    return { updated: true, revision };
   });
-  return { updated: true };
+  return result;
 });
 
 // Route restrictions are centrally managed safety/operations constraints.
@@ -1840,22 +2176,25 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
     throw new HttpsError('invalid-argument', 'Unsupported restriction type.');
   }
   const geometryType = request.data?.geometryType === 'corridor' ? 'corridor' : 'polygon';
-  const coordinates = request.data?.polygon;
-  const areas = geometryType === 'polygon' && Array.isArray(request.data?.areas)
-    ? request.data.areas
-    : [coordinates];
-  const minimumPoints = geometryType === 'corridor' ? 2 : 3;
-  const validArea = (area) => Array.isArray(area) && area.length >= minimumPoints &&
-      area.length <= 200 && area.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite));
-  if (!Array.isArray(areas) || areas.length === 0 || areas.length > 20 ||
-      (geometryType === 'corridor' && areas.length !== 1) || !areas.every(validArea)) {
+  let areas;
+  try {
+    areas = normalizeGeometry({
+      areas: geometryType === 'polygon' ? request.data?.areas : null,
+      polygon: request.data?.polygon,
+    }, { geometryType });
+  } catch {
     throw new HttpsError('invalid-argument', geometryType === 'corridor' ? 'A corridor needs 2 to 200 centreline points.' : 'A polygon needs 3 to 200 points.');
   }
   const bufferMeters = geometryType === 'corridor'
     ? validPositiveInteger(request.data?.bufferMeters, 'Corridor buffer', 5, 200)
     : 0;
   const ref = await db.collection('routeRestrictions').add({
-    name, type, geometryType, polygon: areas[0], coordinates: areas[0], areas, bufferMeters, isActive: true,
+    name,
+    type,
+    geometryType,
+    ...firestoreRestrictionGeometry(areas, geometryType),
+    bufferMeters,
+    isActive: true,
     notes: String(request.data?.notes || '').slice(0, 1000),
     createdBy: developer.uid, createdAt: timestamp(), updatedAt: timestamp(),
   });
@@ -2751,9 +3090,10 @@ exports.createBookingLifecycle = onCall(
       'Baggage count',
       1,
     );
-    if (typeof request.data?.isOutsideToda !== 'boolean') {
-      throw new HttpsError('invalid-argument', 'TODA boundary state is required.');
-    }
+    const clientIsOutsideToda =
+      typeof request.data?.isOutsideToda === 'boolean'
+        ? request.data.isOutsideToda
+        : null;
 
     const uid = request.auth.uid;
     const userRef = db.collection('users').doc(uid);
@@ -2776,24 +3116,59 @@ exports.createBookingLifecycle = onCall(
         idempotent: true,
         distanceMeters: existingBooking.data()?.distanceMeters ?? null,
         estimatedFare: existingBooking.data()?.estimatedFare ?? null,
+        fareBreakdown: existingBooking.data()?.fareBreakdown ?? null,
+        isOutsideToda: existingBooking.data()?.isOutsideToda ?? null,
+        coverageClass:
+          existingBooking.data()?.coverageDecision?.coverageClass ?? null,
+        eligibleTodaIds:
+          existingBooking.data()?.eligibleTodaIds ?? [],
       };
     }
 
-    const [route, fareDocument] = await Promise.all([
-      trustedRoute(pickup, destination),
+    const [fareDocument, geofenceDocuments, restrictionDocuments] =
+      await Promise.all([
       db.collection('settings').doc('fare_config').get(),
+      db.collection('geofences').limit(500).get(),
+      db.collection('routeRestrictions')
+        .where('isActive', '==', true)
+        .limit(200)
+        .get(),
     ]);
+    const geofences = geofenceDocuments.docs.map((document) => ({
+      id: document.id,
+      ...document.data(),
+    }));
+    const restrictions = restrictionDocuments.docs.map((document) => ({
+      id: document.id,
+      ...document.data(),
+    })).filter((restriction) => restriction.isActive !== false);
+    const coverage = classifyTripCoverage(
+      geofences,
+      pickup,
+      destination,
+    );
+    if (!coverage.serviceable) {
+      throw new HttpsError(
+        'failed-precondition',
+        'The pickup is outside every approved TODA coverage area.',
+      );
+    }
+    const route = await trustedRoute(pickup, destination, restrictions);
     const pricing = fareSnapshot(
       fareDocument.exists ? fareDocument.data() : null,
     );
     const distanceMeters = route.distanceMeters;
-    const estimatedFare = calculateFare({
+    const fareBreakdown = calculateFareBreakdown({
       config: pricing,
       distanceMeters,
       additionalPassengers,
       baggageCount,
-      isOutsideToda: request.data.isOutsideToda,
+      isOutsideToda: coverage.isOutsideToda,
     });
+    const estimatedFare = fareBreakdown.total;
+    const searchExpiresAt = Timestamp.fromMillis(
+      Date.now() + bookingSearchDurationMs,
+    );
 
     const result = await db.runTransaction(async (transaction) => {
       const [user, booking, lock, operation] = await Promise.all([
@@ -2862,14 +3237,34 @@ exports.createBookingLifecycle = onCall(
         settlementStatus: 'awaiting_confirmation',
         receiptNumber: null,
         estimatedDuration: route.duration,
+        authoritativeRoutePolyline: route.encodedPolyline,
+        routeRestrictionIdsChecked: route.restrictionIdsChecked,
+        routePolicyVersion: 2,
         fareSnapshot: pricing,
+        fareBreakdown,
         clientEstimate: {
           distanceMeters: clientDistanceMeters,
           estimatedFare: clientEstimatedFare,
+          isOutsideToda: clientIsOutsideToda,
         },
         additionalPassengers,
         baggageCount,
-        isOutsideToda: request.data.isOutsideToda,
+        isOutsideToda: coverage.isOutsideToda,
+        coverageDecision: {
+          version: 2,
+          configured: coverage.configured,
+          coverageClass: coverage.coverageClass,
+          pickupTodaIds: coverage.pickupTodaIds,
+          destinationTodaIds: coverage.destinationTodaIds,
+          sharedTodaIds: coverage.sharedTodaIds,
+          eligibleTodaIds: coverage.eligibleTodaIds,
+          serviceTodaId: coverage.serviceTodaId,
+          geofenceRevisions: coverage.geofenceRevisions,
+        },
+        eligibleTodaIds: coverage.eligibleTodaIds,
+        serviceTodaId: coverage.serviceTodaId,
+        geofenceRevisions: coverage.geofenceRevisions,
+        searchExpiresAt,
         status: BOOKING_STATUS.pending,
         createdAt: timestamp(),
         updatedAt: timestamp(),
@@ -2910,13 +3305,60 @@ exports.createBookingLifecycle = onCall(
       distanceMeters,
       estimatedFare,
       fareVersion: pricing.version,
+      fareBreakdown,
+      isOutsideToda: coverage.isOutsideToda,
+      coverageClass: coverage.coverageClass,
+      eligibleTodaIds: coverage.eligibleTodaIds,
+      searchExpiresAt: searchExpiresAt.toDate().toISOString(),
       ...result,
     };
   },
 );
 
-// Accepts a dispatched offer using trusted user, driver, vehicle, and TODA
-// snapshots. Booking assignment and driver reservation are one transaction.
+function bookingAllowsDriverToda(booking, todaId) {
+  const eligibleTodaIds = Array.isArray(booking.eligibleTodaIds)
+    ? booking.eligibleTodaIds
+    : [];
+  return eligibleTodaIds.length === 0 || eligibleTodaIds.includes(todaId);
+}
+
+function validDriverAwardCandidate({
+  booking,
+  claim,
+  user,
+  driver,
+  offer,
+  vehicle,
+  toda,
+  offerRound,
+  now,
+}) {
+  const licenseExpiry = snapshotDateMillis(driver?.licenseExpiry);
+  return user?.isActive !== false &&
+    user?.role === 'driver' &&
+    driver?.driverStatus === 'approved' &&
+    driver?.isOnline === true &&
+    driver?.isAvailable === true &&
+    driver?.currentBookingId == null &&
+    bookingAllowsDriverToda(booking, driver?.todaId) &&
+    offer?.status === 'offered' &&
+    Number(offer?.offerRound) === offerRound &&
+    (snapshotDateMillis(offer?.expiresAt) ?? 0) >
+      (snapshotDateMillis(claim?.acceptedAt) ?? now) &&
+    vehicle?.isVerified === true &&
+    vehicleCanServeBooking(vehicle, booking) &&
+    toda?.isActive === true &&
+    typeof driver?.licenseNumber === 'string' &&
+    driver.licenseNumber.trim().length > 0 &&
+    licenseExpiry != null &&
+    licenseExpiry >= now;
+}
+
+// Drivers submit an accept intent during a short server-owned arbitration
+// window. The transaction then awards the request by service priority,
+// distance, acceptance time, and finally driver ID. This preserves fast
+// simultaneous offers without letting network latency make a farther driver
+// beat a nearer driver who accepted in the same window.
 exports.acceptBookingLifecycle = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
@@ -2930,19 +3372,17 @@ exports.acceptBookingLifecycle = onCall(
     const driverRef = db.collection('drivers').doc(uid);
     const offerRef = driverRef.collection('bookingOffers').doc(bookingId);
     const operationRef = operationReference(bookingId, uid, operationId);
-    const auditRef = auditReference(bookingId, uid, operationId);
-
-    const result = await db.runTransaction(async (transaction) => {
-      const [booking, user, driver, offer, operation] = await Promise.all([
+    const claimRef = bookingRef.collection('acceptClaims').doc(uid);
+    const registered = await db.runTransaction(async (transaction) => {
+      const [booking, user, driver, offer, operation, existingClaim] =
+        await Promise.all([
         transaction.get(bookingRef),
         transaction.get(userRef),
         transaction.get(driverRef),
         transaction.get(offerRef),
         transaction.get(operationRef),
+        transaction.get(claimRef),
       ]);
-      if (operation.exists) {
-        return { idempotent: true };
-      }
       if (!booking.exists) {
         throw new HttpsError('not-found', 'Booking not found.');
       }
@@ -2950,9 +3390,18 @@ exports.acceptBookingLifecycle = onCall(
       if (bookingData.driverId === uid &&
           bookingData.status === BOOKING_STATUS.driverAssigned) {
         return {
+          alreadyAssigned: true,
           idempotent: true,
           passengerId: bookingData.passengerId,
+          winnerDriverId: uid,
         };
+      }
+      if (operation.exists || bookingData.status !== BOOKING_STATUS.pending ||
+          bookingData.driverId != null) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This booking has already changed.',
+        );
       }
       if (!user.exists || user.data().isActive === false ||
           user.data().role !== 'driver') {
@@ -2968,11 +3417,13 @@ exports.acceptBookingLifecycle = onCall(
           (snapshotDateMillis(offer.data().expiresAt) ?? 0) <= Date.now()) {
         throw new HttpsError('failed-precondition', 'This booking offer has expired.');
       }
-      if (bookingData.status !== BOOKING_STATUS.pending ||
-          bookingData.driverId != null) {
-        throw new HttpsError('failed-precondition', 'This booking has already changed.');
+      const offerRound = Number(bookingData.offerRound || 0);
+      if (Number(offer.data().offerRound) !== offerRound) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This booking offer is no longer in the active round.',
+        );
       }
-
       const vehicleRef = db.collection('vehicles').doc(driver.data().vehicleId);
       const todaRef = db.collection('todas').doc(driver.data().todaId);
       const [vehicle, toda] = await Promise.all([
@@ -2994,6 +3445,12 @@ exports.acceptBookingLifecycle = onCall(
       if (!toda.exists || toda.data().isActive !== true) {
         throw new HttpsError('failed-precondition', 'The assigned TODA is not active.');
       }
+      if (!bookingAllowsDriverToda(bookingData, driver.data().todaId)) {
+        throw new HttpsError(
+          'permission-denied',
+          'This booking belongs to another TODA coverage area.',
+        );
+      }
       const licenseExpiry = snapshotDateMillis(driver.data().licenseExpiry);
       if (typeof driver.data().licenseNumber !== 'string' ||
           driver.data().licenseNumber.trim().length === 0 ||
@@ -3004,76 +3461,343 @@ exports.acceptBookingLifecycle = onCall(
           'A current driver license is required.',
         );
       }
-
-      const profile = user.data();
-      const driverName = [
-        profile.firstName,
-        profile.middleName,
-        profile.lastName,
-      ].filter((value) => typeof value === 'string' && value.trim()).join(' ');
-      const configuredCommission = Number(
-        toda.data().driverCommissionPercent || 0,
+      const now = Date.now();
+      const searchExpiresAt = snapshotDateMillis(
+        bookingData.searchExpiresAt,
       );
-      const commissionPercent =
-        Number.isFinite(configuredCommission) &&
-        configuredCommission >= 0 &&
-        configuredCommission <= 30
-          ? configuredCommission
-          : 0;
-      transaction.update(bookingRef, {
+      if (searchExpiresAt != null && searchExpiresAt <= now) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The passenger search has expired.',
+        );
+      }
+      const existingClaimData = existingClaim.exists
+        ? existingClaim.data()
+        : null;
+      if (existingClaimData?.status === 'submitted' &&
+          Number(existingClaimData.offerRound) === offerRound) {
+        return {
+          alreadyAssigned: false,
+          idempotent: true,
+          passengerId: bookingData.passengerId,
+          windowEndsAt:
+            snapshotDateMillis(bookingData.awardWindowEndsAt) ?? now,
+        };
+      }
+      const existingWindowEnd =
+        Number(bookingData.awardWindowRound) === offerRound
+          ? snapshotDateMillis(bookingData.awardWindowEndsAt)
+          : null;
+      if (existingWindowEnd != null && existingWindowEnd <= now) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The acceptance window for this offer has closed.',
+        );
+      }
+      const offerExpiresAt =
+        snapshotDateMillis(offer.data().expiresAt) ?? now;
+      const latestEnd = Math.min(
+        offerExpiresAt - acceptanceFinalizationGraceMs,
+        searchExpiresAt == null
+          ? Number.POSITIVE_INFINITY
+          : searchExpiresAt - acceptanceFinalizationGraceMs,
+      );
+      const windowEndsAt = Math.min(
+        existingWindowEnd != null
+          ? existingWindowEnd
+          : now + acceptanceWindowMs,
+        latestEnd,
+      );
+      if (windowEndsAt <= now) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This booking offer has expired.',
+        );
+      }
+      if (existingWindowEnd == null) {
+        transaction.update(bookingRef, {
+          awardWindowRound: offerRound,
+          awardWindowEndsAt: Timestamp.fromMillis(windowEndsAt),
+          updatedAt: timestamp(),
+        });
+      }
+      transaction.set(claimRef, {
+        bookingId,
         driverId: uid,
-        driverName: driverName || request.auth.token.name || 'Driver',
-        driverPhotoUrl: profile.profileImage || driver.data().profilePhotoUrl || '',
-        driverRating: Number(driver.data().rating || 0),
-        vehicleNumber: vehicle.data().vehicleNumber || vehicle.data().model || '',
-        plateNumber: vehicle.data().plateNumber || '',
+        operationId,
+        offerRound,
         todaId: driver.data().todaId,
-        todaName: toda.data().name || '',
-        commissionPercent,
-        status: BOOKING_STATUS.driverAssigned,
-        assignedAt: timestamp(),
-        updatedAt: timestamp(),
-      });
-      transaction.update(driverRef, {
-        currentBookingId: bookingId,
-        isAvailable: false,
+        servicePriority: Number(offer.data().servicePriority || 0),
+        distanceMeters: Number(offer.data().distanceMeters),
+        acceptedAt: Timestamp.fromMillis(now),
+        status: 'submitted',
+        createdAt: timestamp(),
         updatedAt: timestamp(),
       });
       transaction.set(offerRef, {
-        status: 'accepted',
-        acceptedAt: timestamp(),
+        claimStatus: 'submitted',
+        claimSubmittedAt: Timestamp.fromMillis(now),
         updatedAt: timestamp(),
       }, { merge: true });
-      transaction.create(operationRef, {
-        bookingId,
-        operationId,
-        actorId: uid,
-        action: 'accept',
-        resultStatus: BOOKING_STATUS.driverAssigned,
-        createdAt: timestamp(),
-      });
-      transaction.create(auditRef, {
-        type: 'booking_lifecycle',
-        action: 'accept',
-        bookingId,
-        actorId: uid,
-        actorRole: 'driver',
-        fromStatus: BOOKING_STATUS.pending,
-        toStatus: BOOKING_STATUS.driverAssigned,
-        createdAt: timestamp(),
-      });
       return {
+        alreadyAssigned: false,
         idempotent: false,
         passengerId: bookingData.passengerId,
+        windowEndsAt,
       };
     });
+
+    let result = registered;
+    if (!registered.alreadyAssigned) {
+      const waitMilliseconds = Math.max(
+        0,
+        Number(registered.windowEndsAt) - Date.now() + 75,
+      );
+      if (waitMilliseconds > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, waitMilliseconds));
+      }
+      result = await db.runTransaction(async (transaction) => {
+        const booking = await transaction.get(bookingRef);
+        if (!booking.exists) {
+          throw new HttpsError('not-found', 'Booking not found.');
+        }
+        const bookingData = booking.data();
+        if (bookingData.status === BOOKING_STATUS.driverAssigned &&
+            typeof bookingData.driverId === 'string') {
+          return {
+            idempotent: true,
+            passengerId: bookingData.passengerId,
+            winnerDriverId: bookingData.driverId,
+          };
+        }
+        if (bookingData.status !== BOOKING_STATUS.pending ||
+            bookingData.driverId != null) {
+          throw new HttpsError(
+            'failed-precondition',
+            'This booking has already changed.',
+          );
+        }
+        const offerRound = Number(bookingData.offerRound || 0);
+        const windowEndsAt =
+          snapshotDateMillis(bookingData.awardWindowEndsAt) ?? 0;
+        if (Number(bookingData.awardWindowRound) !== offerRound ||
+            windowEndsAt <= 0) {
+          throw new HttpsError(
+            'aborted',
+            'The acceptance window is no longer active.',
+          );
+        }
+        if (Date.now() < windowEndsAt) {
+          throw new HttpsError(
+            'aborted',
+            'The acceptance window is still collecting driver responses.',
+          );
+        }
+        const claimSnapshot = await transaction.get(
+          bookingRef.collection('acceptClaims'),
+        );
+        const claims = claimSnapshot.docs
+          .map((document) => ({ ref: document.ref, ...document.data() }))
+          .filter((claim) =>
+            claim.status === 'submitted' &&
+            Number(claim.offerRound) === offerRound &&
+            (snapshotDateMillis(claim.acceptedAt) ??
+              Number.POSITIVE_INFINITY) <= windowEndsAt)
+          .sort(compareDispatchClaims);
+        const baseCandidates = await Promise.all(claims.map(async (claim) => {
+          const candidateDriverRef =
+            db.collection('drivers').doc(claim.driverId);
+          const [candidateUser, candidateDriver, candidateOffer,
+            candidateOperation] = await Promise.all([
+            transaction.get(db.collection('users').doc(claim.driverId)),
+            transaction.get(candidateDriverRef),
+            transaction.get(
+              candidateDriverRef.collection('bookingOffers').doc(bookingId),
+            ),
+            transaction.get(operationReference(
+              bookingId,
+              claim.driverId,
+              claim.operationId,
+            )),
+          ]);
+          return {
+            claim,
+            user: candidateUser.exists ? candidateUser.data() : null,
+            driverRef: candidateDriver.ref,
+            driver: candidateDriver.exists ? candidateDriver.data() : null,
+            offerRef: candidateOffer.ref,
+            offer: candidateOffer.exists ? candidateOffer.data() : null,
+            operationExists: candidateOperation.exists,
+          };
+        }));
+        const candidatesWithIdentity = baseCandidates.filter((candidate) =>
+          !candidate.operationExists &&
+          typeof candidate.driver?.vehicleId === 'string' &&
+          typeof candidate.driver?.todaId === 'string');
+        const completeCandidates = await Promise.all(
+          candidatesWithIdentity.map(async (candidate) => {
+            const [vehicle, toda] = await Promise.all([
+              transaction.get(
+                db.collection('vehicles').doc(candidate.driver.vehicleId),
+              ),
+              transaction.get(
+                db.collection('todas').doc(candidate.driver.todaId),
+              ),
+            ]);
+            return {
+              ...candidate,
+              vehicle: vehicle.exists ? vehicle.data() : null,
+              toda: toda.exists ? toda.data() : null,
+            };
+          }),
+        );
+        const now = Date.now();
+        const winner = completeCandidates.find((candidate) =>
+          validDriverAwardCandidate({
+            booking: bookingData,
+            claim: candidate.claim,
+            user: candidate.user,
+            driver: candidate.driver,
+            offer: candidate.offer,
+            vehicle: candidate.vehicle,
+            toda: candidate.toda,
+            offerRound,
+            now,
+          }));
+        if (!winner) {
+          transaction.update(bookingRef, {
+            awardWindowEndsAt: null,
+            awardWindowRound: null,
+            updatedAt: timestamp(),
+          });
+          claims.forEach((claim) => transaction.set(claim.ref, {
+            status: 'ineligible',
+            resolvedAt: timestamp(),
+            updatedAt: timestamp(),
+          }, { merge: true }));
+          return {
+            idempotent: false,
+            passengerId: bookingData.passengerId,
+            winnerDriverId: null,
+          };
+        }
+        const profile = winner.user;
+        const driverName = [
+          profile.firstName,
+          profile.middleName,
+          profile.lastName,
+        ].filter((value) =>
+          typeof value === 'string' && value.trim()).join(' ');
+        const configuredCommission = Number(
+          winner.toda.driverCommissionPercent || 0,
+        );
+        const commissionPercent =
+          Number.isFinite(configuredCommission) &&
+          configuredCommission >= 0 &&
+          configuredCommission <= 30
+            ? configuredCommission
+            : 0;
+        const winnerId = winner.claim.driverId;
+        transaction.update(bookingRef, {
+          driverId: winnerId,
+          driverName: driverName || profile.email || 'Driver',
+          driverPhotoUrl:
+            profile.profileImage || winner.driver.profilePhotoUrl || '',
+          driverRating: Number(winner.driver.rating || 0),
+          vehicleNumber:
+            winner.vehicle.vehicleNumber || winner.vehicle.model || '',
+          plateNumber: winner.vehicle.plateNumber || '',
+          todaId: winner.driver.todaId,
+          todaName: winner.toda.name || '',
+          commissionPercent,
+          awardPolicyVersion: 2,
+          winningOfferDistanceMeters:
+            Number(winner.claim.distanceMeters || 0),
+          winningZoneRevision:
+            Number(winner.offer.zoneRevision || 0),
+          winningClaimAcceptedAt: winner.claim.acceptedAt,
+          awardWindowEndsAt: null,
+          awardWindowRound: null,
+          status: BOOKING_STATUS.driverAssigned,
+          assignedAt: timestamp(),
+          updatedAt: timestamp(),
+        });
+        transaction.update(winner.driverRef, {
+          currentBookingId: bookingId,
+          isAvailable: false,
+          updatedAt: timestamp(),
+        });
+        transaction.set(winner.offerRef, {
+          status: 'accepted',
+          claimStatus: 'awarded',
+          acceptedAt: winner.claim.acceptedAt,
+          awardedAt: timestamp(),
+          updatedAt: timestamp(),
+        }, { merge: true });
+        transaction.create(operationReference(
+          bookingId,
+          winnerId,
+          winner.claim.operationId,
+        ), {
+          bookingId,
+          operationId: winner.claim.operationId,
+          actorId: winnerId,
+          action: 'accept',
+          resultStatus: BOOKING_STATUS.driverAssigned,
+          createdAt: timestamp(),
+        });
+        transaction.create(auditReference(
+          bookingId,
+          winnerId,
+          winner.claim.operationId,
+        ), {
+          type: 'booking_lifecycle',
+          action: 'accept',
+          bookingId,
+          actorId: winnerId,
+          actorRole: 'driver',
+          fromStatus: BOOKING_STATUS.pending,
+          toStatus: BOOKING_STATUS.driverAssigned,
+          awardPolicyVersion: 2,
+          distanceMeters: Number(winner.claim.distanceMeters || 0),
+          createdAt: timestamp(),
+        });
+        claims.forEach((claim) => transaction.set(claim.ref, {
+          status: claim.driverId === winnerId ? 'awarded' : 'lost',
+          winnerDriverId: winnerId,
+          resolvedAt: timestamp(),
+          updatedAt: timestamp(),
+        }, { merge: true }));
+        return {
+          idempotent: false,
+          passengerId: bookingData.passengerId,
+          winnerDriverId: winnerId,
+        };
+      });
+    }
+    if (!result.winnerDriverId) {
+      throw new HttpsError(
+        'failed-precondition',
+        'No accepted driver remained eligible for this booking.',
+      );
+    }
     await realtime
-      .ref(`driver_tracking_access/${result.passengerId}/${uid}`)
+      .ref(
+        `driver_tracking_access/${result.passengerId}/` +
+        result.winnerDriverId,
+      )
       .set({
         bookingId,
         grantedAt: ServerValue.TIMESTAMP,
       });
     await expireBookingOffers(bookingId, 'closed');
+    if (result.winnerDriverId !== uid) {
+      throw new HttpsError(
+        'aborted',
+        'A nearer eligible driver accepted during the same award window.',
+      );
+    }
     return {
       bookingId,
       status: BOOKING_STATUS.driverAssigned,
@@ -3217,14 +3941,16 @@ exports.declineBookingOfferLifecycle = onCall(
     const driverId = request.auth.uid;
     const bookingRef = db.collection('bookings').doc(bookingId);
     const offerRef = db.doc(`drivers/${driverId}/bookingOffers/${bookingId}`);
+    const claimRef = bookingRef.collection('acceptClaims').doc(driverId);
     const operationRef = operationReference(bookingId, driverId, operationId);
     const auditRef = auditReference(bookingId, driverId, operationId);
 
     const result = await db.runTransaction(async (transaction) => {
-      const [booking, offer, operation] = await Promise.all([
+      const [booking, offer, operation, claim] = await Promise.all([
         transaction.get(bookingRef),
         transaction.get(offerRef),
         transaction.get(operationRef),
+        transaction.get(claimRef),
       ]);
       if (operation.exists) return { idempotent: true };
       if (!booking.exists || booking.data().status !== BOOKING_STATUS.pending) {
@@ -3233,15 +3959,40 @@ exports.declineBookingOfferLifecycle = onCall(
       if (!offer.exists || !['offered', 'declined'].includes(offer.data().status)) {
         throw new HttpsError('failed-precondition', 'No active offer was found.');
       }
+      const currentOfferDriverIds =
+        Array.isArray(booking.data().currentOfferDriverIds)
+          ? booking.data().currentOfferDriverIds
+          : [];
+      const peerOfferSnapshots = await Promise.all(
+        currentOfferDriverIds
+          .filter((peerId) => peerId !== driverId)
+          .map((peerId) => transaction.get(
+            db.doc(`drivers/${peerId}/bookingOffers/${bookingId}`),
+          )),
+      );
+      const now = Date.now();
+      const anotherOfferIsActive = peerOfferSnapshots.some((peer) =>
+        peer.exists &&
+        peer.data().status === 'offered' &&
+        (snapshotDateMillis(peer.data().expiresAt) ?? 0) > now);
       transaction.set(offerRef, {
         status: 'declined',
         declinedAt: timestamp(),
         updatedAt: timestamp(),
       }, { merge: true });
-      transaction.update(bookingRef, {
-        nextDispatchAt: Timestamp.fromMillis(Date.now() - 1000),
+      if (claim.exists && claim.data().status === 'submitted') {
+        transaction.set(claimRef, {
+          status: 'withdrawn',
+          resolvedAt: timestamp(),
+          updatedAt: timestamp(),
+        }, { merge: true });
+      }
+      transaction.set(bookingRef, {
+        ...(anotherOfferIsActive
+          ? {}
+          : { nextDispatchAt: Timestamp.fromMillis(now - 1000) }),
         updatedAt: timestamp(),
-      });
+      }, { merge: true });
       transaction.create(operationRef, {
         bookingId,
         operationId,
@@ -3261,9 +4012,14 @@ exports.declineBookingOfferLifecycle = onCall(
         actorRole: 'driver',
         createdAt: timestamp(),
       });
-      return { idempotent: false };
+      return {
+        idempotent: false,
+        shouldRedispatch: !anotherOfferIsActive,
+      };
     });
-    if (!result.idempotent) await dispatchNextOfferBatch(bookingId);
+    if (!result.idempotent && result.shouldRedispatch) {
+      await dispatchNextOfferBatch(bookingId);
+    }
     return { bookingId, idempotent: result.idempotent };
   },
 );
@@ -3362,6 +4118,28 @@ exports.transitionBookingLifecycle = onCall(
       }
       if (!expectedStatuses.includes(data.status)) {
         throw new HttpsError('failed-precondition', 'This ride has already changed state.');
+      }
+      if (cancellationCode === 'search_timeout') {
+        const searchExpiresAt = snapshotDateMillis(data.searchExpiresAt);
+        if (searchExpiresAt != null && Date.now() < searchExpiresAt) {
+          throw new HttpsError(
+            'failed-precondition',
+            'The driver search is still active.',
+          );
+        }
+        const awardWindowEndsAt = snapshotDateMillis(
+          data.awardWindowEndsAt,
+        );
+        if (Number(data.awardWindowRound) ===
+              Number(data.offerRound || 0) &&
+            awardWindowEndsAt != null &&
+            Date.now() <
+              awardWindowEndsAt + acceptanceFinalizationGraceMs) {
+          throw new HttpsError(
+            'aborted',
+            'A driver response is being finalized. Refresh the booking.',
+          );
+        }
       }
 
       const terminal = nextStatus === BOOKING_STATUS.completed ||
@@ -4848,9 +5626,63 @@ exports.dispatchBookingOffers = onDocumentCreated('bookings/{bookingId}', async 
   await dispatchNextOfferBatch(event.params.bookingId);
 });
 
+async function expirePendingBookingSearch(bookingId) {
+  const bookingRef = db.collection('bookings').doc(bookingId);
+  const expired = await db.runTransaction(async (transaction) => {
+    const booking = await transaction.get(bookingRef);
+    if (!booking.exists ||
+        booking.data().status !== BOOKING_STATUS.pending) {
+      return false;
+    }
+    const data = booking.data();
+    const createdAt = snapshotDateMillis(data.createdAt);
+    const searchExpiresAt = snapshotDateMillis(data.searchExpiresAt) ??
+      (createdAt == null ? null : createdAt + bookingSearchDurationMs);
+    if (searchExpiresAt == null || searchExpiresAt > Date.now()) return false;
+    const awardWindowEndsAt = snapshotDateMillis(data.awardWindowEndsAt);
+    if (Number(data.awardWindowRound) === Number(data.offerRound || 0) &&
+        awardWindowEndsAt != null &&
+        Date.now() <
+          awardWindowEndsAt + acceptanceFinalizationGraceMs) {
+      return false;
+    }
+    const passengerLockRef = db.collection('activePassengerBookings')
+      .doc(data.passengerId);
+    const passengerLock = await transaction.get(passengerLockRef);
+    transaction.update(bookingRef, {
+      status: BOOKING_STATUS.cancelled,
+      cancelledAt: timestamp(),
+      cancelledBy: 'system',
+      cancellationCode: 'search_timeout',
+      cancellationDetail:
+        'No eligible driver was awarded before the search deadline.',
+      updatedAt: timestamp(),
+    });
+    if (passengerLock.exists &&
+        passengerLock.data().bookingId === bookingId) {
+      transaction.delete(passengerLockRef);
+    }
+    transaction.set(db.collection('auditLogs')
+      .doc(`booking_timeout_${bookingId}`), {
+      type: 'booking_lifecycle',
+      action: 'search_timeout',
+      bookingId,
+      actorId: 'system',
+      actorRole: 'system',
+      fromStatus: BOOKING_STATUS.pending,
+      toStatus: BOOKING_STATUS.cancelled,
+      cancellationCode: 'search_timeout',
+      createdAt: timestamp(),
+    });
+    return true;
+  });
+  if (expired) await expireBookingOffers(bookingId, 'closed');
+  return expired;
+}
+
 // Pending bookings receive the next nearest unoffered batch after the prior
-// 30-second offer window. The booking transaction remains authoritative, so
-// concurrent schedule invocations cannot cause two drivers to claim a ride.
+// offer window. The same pass also provides a backend timeout when the
+// passenger app is offline, so its active-booking lock cannot persist forever.
 exports.redispatchPendingBookings = onSchedule(
   { region: 'asia-southeast1', schedule: 'every 1 minutes' },
   async () => {
@@ -4858,8 +5690,10 @@ exports.redispatchPendingBookings = onSchedule(
       .where('status', '==', BOOKING_STATUS.pending)
       .limit(50)
       .get();
-    await Promise.all(pending.docs.map((booking) =>
-      dispatchNextOfferBatch(booking.id)));
+    await Promise.all(pending.docs.map(async (booking) => {
+      if (await expirePendingBookingSearch(booking.id)) return;
+      await dispatchNextOfferBatch(booking.id);
+    }));
   },
 );
 

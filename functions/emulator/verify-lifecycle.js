@@ -136,6 +136,88 @@ async function main() {
     signIn('toda.admin@voltrike.test'),
   ]);
 
+  const coveragePolygon = [
+    [122.94, 10.66],
+    [122.97, 10.66],
+    [122.97, 10.69],
+    [122.94, 10.69],
+  ];
+  const submittedZone = await callable(
+    'adminSubmitZoneRequest',
+    todaAdminToken,
+    {
+      todaId: 'test-toda-bacolod',
+      polygon: coveragePolygon,
+      areas: [coveragePolygon],
+      notes: 'Local Barangay 40 coverage verification.',
+    },
+  );
+  await callable('adminUpdateZoneRequest', todaAdminToken, {
+    zoneRequestId: submittedZone.zoneRequestId,
+    polygon: coveragePolygon,
+    areas: [coveragePolygon],
+    notes: 'TODA administrator verified the pending geometry.',
+  });
+  await callable('adminReviewZoneRequest', developerToken, {
+    zoneRequestId: submittedZone.zoneRequestId,
+    status: 'approved',
+  });
+  const geofence = (await db.doc(
+    'geofences/test-toda-bacolod',
+  ).get()).data();
+  assert.equal(geofence.geometryVersion, 2);
+  assert.equal(geofence.areas[0].points.length, 4);
+  assert.deepEqual(geofence.polygon[0], {
+    latitude: 10.66,
+    longitude: 122.94,
+  });
+
+  const blockingArea = [
+    [122.953, 10.681],
+    [122.955, 10.681],
+    [122.955, 10.683],
+    [122.953, 10.683],
+  ];
+  const restriction = await callable(
+    'adminCreateRouteRestriction',
+    developerToken,
+    {
+      name: 'Emulator closed terminal',
+      type: 'no_service_area',
+      geometryType: 'polygon',
+      polygon: blockingArea,
+      areas: [blockingArea],
+      bufferMeters: 0,
+      notes: 'Validates server-side endpoint rejection.',
+    },
+  );
+  const storedRestriction = (await db.doc(
+    `routeRestrictions/${restriction.restrictionId}`,
+  ).get()).data();
+  assert.equal(storedRestriction.geometryVersion, 2);
+  assert.equal(storedRestriction.areas[0].points.length, 4);
+  await callable('createBookingLifecycle', passengerToken, {
+    bookingId: 'booking-test-restricted-001',
+    operationId: operation('create-restricted', 1),
+    pickup: { latitude: 10.6762, longitude: 122.9506 },
+    destination: { latitude: 10.6820, longitude: 122.9540 },
+    pickupAddress: 'Allowed Pickup',
+    destinationAddress: 'Closed Terminal',
+    additionalPassengers: 0,
+    baggageCount: 0,
+    isOutsideToda: false,
+    distanceMeters: 1,
+    estimatedFare: 1,
+  }, { expectError: 'FAILED_PRECONDITION' });
+  await callable(
+    'adminSetRouteRestrictionStatus',
+    developerToken,
+    {
+      restrictionId: restriction.restrictionId,
+      isActive: false,
+    },
+  );
+
   await Promise.all([
     callable('setDriverOnlineStatus', driverToken, { isOnline: true }),
     callable('setDriverOnlineStatus', secondDriverToken, { isOnline: true }),
@@ -468,11 +550,23 @@ async function main() {
   );
 
   const cancelledBookingId = 'booking-test-cancel-001';
+  await Promise.all([
+    setFreshDriverLocation(
+      'driver-test-001',
+      10.6780,
+      122.9520,
+    ),
+    setFreshDriverLocation(
+      'driver-test-002',
+      10.6763,
+      122.9507,
+    ),
+  ]);
   await callable('createBookingLifecycle', passengerToken, {
     bookingId: cancelledBookingId,
     operationId: operation('create-cancel', 1),
     pickup: { latitude: 10.6762, longitude: 122.9506 },
-    destination: { latitude: 10.6800, longitude: 122.9530 },
+    destination: { latitude: 10.7000, longitude: 122.9800 },
     pickupAddress: 'Cancellation Pickup',
     destinationAddress: 'Cancellation Destination',
     additionalPassengers: 0,
@@ -481,6 +575,48 @@ async function main() {
     distanceMeters: 1,
     estimatedFare: 1,
   });
+  const crossBoundaryBooking = (await db.doc(
+    `bookings/${cancelledBookingId}`,
+  ).get()).data();
+  assert.equal(crossBoundaryBooking.isOutsideToda, true);
+  assert.equal(crossBoundaryBooking.fareBreakdown.boundarySurcharge, 20);
+  assert.deepEqual(
+    crossBoundaryBooking.eligibleTodaIds,
+    ['test-toda-bacolod'],
+  );
+  await waitFor(
+    async () => {
+      const [first, second] = await Promise.all([
+        db.doc(
+          `drivers/driver-test-001/bookingOffers/${cancelledBookingId}`,
+        ).get(),
+        db.doc(
+          `drivers/driver-test-002/bookingOffers/${cancelledBookingId}`,
+        ).get(),
+      ]);
+      return first.data()?.status === 'offered' &&
+        second.data()?.status === 'offered';
+    },
+    'competing distance-ranked offers',
+  );
+  const competingAccepts = await Promise.allSettled([
+    callable('acceptBookingLifecycle', driverToken, {
+      bookingId: cancelledBookingId,
+      operationId: operation('accept-competition-far', 1),
+    }),
+    callable('acceptBookingLifecycle', secondDriverToken, {
+      bookingId: cancelledBookingId,
+      operationId: operation('accept-competition-near', 1),
+    }),
+  ]);
+  assert.equal(
+    competingAccepts.filter((result) => result.status === 'fulfilled').length,
+    1,
+  );
+  assert.equal(
+    (await db.doc(`bookings/${cancelledBookingId}`).get()).data().driverId,
+    'driver-test-002',
+  );
   await callable('transitionBookingLifecycle', passengerToken, {
     bookingId: cancelledBookingId,
     operationId: operation('cancel-passenger', 1),

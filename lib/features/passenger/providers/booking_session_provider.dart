@@ -171,6 +171,17 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       pickup: pickup,
       pickupName: pickupName,
       pickupAddress: pickupAddress,
+      routePoints: const <LatLng>[],
+      distanceMeters: 0,
+      duration: '',
+      baseFare: 0,
+      distanceFare: 0,
+      additionalPassengerFee: 0,
+      baggageFee: 0,
+      boundarySurcharge: 0,
+      estimatedFare: 0,
+      isOutsideToda: false,
+      hasRoute: false,
     );
   }
 
@@ -184,6 +195,17 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       destination: destination,
       destinationName: destinationName,
       destinationAddress: destinationAddress,
+      routePoints: const <LatLng>[],
+      distanceMeters: 0,
+      duration: '',
+      baseFare: 0,
+      distanceFare: 0,
+      additionalPassengerFee: 0,
+      baggageFee: 0,
+      boundarySurcharge: 0,
+      estimatedFare: 0,
+      isOutsideToda: false,
+      hasRoute: false,
     );
   }
 

@@ -38,15 +38,12 @@ class Fare extends Equatable {
     return Fare(
       baseFare: baseFare ?? this.baseFare,
       includedMeters: includedMeters ?? this.includedMeters,
-      distanceStepMeters:
-          distanceStepMeters ?? this.distanceStepMeters,
-      distanceStepPrice:
-          distanceStepPrice ?? this.distanceStepPrice,
+      distanceStepMeters: distanceStepMeters ?? this.distanceStepMeters,
+      distanceStepPrice: distanceStepPrice ?? this.distanceStepPrice,
       additionalPassengerFee:
           additionalPassengerFee ?? this.additionalPassengerFee,
       baggageFee: baggageFee ?? this.baggageFee,
-      outOfBarangayFee:
-          outOfBarangayFee ?? this.outOfBarangayFee,
+      outOfBarangayFee: outOfBarangayFee ?? this.outOfBarangayFee,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -56,13 +53,12 @@ class Fare extends Equatable {
       baseFare: (map['baseFare'] ?? 0).toDouble(),
       includedMeters: map['includedMeters'] ?? 1000,
       distanceStepMeters: map['distanceStepMeters'] ?? 500,
-      distanceStepPrice:
-          (map['distanceStepPrice'] ?? 0).toDouble(),
-      additionalPassengerFee:
-          (map['additionalPassengerFee'] ?? 0).toDouble(),
+      distanceStepPrice: (map['distanceStepPrice'] ?? 0).toDouble(),
+      additionalPassengerFee: (map['additionalPassengerFee'] ?? 0).toDouble(),
       baggageFee: (map['baggageFee'] ?? 0).toDouble(),
       outOfBarangayFee:
-          (map['outOfBarangayFee'] ?? 0).toDouble(),
+          (map['outsideTodaSurcharge'] ?? map['outOfBarangayFee'] ?? 0)
+              .toDouble(),
       updatedAt: _date(map['updatedAt']),
     );
   }
@@ -82,15 +78,15 @@ class Fare extends Equatable {
 
   @override
   List<Object?> get props => [
-        baseFare,
-        includedMeters,
-        distanceStepMeters,
-        distanceStepPrice,
-        additionalPassengerFee,
-        baggageFee,
-        outOfBarangayFee,
-        updatedAt,
-      ];
+    baseFare,
+    includedMeters,
+    distanceStepMeters,
+    distanceStepPrice,
+    additionalPassengerFee,
+    baggageFee,
+    outOfBarangayFee,
+    updatedAt,
+  ];
 
   static DateTime _date(dynamic value) {
     if (value is Timestamp) return value.toDate();

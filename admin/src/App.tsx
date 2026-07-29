@@ -29,6 +29,27 @@ const todaEvidenceFields = [
 function peso(value: number) { return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value || 0); }
 function label(text: string) { return text.replace(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()); }
 
+function geometrySummary(areas: Point[][]): string {
+  const points = areas.flat().filter(([longitude, latitude]) =>
+    Number.isFinite(longitude)
+    && Number.isFinite(latitude)
+    && Math.abs(longitude) <= 180
+    && Math.abs(latitude) <= 90);
+  if (points.length === 0) return 'No valid coordinates';
+
+  const longitudes = points.map(([longitude]) => longitude);
+  const latitudes = points.map(([, latitude]) => latitude);
+  const longitudeRange = `${Math.min(...longitudes).toFixed(5)} to ${Math.max(...longitudes).toFixed(5)}`;
+  const latitudeRange = `${Math.min(...latitudes).toFixed(5)} to ${Math.max(...latitudes).toFixed(5)}`;
+  return `${areas.length} area${areas.length === 1 ? '' : 's'} | ${points.length} coordinate${points.length === 1 ? '' : 's'} | longitude ${longitudeRange} | latitude ${latitudeRange}`;
+}
+
+function zoneStatusLabel(status: ZoneRequest['status']): string {
+  if (status === 'approved') return 'Approved coverage';
+  if (status === 'declined') return 'Declined';
+  return 'Pending developer review';
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<AdminSession | null>(null);
@@ -900,14 +921,135 @@ function LegacyRouteRestrictionsPageV2({ onMessage }: { onMessage: (value: strin
 }
 
 function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => void }) {
-  const [restrictions, setRestrictions] = useState<RouteRestriction[]>([]); const [name, setName] = useState(''); const [type, setType] = useState<RouteRestriction['type']>('prohibited_highway'); const [geometryType, setGeometryType] = useState<'polygon' | 'corridor'>('corridor'); const [bufferMeters, setBufferMeters] = useState(30); const [notes, setNotes] = useState(''); const [points, setPoints] = useState<Point[]>([]); const [completedAreas, setCompletedAreas] = useState<Point[][]>([]);
-  const reload = useCallback(() => adminApi.routeRestrictions().then(setRestrictions), []); useEffect(() => { reload(); }, [reload]);
-  const allAreas = geometryType === 'polygon' ? [...completedAreas, ...(points.length >= 3 ? [points] : [])] : [points]; const minimumPoints = geometryType === 'corridor' ? 2 : 3;
-  function addArea() { if (points.length >= 3) { setCompletedAreas([...completedAreas, points]); setPoints([]); } }
-  async function create() { try { await adminApi.createRouteRestriction(name.trim(), type, geometryType, allAreas[0], bufferMeters, notes, allAreas); setName(''); setNotes(''); setPoints([]); setCompletedAreas([]); onMessage('Route restriction saved. Mobile route selection will avoid it after the next refresh.'); reload(); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to save restriction.'); } }
-  async function toggle(item: RouteRestriction) { try { await adminApi.setRouteRestrictionStatus(item.id, !item.isActive); onMessage(`${item.name} ${item.isActive ? 'disabled' : 'enabled'}.`); reload(); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update restriction.'); } }
-  function changeType(next: RouteRestriction['type']) { setType(next); setGeometryType(next === 'prohibited_highway' ? 'corridor' : 'polygon'); setPoints([]); setCompletedAreas([]); }
-  return <><section className="panel wide"><h2>Highways and prohibited areas</h2><p className="muted">A highway is one buffered red centreline. A no-service or crossing restriction may contain several disconnected red polygons.</p><div className="form-grid"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restriction name" required /><select value={type} onChange={(event) => changeType(event.target.value as RouteRestriction['type'])}><option value="prohibited_highway">Prohibited highway corridor</option><option value="no_service_area">No-service MultiPolygon</option><option value="restricted_crossing">Restricted crossing MultiPolygon</option></select>{geometryType === 'corridor' && <label>Highway buffer (metres)<input type="number" min="5" max="200" value={bufferMeters} onChange={(event) => setBufferMeters(Number(event.target.value))} /></label>}</div><PolygonEditor points={points} completedAreas={geometryType === 'polygon' ? completedAreas : []} onChange={setPoints} onFinish={geometryType === 'polygon' ? addArea : create} geometryMode={geometryType === 'corridor' ? 'polyline' : 'polygon'} /><div className="map-actions"><span>{geometryType === 'polygon' ? `${allAreas.length} area(s) · current shape ${points.length} points` : `${points.length} centreline points · ${bufferMeters} m buffer`}</span><button onClick={() => setPoints(points.slice(0, -1))} disabled={!points.length}>Undo point</button>{geometryType === 'polygon' && <button onClick={addArea} disabled={points.length < 3 || completedAreas.length >= 19}>Add another area</button>}<button onClick={() => { setPoints([]); setCompletedAreas([]); }} disabled={!points.length && !completedAreas.length}>Clear all</button><button className="primary" onClick={create} disabled={allAreas.length === 0 || !name.trim()}>Save restriction</button></div><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Operational reason and driver guidance" /></section><section className="panel wide"><h2>Active and archived restrictions</h2><div className="table">{restrictions.map((item) => <div className="row" key={item.id}><span><b>{item.name}</b><small>{item.type.replace(/_/g, ' ')} · {item.geometryType === 'corridor' ? `${item.polygon.length} centreline points · ${item.bufferMeters || 0} m buffer` : `${item.areas?.length || 1} polygon areas`}</small></span><span>{item.notes || 'No guidance'}</span><span className={item.isActive ? 'warning' : 'ok'}>{item.isActive ? 'active' : 'disabled'}</span><span className="actions"><button onClick={() => toggle(item)}>{item.isActive ? 'Disable' : 'Enable'}</button></span></div>)}</div></section></>;
+  const [restrictions, setRestrictions] = useState<RouteRestriction[]>([]);
+  const [name, setName] = useState('');
+  const [type, setType] = useState<RouteRestriction['type']>('prohibited_highway');
+  const [geometryType, setGeometryType] = useState<'polygon' | 'corridor'>('corridor');
+  const [bufferMeters, setBufferMeters] = useState(30);
+  const [notes, setNotes] = useState('');
+  const [points, setPoints] = useState<Point[]>([]);
+  const [completedAreas, setCompletedAreas] = useState<Point[][]>([]);
+
+  const reload = useCallback(async () => {
+    try {
+      setRestrictions(await adminApi.routeRestrictions());
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to load route restrictions.');
+    }
+  }, [onMessage]);
+  useEffect(() => { void reload(); }, [reload]);
+
+  const minimumPoints = geometryType === 'corridor' ? 2 : 3;
+  const bufferIsValid = geometryType !== 'corridor'
+    || (Number.isFinite(bufferMeters) && bufferMeters >= 5 && bufferMeters <= 200);
+  const allAreas = geometryType === 'polygon'
+    ? [...completedAreas, ...(points.length >= minimumPoints ? [points] : [])]
+    : points.length >= minimumPoints ? [points] : [];
+
+  function addArea() {
+    if (points.length >= 3) {
+      setCompletedAreas([...completedAreas, points]);
+      setPoints([]);
+    }
+  }
+
+  async function create() {
+    if (!name.trim() || allAreas.length === 0 || !bufferIsValid) {
+      onMessage(`Enter a restriction name, at least ${minimumPoints} valid coordinates${geometryType === 'corridor' ? ', and a buffer from 5 to 200 metres' : ''}.`);
+      return;
+    }
+    try {
+      await adminApi.createRouteRestriction(
+        name.trim(),
+        type,
+        geometryType,
+        allAreas[0],
+        bufferMeters,
+        notes,
+        allAreas,
+      );
+      setName('');
+      setNotes('');
+      setPoints([]);
+      setCompletedAreas([]);
+      onMessage('Route restriction saved and active. Restriction-aware route checks will use it after their next refresh.');
+      await reload();
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to save restriction.');
+    }
+  }
+
+  async function toggle(item: RouteRestriction) {
+    try {
+      await adminApi.setRouteRestrictionStatus(item.id, !item.isActive);
+      onMessage(`${item.name} is now ${item.isActive ? 'disabled' : 'active'}. Restriction-aware route checks will use the change after refresh.`);
+      await reload();
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to update restriction.');
+    }
+  }
+
+  function changeType(next: RouteRestriction['type']) {
+    setType(next);
+    setGeometryType(next === 'prohibited_highway' ? 'corridor' : 'polygon');
+    setPoints([]);
+    setCompletedAreas([]);
+  }
+
+  return <>
+    <section className="panel wide">
+      <h2>Highways and prohibited areas</h2>
+      <p className="muted">A highway is one buffered red centreline. A no-service or crossing restriction may contain several disconnected red polygons. Coordinates are stored as longitude and latitude.</p>
+      <div className="form-grid">
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restriction name" required />
+        <select value={type} onChange={(event) => changeType(event.target.value as RouteRestriction['type'])}>
+          <option value="prohibited_highway">Prohibited highway corridor</option>
+          <option value="no_service_area">No-service MultiPolygon</option>
+          <option value="restricted_crossing">Restricted crossing MultiPolygon</option>
+        </select>
+        {geometryType === 'corridor' && <label>
+          Highway buffer (metres)
+          <input type="number" min="5" max="200" value={bufferMeters} onChange={(event) => setBufferMeters(Number(event.target.value))} />
+        </label>}
+      </div>
+      <PolygonEditor
+        points={points}
+        completedAreas={geometryType === 'polygon' ? completedAreas : []}
+        onChange={setPoints}
+        onFinish={geometryType === 'polygon' ? addArea : create}
+        geometryMode={geometryType === 'corridor' ? 'polyline' : 'polygon'}
+      />
+      <div className="map-actions">
+        <span>{geometryType === 'polygon' ? `${allAreas.length} area(s) | current shape ${points.length} points` : `${points.length} centreline points | ${bufferMeters} m buffer`}</span>
+        <button onClick={() => setPoints(points.slice(0, -1))} disabled={!points.length}>Undo point</button>
+        {geometryType === 'polygon' && <button onClick={addArea} disabled={points.length < 3 || completedAreas.length >= 19}>Add another area</button>}
+        <button onClick={() => { setPoints([]); setCompletedAreas([]); }} disabled={!points.length && !completedAreas.length}>Clear all</button>
+        <button className="primary" onClick={create} disabled={allAreas.length === 0 || !name.trim() || !bufferIsValid}>Save restriction</button>
+      </div>
+      <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Operational reason and driver guidance" />
+    </section>
+    <section className="panel wide">
+      <h2>Active and archived restrictions</h2>
+      <div className="table">
+        {restrictions.map((item) => {
+          const itemAreas = item.geometryType === 'corridor'
+            ? [item.polygon]
+            : item.areas?.length ? item.areas : [item.polygon];
+          return <div className="row" key={item.id}>
+            <span>
+              <b>{item.name}</b>
+              <small>{item.type.replace(/_/g, ' ')} | {item.geometryType === 'corridor' ? `${item.bufferMeters || 0} m corridor` : 'polygon coverage'} | {item.geometryVersion ? `geometry v${item.geometryVersion}` : 'legacy geometry'}</small>
+              <small>{geometrySummary(itemAreas)}</small>
+            </span>
+            <span>{item.notes || 'No operational guidance supplied'}</span>
+            <span className={item.isActive ? 'warning' : 'ok'}>{item.isActive ? 'Active in compatible route checks' : 'Disabled and retained for audit'}</span>
+            <span className="actions"><button onClick={() => toggle(item)}>{item.isActive ? 'Disable' : 'Enable'}</button></span>
+          </div>;
+        })}
+        {restrictions.length === 0 && <p className="muted">No active or archived route restrictions were found.</p>}
+      </div>
+    </section>
+  </>;
 }
 
 function LegacyCoveragePage({ session, onMessage }: { session: AdminSession; onMessage: (value: string) => void }) {
@@ -927,20 +1069,163 @@ function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage
   const [notes, setNotes] = useState('');
   const [zones, setZones] = useState<ZoneRequest[]>([]);
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
-  const reload = useCallback(async () => { const scope = session.role === 'developer_admin' ? undefined : session.todaId!; const [todoList, zoneList] = await Promise.all([adminApi.todas(), adminApi.zones(scope)]); setTodas(todoList); setZones(zoneList); if (!todaId && todoList[0]) setTodaId(todoList[0].id); }, [session, todaId]);
-  useEffect(() => { reload(); }, [reload]);
+  const isDeveloper = session.role === 'developer_admin';
+  const reload = useCallback(async () => {
+    try {
+      const scope = isDeveloper ? undefined : session.todaId || undefined;
+      const [todaList, zoneList] = await Promise.all([
+        adminApi.todas(),
+        adminApi.zones(scope),
+      ]);
+      setTodas(todaList);
+      setZones(zoneList);
+      if (!isDeveloper && session.todaId) setTodaId(session.todaId);
+      else if (!todaId && todaList[0]) setTodaId(todaList[0].id);
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to load coverage requests.');
+    }
+  }, [isDeveloper, onMessage, session.todaId, todaId]);
+  useEffect(() => { void reload(); }, [reload]);
+
   const areas = [...completedAreas, ...(points.length >= 3 ? [points] : [])];
-  function addAnotherArea() { if (points.length >= 3) { setCompletedAreas([...completedAreas, points]); setPoints([]); } }
+  const selectedName = useMemo(() => todas.find((toda) => toda.id === todaId)?.name || 'selected TODA', [todas, todaId]);
+  const todaNames = useMemo(() => new Map(todas.map((toda) => [toda.id, toda.name])), [todas]);
+
+  function addAnotherArea() {
+    if (points.length >= 3) {
+      setCompletedAreas([...completedAreas, points]);
+      setPoints([]);
+    }
+  }
+
+  function resetEditor() {
+    setPoints([]);
+    setCompletedAreas([]);
+    setNotes('');
+    setEditingZoneId(null);
+  }
+
+  function changeToda(nextTodaId: string) {
+    setTodaId(nextTodaId);
+    resetEditor();
+  }
+
   async function submit() {
     if (areas.length === 0) { onMessage('Draw at least one polygon with three points.'); return; }
+    if (!todaId) { onMessage('Select a TODA before submitting coverage.'); return; }
+    const wasEditing = Boolean(editingZoneId);
     try {
       if (editingZoneId) await adminApi.updateZone(editingZoneId, areas[0], notes, areas);
       else await adminApi.submitZone(todaId, areas[0], notes, areas);
-      setPoints([]); setCompletedAreas([]); setNotes(''); setEditingZoneId(null); onMessage(editingZoneId ? 'Coverage request polygons updated.' : 'Coverage request submitted for developer review.'); reload();
+      resetEditor();
+      if (wasEditing) {
+        onMessage(isDeveloper
+          ? 'Coverage request polygons updated. The request remains pending until it is approved or declined.'
+          : 'Your pending coverage request was updated and sent back for developer review.');
+      } else {
+        onMessage(isDeveloper
+          ? `Coverage request created for ${selectedName}; it remains pending developer review.`
+          : 'Coverage request submitted for developer review.');
+      }
+      await reload();
     } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to save coverage polygons.'); }
   }
-  async function review(id: string, status: string) { try { await adminApi.reviewZone(id, status); onMessage(`Zone request ${status}.`); reload(); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to review zone.'); } }
-  const selectedName = useMemo(() => todas.find((toda) => toda.id === todaId)?.name || 'selected TODA', [todas, todaId]);
-  function editZone(zone: ZoneRequest) { const zoneAreas = zone.areas?.length ? zone.areas : [zone.polygon]; setTodaId(zone.todaId); setCompletedAreas(zoneAreas.slice(0, -1)); setPoints(zoneAreas[zoneAreas.length - 1] || []); setNotes(zone.notes || ''); setEditingZoneId(zone.id); }
-  return <><section className="panel wide"><h2>{session.role === 'developer_admin' ? 'Create or review coverage areas' : 'Request TODA coverage area'}</h2><p className="muted">Create one or several disconnected operating polygons. Select Add another area after finishing each shape; the developer approves the complete TODA coverage request together.</p>{session.role === 'developer_admin' && <select value={todaId} onChange={(event) => setTodaId(event.target.value)}><option value="">Select TODA</option>{todas.map((toda) => <option key={toda.id} value={toda.id}>{toda.name}</option>)}</select>}<Suspense fallback={<div className="map-missing">Loading Mapbox coverage editor…</div>}><PolygonEditor points={points} completedAreas={completedAreas} onChange={setPoints} onFinish={addAnotherArea} /></Suspense><div className="map-actions"><span>{areas.length} area{areas.length === 1 ? '' : 's'} for {selectedName} · current shape: {points.length} points</span><button onClick={() => setPoints(points.slice(0, -1))} disabled={!points.length}>Undo point</button><button onClick={addAnotherArea} disabled={points.length < 3 || completedAreas.length >= 19}>Add another area</button><button onClick={() => { setPoints([]); setCompletedAreas([]); setEditingZoneId(null); }} disabled={!points.length && !completedAreas.length}>Clear all</button><button className="primary" onClick={submit} disabled={areas.length === 0 || !todaId}>{editingZoneId ? 'Save coverage polygons' : 'Submit coverage request'}</button></div><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Route/terminal notes for the reviewer" /></section><section className="panel wide"><h2>{session.role === 'developer_admin' ? 'Pending zone requests' : 'My TODA zone requests'}</h2><div className="table">{zones.map((zone) => <div className="row" key={zone.id}><span><b>{zone.todaId}</b><small>{zone.areas?.length || 1} area{(zone.areas?.length || 1) === 1 ? '' : 's'} · {(zone.areas || [zone.polygon]).reduce((total, area) => total + area.length, 0)} points</small></span><span>{zone.notes || 'No notes'}</span><span className={zone.status === 'pending' ? 'warning' : 'ok'}>{zone.status}</span>{session.role === 'developer_admin' && zone.status === 'pending' && <span className="actions"><button onClick={() => editZone(zone)}>Edit</button><button onClick={() => review(zone.id, 'approved')}>Approve</button><button onClick={() => review(zone.id, 'declined')}>Decline</button></span>}</div>)}</div></section></>;
+
+  async function review(id: string, status: 'approved' | 'declined') {
+    if (editingZoneId === id) {
+      onMessage('Save or cancel the pending geometry edit before reviewing this request.');
+      return;
+    }
+    try {
+      await adminApi.reviewZone(id, status);
+      onMessage(status === 'approved'
+        ? 'Coverage request approved. Its geometry is now the TODA coverage record.'
+        : 'Coverage request declined; the current approved TODA coverage was not replaced.');
+      await reload();
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to review zone.');
+    }
+  }
+
+  function canEditZone(zone: ZoneRequest) {
+    return zone.status === 'pending'
+      && (isDeveloper || Boolean(session.todaId && zone.todaId === session.todaId));
+  }
+
+  function editZone(zone: ZoneRequest) {
+    if (!canEditZone(zone)) {
+      onMessage('Only a pending coverage request owned by your TODA can be edited.');
+      return;
+    }
+    const zoneAreas = (zone.areas?.length ? zone.areas : [zone.polygon])
+      .filter((area) => area.length >= 3);
+    if (zoneAreas.length === 0) {
+      onMessage('This request has no valid polygon coordinates to edit.');
+      return;
+    }
+    setTodaId(zone.todaId);
+    setCompletedAreas(zoneAreas.slice(0, -1));
+    setPoints(zoneAreas[zoneAreas.length - 1]);
+    setNotes(zone.notes || '');
+    setEditingZoneId(zone.id);
+  }
+
+  return <>
+    <section className="panel wide">
+      <h2>{isDeveloper ? 'Create or review coverage areas' : 'Request TODA coverage area'}</h2>
+      <p className="muted">Create one or several disconnected operating polygons. Select Add another area after finishing each shape; the developer approves the complete TODA coverage request together. A TODA administrator may revise its own request while it is pending; approved and declined requests are read-only.</p>
+      {isDeveloper && <select value={todaId} onChange={(event) => changeToda(event.target.value)} disabled={editingZoneId !== null}>
+        <option value="">Select TODA</option>
+        {todas.map((toda) => <option key={toda.id} value={toda.id}>{toda.name}</option>)}
+      </select>}
+      {editingZoneId && <p className="muted">Editing pending request {editingZoneId} for {selectedName}. Save it to keep the revised coordinates, or cancel to leave the request unchanged.</p>}
+      <Suspense fallback={<div className="map-missing">Loading Mapbox coverage editor...</div>}>
+        <PolygonEditor points={points} completedAreas={completedAreas} onChange={setPoints} onFinish={addAnotherArea} />
+      </Suspense>
+      <div className="map-actions">
+        <span>{areas.length} area{areas.length === 1 ? '' : 's'} for {selectedName} | current shape: {points.length} points</span>
+        <button onClick={() => setPoints(points.slice(0, -1))} disabled={!points.length}>Undo point</button>
+        <button onClick={addAnotherArea} disabled={points.length < 3 || completedAreas.length >= 19}>Add another area</button>
+        <button onClick={() => { setPoints([]); setCompletedAreas([]); }} disabled={!points.length && !completedAreas.length}>Clear geometry</button>
+        {editingZoneId && <button onClick={resetEditor}>Cancel edit</button>}
+        <button className="primary" onClick={submit} disabled={areas.length === 0 || !todaId}>{editingZoneId ? 'Save pending request' : 'Submit coverage request'}</button>
+      </div>
+      <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Route/terminal notes for the reviewer" />
+    </section>
+    <section className="panel wide">
+      <h2>{isDeveloper ? 'Coverage requests' : 'My TODA zone requests'}</h2>
+      <div className="table">
+        {zones.map((zone) => {
+          const zoneAreas = zone.areas?.length ? zone.areas : [zone.polygon];
+          return <div className="row" key={zone.id}>
+            <span>
+              <b>{todaNames.get(zone.todaId) || zone.todaId}</b>
+              <small>Request {zone.id} | {zone.geometryVersion ? `geometry v${zone.geometryVersion}` : 'legacy geometry'}</small>
+              <small>{geometrySummary(zoneAreas)}</small>
+            </span>
+            <span>{zone.notes || 'No route or terminal notes supplied'}</span>
+            <span className={zone.status === 'approved' ? 'ok' : 'warning'}>{zoneStatusLabel(zone.status)}</span>
+            {canEditZone(zone) && <span className="actions">
+              <button onClick={() => editZone(zone)}>Edit pending request</button>
+              {isDeveloper && <>
+                <button
+                  onClick={() => review(zone.id, 'approved')}
+                  disabled={editingZoneId === zone.id}
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => review(zone.id, 'declined')}
+                  disabled={editingZoneId === zone.id}
+                >
+                  Decline
+                </button>
+              </>}
+            </span>}
+          </div>;
+        })}
+        {zones.length === 0 && <p className="muted">No coverage requests were found for this scope.</p>}
+      </div>
+    </section>
+  </>;
 }

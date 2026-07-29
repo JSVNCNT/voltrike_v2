@@ -238,6 +238,7 @@ export interface ZoneRequest {
   todaId: string;
   polygon: Point[];
   areas?: Point[][];
+  geometryVersion?: number;
   status: 'pending' | 'approved' | 'declined';
   notes?: string;
 }
@@ -249,6 +250,7 @@ export interface RouteRestriction {
   geometryType?: 'polygon' | 'corridor';
   polygon: Point[];
   areas?: Point[][];
+  geometryVersion?: number;
   bufferMeters?: number;
   notes?: string;
   isActive: boolean;

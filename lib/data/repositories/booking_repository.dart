@@ -5,6 +5,40 @@ import 'package:uuid/uuid.dart';
 import '../models/booking.dart';
 import '../models/driver_booking_offer.dart';
 
+class BookingCreationResult {
+  const BookingCreationResult({
+    required this.bookingId,
+    required this.distanceMeters,
+    required this.estimatedFare,
+    required this.isOutsideToda,
+    required this.fareBreakdown,
+  });
+
+  final String bookingId;
+  final int distanceMeters;
+  final double estimatedFare;
+  final bool isOutsideToda;
+  final Map<String, dynamic> fareBreakdown;
+
+  factory BookingCreationResult.fromCallable(
+    Object? value, {
+    required Booking fallback,
+  }) {
+    final data = _stringKeyedMap(value);
+    return BookingCreationResult(
+      bookingId: _stringValue(data['bookingId']) ?? fallback.bookingId,
+      distanceMeters:
+          _intValue(data['distanceMeters']) ?? fallback.distanceMeters,
+      estimatedFare:
+          _doubleValue(data['estimatedFare']) ?? fallback.estimatedFare,
+      isOutsideToda: data['isOutsideToda'] is bool
+          ? data['isOutsideToda'] as bool
+          : fallback.isOutsideToda,
+      fareBreakdown: _stringKeyedMap(data['fareBreakdown']),
+    );
+  }
+}
+
 /// ===========================================================================
 /// Booking Repository
 ///
@@ -41,26 +75,29 @@ class BookingRepository {
   // Create Booking
   //==========================================================================
 
-  Future<void> createBooking(Booking booking) async {
-    await _functions.httpsCallable('createBookingLifecycle').call({
-      'bookingId': booking.bookingId,
-      'operationId': _uuid.v4(),
-      'pickup': {
-        'latitude': booking.pickup.latitude,
-        'longitude': booking.pickup.longitude,
-      },
-      'destination': {
-        'latitude': booking.destination.latitude,
-        'longitude': booking.destination.longitude,
-      },
-      'pickupAddress': booking.pickupAddress,
-      'destinationAddress': booking.destinationAddress,
-      'distanceMeters': booking.distanceMeters,
-      'estimatedFare': booking.estimatedFare,
-      'additionalPassengers': booking.additionalPassengers,
-      'baggageCount': booking.baggageCount,
-      'isOutsideToda': booking.isOutsideToda,
-    });
+  Future<BookingCreationResult> createBooking(Booking booking) async {
+    final response = await _functions
+        .httpsCallable('createBookingLifecycle')
+        .call({
+          'bookingId': booking.bookingId,
+          'operationId': _uuid.v4(),
+          'pickup': {
+            'latitude': booking.pickup.latitude,
+            'longitude': booking.pickup.longitude,
+          },
+          'destination': {
+            'latitude': booking.destination.latitude,
+            'longitude': booking.destination.longitude,
+          },
+          'pickupAddress': booking.pickupAddress,
+          'destinationAddress': booking.destinationAddress,
+          'distanceMeters': booking.distanceMeters,
+          'estimatedFare': booking.estimatedFare,
+          'additionalPassengers': booking.additionalPassengers,
+          'baggageCount': booking.baggageCount,
+          'isOutsideToda': booking.isOutsideToda,
+        });
+    return BookingCreationResult.fromCallable(response.data, fallback: booking);
   }
 
   //==========================================================================
@@ -400,4 +437,29 @@ class BookingRepository {
         );
     }
   }
+}
+
+Map<String, dynamic> _stringKeyedMap(Object? value) {
+  if (value is! Map) return const <String, dynamic>{};
+  return <String, dynamic>{
+    for (final entry in value.entries)
+      if (entry.key is String) entry.key as String: entry.value,
+  };
+}
+
+String? _stringValue(Object? value) {
+  if (value is! String || value.trim().isEmpty) return null;
+  return value.trim();
+}
+
+int? _intValue(Object? value) {
+  if (value is num && value.isFinite) return value.round();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+double? _doubleValue(Object? value) {
+  if (value is num && value.isFinite) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
 }

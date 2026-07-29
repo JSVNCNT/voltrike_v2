@@ -31,7 +31,7 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
   final Uuid _uuid = const Uuid();
   final UserRepository _userRepository = UserRepository();
 
-  Future<String> createBooking({
+  Future<BookingCreationResult> createBooking({
     required BookingSession session,
     required String pickupAddress,
     required String destinationAddress,
@@ -76,11 +76,11 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
         updatedAt: DateTime.now(),
       );
 
-      await _bookingRepository.createBooking(booking);
+      final creationResult = await _bookingRepository.createBooking(booking);
 
       state = const AsyncData(null);
 
-      return booking.bookingId;
+      return creationResult;
     } catch (e, stackTrace) {
       state = AsyncError(e, stackTrace);
 

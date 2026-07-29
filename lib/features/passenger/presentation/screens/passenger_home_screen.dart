@@ -9,6 +9,7 @@ import '../../../../core/services/places_service.dart';
 import '../../../../core/services/polyline_service.dart';
 import '../../../../core/services/route_restriction_service.dart';
 import '../../../../core/services/routes_service.dart';
+import '../../../../core/services/toda_coverage_service.dart';
 import '../../../../data/models/place_prediction.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../providers/booking_controller_provider.dart';
@@ -43,6 +44,8 @@ class PassengerHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
+  int _routeCalculationGeneration = 0;
+
   FareConfiguration get _fareConfiguration =>
       ref.read(fareConfigurationProvider).valueOrNull ?? devFareConfiguration;
 
@@ -142,16 +145,76 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     required String destinationName,
     required String destinationAddress,
   }) async {
+    final calculationGeneration = ++_routeCalculationGeneration;
     ref
         .read(bookingProvider.notifier)
         .update(PassengerBookingState.estimatingFare);
 
+    final sessionNotifier = ref.read(bookingSessionProvider.notifier);
+    final previousSession = ref.read(bookingSessionProvider);
+    sessionNotifier.update(
+      previousSession.copyWith(
+        pickup: pickup,
+        pickupName: pickupName,
+        pickupAddress: pickupAddress,
+        destination: destination,
+        destinationName: destinationName,
+        destinationAddress: destinationAddress,
+        routePoints: const <LatLng>[],
+        distanceMeters: 0,
+        duration: '',
+        baseFare: 0,
+        distanceFare: 0,
+        additionalPassengerFee: 0,
+        baggageFee: 0,
+        boundarySurcharge: 0,
+        estimatedFare: 0,
+        isOutsideToda: false,
+        hasRoute: false,
+      ),
+    );
+
+    final TodaCoverageDecision coverage;
+    try {
+      coverage = await TodaCoverageService.instance.classifyTrip(
+        pickup: pickup,
+        destination: destination,
+        forceRefresh: true,
+      );
+    } catch (_) {
+      if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+        return;
+      }
+      ref.read(bookingProvider.notifier).reset();
+      _showCoverageWarning(
+        'TODA coverage could not be verified. Check your connection and try again.',
+      );
+      return;
+    }
+
+    if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+      return;
+    }
+    if (!coverage.pickupAllowed) {
+      ref.read(bookingProvider.notifier).reset();
+      _showCoverageWarning(
+        'Pickup is outside the configured VolTrike service areas. Choose a pickup inside a TODA coverage zone.',
+      );
+      return;
+    }
+
+    RouteRestrictionService.instance
+      ..invalidate()
+      ..clearLastConflict();
     final result = await RoutesService.computeRoute(
       origin: pickup,
       destination: destination,
     );
 
-    if (!mounted || result == null) {
+    if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+      return;
+    }
+    if (result == null) {
       ref.read(bookingProvider.notifier).reset();
 
       if (mounted) {
@@ -179,7 +242,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       distanceMeters: result.distanceMeters,
       passengerCount: booking.additionalPassengers + 1,
       baggageCount: booking.baggageCount,
-      isOutsideToda: booking.isOutsideToda,
+      isOutsideToda: coverage.isOutsideToda,
     );
 
     ref
@@ -202,12 +265,36 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             baggageFee: fare.baggageFee,
             boundarySurcharge: fare.boundarySurcharge,
             estimatedFare: fare.totalFare,
+            isOutsideToda: coverage.isOutsideToda,
 
             hasRoute: true,
           ),
         );
 
     ref.read(bookingProvider.notifier).reset();
+
+    if (coverage.isOutsideToda) {
+      _showCoverageWarning(
+        'This trip leaves the pickup TODA coverage area. The '
+        '₱${fare.boundarySurcharge.toStringAsFixed(2)} outside-zone surcharge '
+        'is included in the estimate.',
+      );
+    }
+  }
+
+  void _showCoverageWarning(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      ),
+    );
   }
 
   //==========================================================================
@@ -315,9 +402,25 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<FareConfiguration>>(fareConfigurationProvider, (
+      previous,
+      next,
+    ) {
+      if (!next.hasValue || previous?.valueOrNull == next.valueOrNull) {
+        return;
+      }
+      Future<void>.microtask(() {
+        if (mounted && ref.read(bookingSessionProvider).hasRoute) {
+          _recalculateFare();
+        }
+      });
+    });
     final session = ref.watch(bookingSessionProvider);
 
     final bookingState = ref.watch(bookingProvider);
+    final routeSelectionLocked =
+        bookingState == PassengerBookingState.estimatingFare ||
+        bookingState == PassengerBookingState.searchingDriver;
 
     return Scaffold(
       appBar: const AppAppBar(title: 'VolTrike', showNotifications: true),
@@ -343,13 +446,9 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
                 destination: session.destinationName ?? 'Where are you going?',
 
-                onPickupTap:
-                    bookingState == PassengerBookingState.searchingDriver
-                    ? null
-                    : _selectPickup,
+                onPickupTap: routeSelectionLocked ? null : _selectPickup,
 
-                onDestinationTap:
-                    bookingState == PassengerBookingState.searchingDriver
+                onDestinationTap: routeSelectionLocked
                     ? null
                     : _selectDestination,
 
@@ -414,7 +513,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     }
 
     try {
-      final bookingId = await ref
+      final creation = await ref
           .read(bookingControllerProvider.notifier)
           .createBooking(
             session: session,
@@ -432,11 +531,51 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         return;
       }
 
+      final breakdown = creation.fareBreakdown;
+      double component(String key, double fallback) {
+        final value = breakdown[key];
+        return value is num && value.isFinite ? value.toDouble() : fallback;
+      }
+
+      final serverConfirmedSession = session.copyWith(
+        distanceMeters: creation.distanceMeters,
+        baseFare: component('baseFare', session.baseFare),
+        distanceFare: component('distanceFare', session.distanceFare),
+        additionalPassengerFee: component(
+          'additionalPassengerFare',
+          session.additionalPassengerFee,
+        ),
+        baggageFee: component('baggageFare', session.baggageFee),
+        boundarySurcharge: component(
+          'boundarySurcharge',
+          session.boundarySurcharge,
+        ),
+        estimatedFare: creation.estimatedFare,
+        isOutsideToda: creation.isOutsideToda,
+      );
+      ref.read(bookingSessionProvider.notifier).update(serverConfirmedSession);
+
+      final quoteChanged =
+          (creation.estimatedFare - session.estimatedFare).abs() >= 0.01 ||
+          creation.distanceMeters != session.distanceMeters ||
+          creation.isOutsideToda != session.isOutsideToda;
+      if (quoteChanged) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Server-validated fare: '
+              'â‚±${creation.estimatedFare.toStringAsFixed(2)} for '
+              '${(creation.distanceMeters / 1000).toStringAsFixed(2)} km.',
+            ),
+          ),
+        );
+      }
+
       ref
           .read(bookingProvider.notifier)
           .update(PassengerBookingState.searchingDriver);
 
-      context.go(AppRoutes.searchingDriver, extra: bookingId);
+      context.go(AppRoutes.searchingDriver, extra: creation.bookingId);
     } catch (e) {
       if (!mounted) {
         return;

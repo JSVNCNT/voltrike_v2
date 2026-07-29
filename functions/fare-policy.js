@@ -52,7 +52,7 @@ function fareSnapshot(data) {
   };
 }
 
-function calculateFare({
+function calculateFareBreakdown({
   config,
   distanceMeters,
   additionalPassengers = 0,
@@ -65,16 +65,41 @@ function calculateFare({
   const distanceSteps = Math.ceil(
     chargeableMeters / snapshot.distanceStepMeters,
   );
-  const total = snapshot.baseFare +
-    distanceSteps * snapshot.distanceStepPrice +
-    Math.max(0, additionalPassengers) * snapshot.additionalPassengerFee +
-    Math.max(0, baggageCount) * snapshot.baggageFee +
-    (isOutsideToda ? snapshot.outsideTodaSurcharge : 0);
-  return Math.round(total * 100) / 100;
+  const distanceFare = distanceSteps * snapshot.distanceStepPrice;
+  const additionalPassengerFare =
+    Math.max(0, additionalPassengers) *
+    snapshot.additionalPassengerFee;
+  const baggageFare = Math.max(0, baggageCount) * snapshot.baggageFee;
+  const boundarySurcharge =
+    isOutsideToda ? snapshot.outsideTodaSurcharge : 0;
+  const total = snapshot.baseFare + distanceFare +
+    additionalPassengerFare + baggageFare + boundarySurcharge;
+  return {
+    baseFare: snapshot.baseFare,
+    includedMeters: snapshot.includedMeters,
+    chargeableMeters,
+    distanceSteps,
+    distanceStepMeters: snapshot.distanceStepMeters,
+    distanceStepPrice: snapshot.distanceStepPrice,
+    distanceFare,
+    additionalPassengers: Math.max(0, additionalPassengers),
+    additionalPassengerFare,
+    baggageCount: Math.max(0, baggageCount),
+    baggageFare,
+    isOutsideToda,
+    boundarySurcharge,
+    currency: snapshot.currency,
+    total: Math.round(total * 100) / 100,
+  };
+}
+
+function calculateFare(options) {
+  return calculateFareBreakdown(options).total;
 }
 
 module.exports = {
   DEFAULT_FARE,
   calculateFare,
+  calculateFareBreakdown,
   fareSnapshot,
 };

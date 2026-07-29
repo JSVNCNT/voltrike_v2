@@ -8,6 +8,7 @@ class RouteRestriction {
     required this.type,
     required this.polygon,
     required this.isActive,
+    this.geometryVersion = 1,
     this.geometryType = 'polygon',
     this.bufferMeters = 0,
     this.areas = const [],
@@ -18,28 +19,124 @@ class RouteRestriction {
   final String name;
   final String type;
   final List<LatLng> polygon;
+  final int geometryVersion;
   final String geometryType;
   final int bufferMeters;
   final List<List<LatLng>> areas;
   final bool isActive;
   final String notes;
 
-  factory RouteRestriction.fromFirestore(DocumentSnapshot<Map<String, dynamic>> document) {
-    final data = document.data() ?? const <String, dynamic>{};
-    final rawPolygon = data['coordinates'] as List? ?? data['polygon'] as List? ?? const [];
-    final parsedPolygon = rawPolygon.whereType<List>().where((point) => point.length == 2).map((point) => LatLng((point[1] as num).toDouble(), (point[0] as num).toDouble())).toList();
-    final rawAreas = data['areas'] as List?;
-    final parsedAreas = rawAreas == null ? <List<LatLng>>[parsedPolygon] : rawAreas.whereType<List>().map((area) => area.whereType<List>().where((point) => point.length == 2).map((point) => LatLng((point[1] as num).toDouble(), (point[0] as num).toDouble())).toList()).where((area) => area.isNotEmpty).toList();
-    return RouteRestriction(
+  factory RouteRestriction.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    return RouteRestriction.fromMap(
       id: document.id,
+      data: document.data() ?? const <String, dynamic>{},
+    );
+  }
+
+  factory RouteRestriction.fromMap({
+    required String id,
+    required Map<String, dynamic> data,
+  }) {
+    final parsedAreas = _parseAreas(data['areas']);
+    var parsedPolygon = _parseArea(data['coordinates']);
+    if (parsedPolygon.isEmpty) {
+      parsedPolygon = _parseArea(data['polygon']);
+    }
+    if (parsedPolygon.isEmpty && parsedAreas.isNotEmpty) {
+      parsedPolygon = parsedAreas.first;
+    }
+
+    final effectiveAreas = parsedAreas.isNotEmpty
+        ? parsedAreas
+        : parsedPolygon.isEmpty
+        ? const <List<LatLng>>[]
+        : <List<LatLng>>[parsedPolygon];
+
+    return RouteRestriction(
+      id: id,
       name: data['name'] as String? ?? 'Restricted area',
       type: data['type'] as String? ?? 'no_service_area',
       polygon: parsedPolygon,
-      areas: parsedAreas,
+      geometryVersion: (data['geometryVersion'] as num?)?.round() ?? 1,
+      areas: effectiveAreas,
       geometryType: data['geometryType'] as String? ?? 'polygon',
       bufferMeters: (data['bufferMeters'] as num?)?.round() ?? 0,
       isActive: data['isActive'] as bool? ?? false,
       notes: data['notes'] as String? ?? '',
     );
   }
+}
+
+List<List<LatLng>> _parseAreas(Object? value) {
+  if (value is Map) {
+    final wrappedArea = _parseArea(value);
+    return wrappedArea.isEmpty ? const <List<LatLng>>[] : [wrappedArea];
+  }
+  if (value is! Iterable) return const <List<LatLng>>[];
+
+  final entries = value.toList(growable: false);
+  if (entries.isEmpty) return const <List<LatLng>>[];
+
+  if (_parsePoint(entries.first) != null) {
+    final area = _parseArea(entries);
+    return area.isEmpty ? const <List<LatLng>>[] : [area];
+  }
+
+  return entries
+      .map(_parseArea)
+      .where((area) => area.isNotEmpty)
+      .toList(growable: false);
+}
+
+List<LatLng> _parseArea(Object? value) {
+  Object? points = value;
+  if (value is Map) {
+    points =
+        value['points'] ??
+        value['coordinates'] ??
+        value['vertices'] ??
+        value['polygon'];
+  }
+  if (points is! Iterable) return const <LatLng>[];
+
+  return points.map(_parsePoint).whereType<LatLng>().toList(growable: false);
+}
+
+LatLng? _parsePoint(Object? value) {
+  if (value is LatLng) return value;
+  if (value is GeoPoint) {
+    return _validatedLatLng(value.latitude, value.longitude);
+  }
+  if (value is Map) {
+    final latitude = value['latitude'] ?? value['lat'];
+    final longitude = value['longitude'] ?? value['lng'] ?? value['lon'];
+    if (latitude is num && longitude is num) {
+      return _validatedLatLng(latitude.toDouble(), longitude.toDouble());
+    }
+    return null;
+  }
+  if (value is List &&
+      value.length >= 2 &&
+      value[0] is num &&
+      value[1] is num) {
+    return _validatedLatLng(
+      (value[1] as num).toDouble(),
+      (value[0] as num).toDouble(),
+    );
+  }
+  return null;
+}
+
+LatLng? _validatedLatLng(double latitude, double longitude) {
+  if (!latitude.isFinite ||
+      !longitude.isFinite ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180) {
+    return null;
+  }
+  return LatLng(latitude, longitude);
 }

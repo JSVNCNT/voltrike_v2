@@ -429,3 +429,165 @@ audited so they do not silently expand the release scope.
   tests.
 - [ ] Smoke-test the radar alignment and bottom-sheet height on a real Android
   Google Maps platform view.
+
+## 13. TODA coverage, zone-aware booking, fare, and route restrictions
+
+Status: scoped implementation complete; local automated validation passed.
+Deployment, emulator lifecycle execution, native-route handoff, overlap
+priority, and platform-scale dispatch work remain below.
+
+This section is additive. It does not reopen or replace the earlier dark-mode
+work. The feature boundary is TODA coverage persistence, authoritative booking
+classification, zone-aware dispatch, fare breakdown, and route restrictions.
+
+### Architecture and Rust boundary
+
+- [x] Audit the Flutter, React/TypeScript admin, Firebase Functions,
+  Firestore/RTDB, fare, dispatch, coverage, and restriction paths before
+  changing behavior.
+- [x] Confirm the installed Rust toolchain is already stable Rust/Cargo 1.94.0
+  and that this repository currently has no Cargo workspace, Rust source,
+  generated bridge, FFI, N-API, or WebAssembly integration.
+- [x] Keep Firebase authentication, callable authorization, Firestore/RTDB
+  reads and writes, transactions, triggers, and notifications in the existing
+  JavaScript Firebase Functions boundary for this feature.
+- [ ] If Rust is introduced here, restrict it to a small deterministic policy
+  core such as coordinate validation, point-in-polygon, route-conflict
+  geometry, fare breakdown, and candidate scoring. Keep network access and
+  Firebase credentials out of Rust, and verify identical results at the
+  JavaScript/Dart boundary.
+- [x] Explicitly defer the proposed app-wide Flutter -> Rust -> JavaScript and
+  React/TypeScript -> Rust -> JavaScript migration. Do not rewrite unrelated
+  repositories, providers, screens, admin pages, or Cloud Functions in this
+  feature.
+- [x] Do not update Rust merely for this work; reconsider the toolchain only
+  when a chosen bridge or build target documents a newer minimum version.
+
+### Coverage request persistence and approval
+
+- [x] Replace Firestore-incompatible nested coordinate arrays with a versioned,
+  unambiguous shape such as `areas: [{points: [{latitude, longitude}]}]`.
+  Accept legacy `[longitude, latitude]` input only at a validation adapter and
+  never persist latitude/longitude as positional arrays again.
+- [x] Validate finite values, longitude/latitude ranges, point and area limits,
+  duplicate/degenerate edges, minimum polygon area, and self-intersection
+  before writing a coverage request or route restriction.
+- [x] Preserve role boundaries: a TODA admin may submit only for its own TODA;
+  a developer admin may create for a selected TODA, edit a pending request,
+  and approve or decline it.
+- [x] Add explicit request state/version guards so an already reviewed request
+  cannot be silently edited or reviewed twice, and an older approval cannot
+  overwrite a newer active coverage revision.
+- [x] Publish one active, revisioned geofence per TODA atomically with the
+  approval decision and immutable audit record. Keep the submitted geometry
+  as review history.
+- [x] Surface safe callable validation messages in the admin
+  UI while logging the server-side cause with request/TODA identifiers.
+- [x] Let the developer review the submitted polygons on the map, edit before
+  approval, and create a test coverage polygon for the current barangay
+  without weakening production zone checks.
+
+### Authoritative booking-zone and fare policy
+
+- [x] Classify pickup and destination against approved active geofences in the
+  backend. Do not trust a client-supplied `isOutsideToda`, TODA ID, zone ID, or
+  boundary surcharge.
+- [x] Use pickup jurisdiction for dispatch: when pickup and destination are in
+  the same approved TODA coverage, offer only to eligible drivers of that TODA
+  and apply no outside-TODA surcharge.
+- [x] When pickup is in TODA A and destination is outside A or in TODA B,
+  dispatch TODA A drivers and apply the configured outside-TODA surcharge once.
+  Any cross-TODA fallback must be an explicit developer-controlled policy, not
+  an automatic leak across TODA boundaries.
+- [x] Reject an uncovered pickup whenever at least one valid active geofence
+  exists. Preserve and snapshot an explicit `unconfigured_fallback` only when
+  the project has no valid coverage at all, so barangay pilot testing remains
+  possible.
+- [ ] Replace the automatic zero-geofence pilot fallback with a
+  developer-controlled setting before strict production rollout.
+- [ ] Define and reject ambiguous overlapping active TODA coverage, or resolve
+  it with a stored developer-approved priority; never depend on Firestore
+  document order.
+- [x] Snapshot `serviceTodaId`, pickup/destination coverage results, geofence
+  revision, boundary classification, fare-config version, and a complete
+  backend fare breakdown on the booking.
+- [x] Keep the authoritative formula as base fare plus started distance steps,
+  additional-passenger fees, baggage fees, and one boundary surcharge, all
+  rounded and stored in PHP.
+- [x] Fix the mobile fare mapping mismatch between
+  `outsideTodaSurcharge` and the legacy `outOfBarangayFee`, then render the
+  backend-confirmed breakdown rather than relying on a client-only estimate.
+
+### Zone-aware dispatch and simultaneous acceptance
+
+- [x] Apply hard eligibility filters before ranking: active user, approved and
+  available driver, active matching TODA, verified suitable vehicle, current
+  licence, no active booking, fresh/accurate online RTDB location, required
+  capacity, and pickup within the configured five-kilometre radius.
+- [x] Rank eligible same-TODA drivers by trusted driver-to-pickup distance
+  with a stable tie-breaker. Record rank, distance, zone revision, offer round,
+  and expiry in each offer.
+- [x] Offer the nearest five simultaneously and collect accept claims for a
+  1.5-second server window. Award the nearest still-eligible accepting driver,
+  then use server acceptance time and driver ID as stable tie-breakers.
+- [x] Keep booking assignment, driver reservation, accepted-offer state, and
+  audit data in one Firestore transaction so two drivers can never both win.
+  Return a clear `already accepted` result to the losing driver.
+- [x] Ensure a single driver's decline or withdrawn claim does not expire the
+  other still-valid offers in the same batch.
+- [ ] Add a sub-minute tier scheduler and driver offer countdown aligned with
+  the 60-second passenger search. The current 55-second first batch normally
+  leaves no useful scheduled second round.
+- [ ] Replace the current 500-document driver cap with a safe geo-indexed
+  candidate prefilter before claiming platform-scale nearest dispatch.
+
+### Restriction enforcement and driver warning
+
+- [x] Store restriction geometry in the same coordinate-map schema as coverage
+  data. Keep highway corridors as centreline points plus a metre buffer and
+  no-service/crossing restrictions as one or more polygons.
+- [x] Give each restriction type explicit behavior:
+  `no_service_area` rejects endpoints and crossing routes;
+  `restricted_crossing` rejects intersecting routes; and
+  `prohibited_highway` rejects routes entering its buffered corridor.
+- [x] Validate route segments against polygon edges and corridor segments, not
+  only decoded route vertices, so a sparse polyline cannot jump across a
+  narrow restriction undetected.
+- [x] Make the backend request and inspect route alternatives before accepting
+  a booking, then calculate fare from the selected allowed route. Keep mobile
+  checks for immediate UX, but never make them the only enforcement layer.
+- [ ] Address native Navigation SDK rerouting separately: the current native
+  session may choose a different route from the prechecked REST polyline.
+  Until a verified route-token/custom-route handoff exists, warn and stop
+  guidance when a restricted route is detected rather than claiming physical
+  geofence enforcement.
+- [x] Show a compact accessible warning banner in driver guidance. Prefer the
+  existing Material warning icon; if `assets/icons/warning.png` is used,
+  resize/optimize the 2100x2100 source before displaying it as a small icon.
+- [x] Keep essential ride/SOS controls enabled when a driver is inside a
+  restriction and show guidance to leave by a safe route.
+- [ ] Persist an audit event for live driver restriction entry/exit and add a
+  verified native custom-route handoff or stop-guidance policy.
+
+### Validation and handoff
+
+- [x] Add pure policy tests for coordinate parsing, boundary-inclusive
+  point-in-MultiPolygon, overlaps, segment/corridor conflicts, zone
+  classification, stable ranking, fare breakdown, and legacy parsing.
+- [ ] Extend the isolated Firebase emulator seed with a barangay test geofence,
+  at least two TODAs/drivers, and representative restriction geometries.
+- [x] Extend the emulator lifecycle script for geometry-v2 approval,
+  server-rejected restrictions, cross-boundary surcharge, and competing
+  near/far accepts.
+- [ ] Add remaining emulator cases for uncovered pickup, stale/wrong-TODA
+  exclusion, peer decline/offer expiry, and a second TODA.
+- [x] Add Flutter model/policy tests for coverage parsing/classification,
+  fare-key compatibility, route-restriction geometry, and the authoritative
+  callable booking quote.
+- [ ] Add widget coverage for passenger and driver restriction warning states.
+- [x] Run formatting, `flutter analyze`, the full Flutter suite, Functions
+  tests and syntax checks, admin TypeScript/build, and `git diff --check`.
+- [ ] Install or otherwise provide Firebase CLI, then execute the complete
+  isolated emulator seed and lifecycle verification.
+- [x] Record only completed implementation and actual validation evidence in
+  the matching appended section of `done.md`.

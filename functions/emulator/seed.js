@@ -148,6 +148,8 @@ async function seedDriver(account, vehicleNumber, plateNumber) {
     plateNumber,
     make: 'VolTrike',
     model: 'Electric Tricycle',
+    vehicleType: 'electric_tuktuk',
+    capacity: 4,
     color: 'Teal',
     isVerified: true,
     verifiedBy: accounts.developer.uid,
