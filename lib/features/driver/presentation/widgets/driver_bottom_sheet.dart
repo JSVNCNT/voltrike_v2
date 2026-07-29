@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/booking.dart';
+import '../../../ride/tracking/models/ride_action.dart';
+import '../../../ride/tracking/widgets/ride_confirmation_slider.dart';
 
 /// Driver controls are deliberately state-based: an incoming offer exposes
 /// only Accept/Decline, while an active trip exposes only valid next steps.
@@ -181,13 +183,37 @@ class _ActiveRideControls extends StatelessWidget {
     final actions = <Widget>[];
     if (status == BookingStatus.driverAssigned) {
       actions.add(_button('Navigate', onNavigate));
-      actions.add(_button('Arrived', onArrived));
+      actions.add(
+        RideConfirmationSlider(
+          action: RidePrimaryAction.arriveAtPickup,
+          enabled: onArrived != null,
+          onConfirmed: onArrived ?? () {},
+        ),
+      );
     } else if (status == BookingStatus.driverArriving) {
-      actions.add(_button('Start Trip', onStartTrip));
+      actions.add(
+        RideConfirmationSlider(
+          action: RidePrimaryAction.startTrip,
+          enabled: onStartTrip != null,
+          onConfirmed: onStartTrip ?? () {},
+        ),
+      );
     } else if (status == BookingStatus.passengerOnBoard) {
-      actions.add(_button('Drop Off Passenger', onCompleteTrip, filled: true));
+      actions.add(
+        RideConfirmationSlider(
+          action: RidePrimaryAction.dropOffPassenger,
+          enabled: onCompleteTrip != null,
+          onConfirmed: onCompleteTrip ?? () {},
+        ),
+      );
     } else if (status == BookingStatus.paymentConfirmation) {
-      actions.add(_button('Confirm Cash Received', onCompleteTrip, filled: true));
+      actions.add(
+        RideConfirmationSlider(
+          action: RidePrimaryAction.completeTrip,
+          enabled: onCompleteTrip != null,
+          onConfirmed: onCompleteTrip ?? () {},
+        ),
+      );
     }
     if (status == BookingStatus.driverAssigned ||
         status == BookingStatus.driverArriving) {

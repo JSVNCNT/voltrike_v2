@@ -103,7 +103,9 @@ class RideActionsCard extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             const spacing = 8.0;
-            final itemWidth = (constraints.maxWidth - spacing) / 2;
+            final itemWidth = actions.length == 1
+                ? constraints.maxWidth
+                : (constraints.maxWidth - spacing) / 2;
             return Wrap(
               spacing: spacing,
               runSpacing: spacing,

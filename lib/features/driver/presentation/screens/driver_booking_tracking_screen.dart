@@ -28,9 +28,10 @@ import '../../../ride/tracking/services/ride_action_service.dart';
 import '../../../ride/tracking/services/ride_safety_service.dart';
 import '../../../ride/tracking/services/ride_stage_presentation_service.dart';
 import '../../../ride/tracking/widgets/ride_actions_card.dart';
+import '../../../ride/tracking/widgets/ride_confirmation_slider.dart';
 import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
+import '../../../ride/tracking/widgets/ride_quick_actions.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
-import '../../../ride/tracking/widgets/ride_primary_button.dart';
 import '../../../ride/chat/ride_chat_alert_listener.dart';
 
 class DriverBookingTrackingScreen extends ConsumerStatefulWidget {
@@ -385,7 +386,7 @@ class _DriverBookingTrackingScreenState
     }
   }
 
-  Widget _rideActions(Booking booking) {
+  Widget _quickRideActions(Booking booking) {
     final stage = RideStagePresentationService.resolve(
       role: RideParticipantRole.driver,
       status: booking.status,
@@ -398,14 +399,14 @@ class _DriverBookingTrackingScreenState
               bookingId: booking.bookingId,
               userId: userId,
             ),
-      builder: (context, snapshot) => RideActionsCard(
+      builder: (context, snapshot) => RideQuickActions(
         onCall: stage.allowContact
             ? () => context.push(
                 AppRoutes.bookingVoiceCall,
                 extra: booking.bookingId,
               )
             : null,
-        onMessage: stage.allowContact
+        onChat: stage.allowContact
             ? () => context.push(
                 AppRoutes.bookingChat,
                 extra: {
@@ -414,7 +415,6 @@ class _DriverBookingTrackingScreenState
                 },
               )
             : null,
-        onCancel: stage.allowCancel ? () => _cancelRide(booking) : null,
         onReport: stage.allowReport ? () => _reportPassenger(booking) : null,
         onSos: stage.allowSos && !_sosSubmitting
             ? () => _triggerSos(booking)
@@ -425,9 +425,19 @@ class _DriverBookingTrackingScreenState
                 _safetyIncident?.isActive == true
             ? () => _updateSafetyStatus(booking)
             : null,
-        onNoShow: stage.allowNoShow ? () => _markNoShow(booking) : null,
         messageBadge: snapshot.data ?? 0,
       ),
+    );
+  }
+
+  Widget _moreRideActions(Booking booking) {
+    final stage = RideStagePresentationService.resolve(
+      role: RideParticipantRole.driver,
+      status: booking.status,
+    );
+    return RideActionsCard(
+      onCancel: stage.allowCancel ? () => _cancelRide(booking) : null,
+      onNoShow: stage.allowNoShow ? () => _markNoShow(booking) : null,
     );
   }
 
@@ -517,27 +527,16 @@ class _DriverBookingTrackingScreenState
                   role: RideParticipantRole.driver,
                   eta: navigation.eta,
                   distance: navigation.distance,
+                  compact: true,
                 ),
-                if (navigation.isTurnByTurnActive ||
-                    navigation.isRerouting) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Chip(
-                      avatar: Icon(
-                        navigation.isRerouting
-                            ? Icons.sync_rounded
-                            : Icons.navigation_rounded,
-                        size: 18,
-                      ),
-                      label: Text(
-                        navigation.isRerouting
-                            ? 'Rerouting with live traffic'
-                            : 'In-app navigation beta',
-                      ),
-                    ),
-                  ),
-                ],
+                const SizedBox(height: 8),
+                PassengerInformationCard(
+                  passengerName: booking.passengerName ?? 'Passenger',
+                  photoUrl: booking.passengerPhotoUrl,
+                  compact: true,
+                ),
+                const SizedBox(height: 8),
+                _quickRideActions(booking),
                 if (navigation.instruction?.isNotEmpty == true) ...[
                   const SizedBox(height: 10),
                   Card(
@@ -559,21 +558,19 @@ class _DriverBookingTrackingScreenState
                   ),
                 ],
                 const SizedBox(height: 10),
-                PassengerInformationCard(
-                  passengerName: booking.passengerName ?? 'Passenger',
-                  photoUrl: booking.passengerPhotoUrl,
-                ),
-                const SizedBox(height: 10),
-                _rideActions(booking),
-                const SizedBox(height: 10),
                 TripInformationCard(
                   pickup: booking.pickupAddress,
                   destination: booking.destinationAddress,
                   distance:
                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-                  duration: navigation.duration ?? '--',
+                  duration: navigation.duration ?? 'Updating…',
                   fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
                 ),
+                if (booking.status == BookingStatus.driverAssigned ||
+                    booking.status == BookingStatus.driverArriving) ...[
+                  const SizedBox(height: 10),
+                  _moreRideActions(booking),
+                ],
               ],
             ),
           ),
@@ -581,10 +578,11 @@ class _DriverBookingTrackingScreenState
             SafeArea(
               top: false,
               minimum: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-              child: RidePrimaryButton(
+              child: RideConfirmationSlider(
+                key: ValueKey(primaryAction),
                 action: primaryAction,
                 isLoading: isUpdatingRide,
-                onPressed: () => _advanceRide(booking),
+                onConfirmed: () => _advanceRide(booking),
               ),
             ),
         ],
@@ -672,6 +670,7 @@ class _DriverBookingTrackingScreenState
                       onMapCreated: _onMapCreated,
                       myLocationEnabled: true,
                       myLocationButtonEnabled: true,
+                      trafficEnabled: true,
                       zoomControlsEnabled: false,
                       padding: EdgeInsets.only(
                         bottom: MediaQuery.sizeOf(context).height * 0.18,
@@ -788,11 +787,15 @@ class _DriverBookingTrackingScreenState
               ),
             ],
             DraggableScrollableSheet(
-              initialChildSize: 0.48,
-              minChildSize: 0.16,
-              maxChildSize: 0.88,
+              initialChildSize: MediaQuery.sizeOf(context).height < 720
+                  ? 0.66
+                  : 0.58,
+              minChildSize: 0.22,
+              maxChildSize: 0.90,
               snap: true,
-              snapSizes: const [0.16, 0.48, 0.88],
+              snapSizes: MediaQuery.sizeOf(context).height < 720
+                  ? const [0.22, 0.66, 0.90]
+                  : const [0.22, 0.58, 0.90],
               builder: (context, scrollController) => _trackingSheet(
                 booking: booking,
                 navigation: navigation,

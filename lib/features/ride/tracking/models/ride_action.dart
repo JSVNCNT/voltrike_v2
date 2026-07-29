@@ -39,10 +39,10 @@ extension RidePrimaryActionExtension on RidePrimaryAction {
         return 'Start Trip';
 
       case RidePrimaryAction.dropOffPassenger:
-        return 'Drop Off Passenger';
+        return 'Arrived at Destination';
 
       case RidePrimaryAction.completeTrip:
-        return 'Confirm Cash Received';
+        return 'Confirm Payment';
 
       case RidePrimaryAction.cancelRide:
         return 'Cancel Ride';

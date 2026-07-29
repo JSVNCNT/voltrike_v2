@@ -13,6 +13,7 @@ class PassengerInformationCard extends StatelessWidget {
     super.key,
     required this.passengerName,
     this.photoUrl,
+    this.compact = false,
   });
 
   /// Passenger's display name.
@@ -20,6 +21,7 @@ class PassengerInformationCard extends StatelessWidget {
 
   /// Optional passenger profile photo.
   final String? photoUrl;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +34,7 @@ class PassengerInformationCard extends StatelessWidget {
       elevation: 0,
       color: colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(compact ? 12 : 16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [

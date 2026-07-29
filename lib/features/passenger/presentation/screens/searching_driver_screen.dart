@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/booking.dart';
 
 import '../../controllers/passenger_booking_flow_controller.dart';
@@ -263,10 +264,11 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen> {
                     points: _routePoints.isEmpty
                         ? [bookingData.pickup, bookingData.destination]
                         : _routePoints,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: AppColors.trafficRoute,
                     width: 5,
                   ),
                 },
+                trafficEnabled: true,
                 zoomControlsEnabled: false,
                 myLocationButtonEnabled: false,
               ),
@@ -354,7 +356,9 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen> {
                               ),
                             );
                           } finally {
-                            if (mounted) setState(() => _cancelling = false);
+                            if (mounted) {
+                              setState(() => _cancelling = false);
+                            }
                           }
                         },
                         icon: const Icon(Icons.close),

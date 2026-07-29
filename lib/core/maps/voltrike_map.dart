@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:google_navigation_flutter/google_navigation_flutter.dart'
     as navigation;
 
+import '../theme/app_colors.dart';
+
 /// App-owned geographic coordinate.
 ///
 /// Keeping this type outside the provider SDK prevents bookings, repositories,
@@ -200,7 +202,7 @@ class Polyline {
     required this.polylineId,
     required this.points,
     this.width = 10,
-    this.color = Colors.black,
+    this.color = AppColors.trafficRoute,
     this.geodesic = false,
     this.visible = true,
   });

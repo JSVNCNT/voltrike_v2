@@ -19,6 +19,7 @@ class DriverInformationCard extends StatelessWidget {
     required this.todaName,
     this.photoUrl,
     this.rating,
+    this.compact = false,
   });
 
   final String driverName;
@@ -27,6 +28,7 @@ class DriverInformationCard extends StatelessWidget {
   final String todaName;
   final String? photoUrl;
   final double? rating;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +41,7 @@ class DriverInformationCard extends StatelessWidget {
       elevation: 0,
       color: colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(compact ? 12 : 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -110,24 +112,40 @@ class DriverInformationCard extends StatelessWidget {
                 ),
               ],
             ),
-            const Divider(height: 28),
-            _DriverDetail(
-              icon: Icons.electric_rickshaw_outlined,
-              label: 'Vehicle',
-              value: vehicleNumber,
-            ),
-            const SizedBox(height: 10),
-            _DriverDetail(
-              icon: Icons.confirmation_number_outlined,
-              label: 'Plate number',
-              value: plateNumber,
-            ),
-            const SizedBox(height: 10),
-            _DriverDetail(
-              icon: Icons.location_city_outlined,
-              label: 'TODA',
-              value: todaName,
-            ),
+            if (compact) ...[
+              const SizedBox(height: 8),
+              Text(
+                [
+                  vehicleNumber,
+                  plateNumber,
+                ].where((value) => value.trim().isNotEmpty).join(' • '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ] else ...[
+              const Divider(height: 28),
+              _DriverDetail(
+                icon: Icons.electric_rickshaw_outlined,
+                label: 'Vehicle',
+                value: vehicleNumber,
+              ),
+              const SizedBox(height: 10),
+              _DriverDetail(
+                icon: Icons.confirmation_number_outlined,
+                label: 'Plate number',
+                value: plateNumber,
+              ),
+              const SizedBox(height: 10),
+              _DriverDetail(
+                icon: Icons.location_city_outlined,
+                label: 'TODA',
+                value: todaName,
+              ),
+            ],
           ],
         ),
       ),

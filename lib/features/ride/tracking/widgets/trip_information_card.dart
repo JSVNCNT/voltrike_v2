@@ -140,7 +140,10 @@ class _LocationDetail extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Text(value, style: theme.textTheme.bodyMedium),
+              Text(
+                _readable(value, 'Location unavailable'),
+                style: theme.textTheme.bodyMedium,
+              ),
             ],
           ),
         ),
@@ -186,8 +189,9 @@ class _TripMetric extends StatelessWidget {
                 ),
               ),
               Text(
-                value,
+                _readable(value, 'Updating…'),
                 style: theme.textTheme.labelLarge?.copyWith(
+                  color: colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -197,4 +201,10 @@ class _TripMetric extends StatelessWidget {
       ),
     );
   }
+}
+
+String _readable(String value, String fallback) {
+  final normalized = value.trim();
+  if (normalized.isEmpty || normalized == '--') return fallback;
+  return normalized;
 }

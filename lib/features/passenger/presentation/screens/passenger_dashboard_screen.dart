@@ -75,6 +75,7 @@ class PassengerDashboardScreen extends ConsumerWidget {
                           user.displayName ??
                           user.email ??
                           'Passenger',
+                      photoUrl: userSnapshot.data?.profileImage,
                     );
                   },
                 ),

@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/booking.dart';
+import 'profile_avatar.dart';
 
 class DashboardIdentityCard extends StatelessWidget {
   const DashboardIdentityCard({
     super.key,
     required this.eyebrow,
     required this.name,
+    this.photoUrl,
     this.statusLabel,
     this.statusColor,
   });
 
   final String eyebrow;
   final String name;
+  final String? photoUrl;
   final String? statusLabel;
   final Color? statusColor;
 
@@ -24,17 +27,10 @@ class DashboardIdentityCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                color: AppColors.primaryContainer,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.electric_rickshaw_rounded,
-                color: AppColors.primaryDark,
-              ),
+            ProfileAvatar(
+              imageUrl: photoUrl?.trim(),
+              radius: 24,
+              showBorder: true,
             ),
             const SizedBox(width: 14),
             Expanded(

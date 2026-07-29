@@ -20,6 +20,7 @@ import '../../providers/driver_location_listener_provider.dart';
 import '../widgets/driver_information_card.dart';
 
 import '../../../ride/tracking/widgets/ride_actions_card.dart';
+import '../../../ride/tracking/widgets/ride_quick_actions.dart';
 import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../../ride/tracking/widgets/trip_information_card.dart';
@@ -288,7 +289,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     );
   }
 
-  Widget _activeRideActions(Booking booking) {
+  Widget _quickRideActions(Booking booking) {
     final stage = RideStagePresentationService.resolve(
       role: RideParticipantRole.passenger,
       status: booking.status,
@@ -301,10 +302,9 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
               bookingId: booking.bookingId,
               userId: userId,
             ),
-      builder: (context, snapshot) => RideActionsCard(
+      builder: (context, snapshot) => RideQuickActions(
         onCall: stage.allowContact ? () => _openCall(booking) : null,
-        onMessage: stage.allowContact ? () => _openChat(booking) : null,
-        onCancel: stage.allowCancel ? () => _cancelBooking(booking) : null,
+        onChat: stage.allowContact ? () => _openChat(booking) : null,
         onReport: stage.allowReport ? () => _reportDriver(booking) : null,
         onSos: stage.allowSos && !_sosSubmitting
             ? () => _triggerSos(booking)
@@ -317,6 +317,16 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
             : null,
         messageBadge: snapshot.data ?? 0,
       ),
+    );
+  }
+
+  Widget _moreRideActions(Booking booking) {
+    final stage = RideStagePresentationService.resolve(
+      role: RideParticipantRole.passenger,
+      status: booking.status,
+    );
+    return RideActionsCard(
+      onCancel: stage.allowCancel ? () => _cancelBooking(booking) : null,
     );
   }
 
@@ -481,6 +491,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                   role: RideParticipantRole.passenger,
                   eta: _eta,
                   distance: _remainingDistance,
+                  compact: true,
                 ),
                 if (_routeWarning != null) ...[
                   const SizedBox(height: 8),
@@ -499,18 +510,24 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                   todaName: booking.todaName ?? 'Not available',
                   photoUrl: booking.driverPhotoUrl,
                   rating: booking.driverRating,
+                  compact: true,
                 ),
-                const SizedBox(height: 10),
-                _activeRideActions(booking),
+                const SizedBox(height: 8),
+                _quickRideActions(booking),
                 const SizedBox(height: 10),
                 TripInformationCard(
                   pickup: booking.pickupAddress,
                   destination: booking.destinationAddress,
                   distance:
                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-                  duration: _eta ?? '--',
+                  duration: _eta ?? 'Updating…',
                   fare: '₱${booking.estimatedFare.toStringAsFixed(2)}',
                 ),
+                if (booking.status == BookingStatus.driverAssigned ||
+                    booking.status == BookingStatus.driverArriving) ...[
+                  const SizedBox(height: 10),
+                  _moreRideActions(booking),
+                ],
               ],
             ),
           ),
@@ -628,6 +645,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                         onMapCreated: _onMapCreated,
                         myLocationEnabled: true,
                         myLocationButtonEnabled: true,
+                        trafficEnabled: true,
                         zoomControlsEnabled: false,
                         padding: EdgeInsets.only(
                           bottom: MediaQuery.sizeOf(context).height * 0.18,
@@ -694,11 +712,15 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                       ),
                     ],
                     DraggableScrollableSheet(
-                      initialChildSize: 0.48,
-                      minChildSize: 0.16,
-                      maxChildSize: 0.88,
+                      initialChildSize: MediaQuery.sizeOf(context).height < 720
+                          ? 0.60
+                          : 0.52,
+                      minChildSize: 0.20,
+                      maxChildSize: 0.90,
                       snap: true,
-                      snapSizes: const [0.16, 0.48, 0.88],
+                      snapSizes: MediaQuery.sizeOf(context).height < 720
+                          ? const [0.20, 0.60, 0.90]
+                          : const [0.20, 0.52, 0.90],
                       builder: (context, scrollController) => _trackingSheet(
                         booking: booking,
                         scrollController: scrollController,

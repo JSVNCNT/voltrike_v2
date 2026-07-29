@@ -56,6 +56,7 @@ class _DriverMapViewState extends State<DriverMapView> {
 
           myLocationEnabled: true,
           myLocationButtonEnabled: true,
+          trafficEnabled: true,
 
           zoomControlsEnabled: false,
           compassEnabled: true,

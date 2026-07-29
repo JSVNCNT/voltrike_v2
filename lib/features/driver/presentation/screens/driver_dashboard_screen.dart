@@ -101,12 +101,17 @@ class DriverDashboardScreen extends ConsumerWidget {
                     FutureBuilder(
                       future: UserRepository().getUser(user.uid),
                       builder: (context, userSnapshot) {
+                        final userPhoto = userSnapshot.data?.profileImage
+                            .trim();
                         return DashboardIdentityCard(
                           eyebrow: 'Driver dashboard',
                           name:
                               userSnapshot.data?.fullName ??
                               user.displayName ??
                               'Driver',
+                          photoUrl: userPhoto?.isNotEmpty == true
+                              ? userPhoto
+                              : driver.profilePhotoUrl,
                           statusLabel: driver.isOnline ? 'Online' : 'Offline',
                           statusColor: driver.isOnline
                               ? AppColors.success

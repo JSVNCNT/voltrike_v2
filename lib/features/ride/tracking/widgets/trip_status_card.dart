@@ -12,12 +12,14 @@ class TripStatusCard extends StatelessWidget {
     required this.role,
     this.eta,
     this.distance,
+    this.compact = false,
   });
 
   final BookingStatus status;
   final RideParticipantRole role;
   final String? eta;
   final String? distance;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -32,39 +34,47 @@ class TripStatusCard extends StatelessWidget {
       elevation: 0,
       color: colorScheme.primaryContainer.withValues(alpha: 0.58),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(compact ? 12 : 16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
-              radius: 23,
+              radius: compact ? 20 : 23,
               backgroundColor: colorScheme.primary,
               foregroundColor: colorScheme.onPrimary,
               child: Icon(rideStatus.icon),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: compact ? 10 : 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     rideStatus.title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style:
+                        (compact
+                                ? theme.textTheme.titleSmall
+                                : theme.textTheme.titleMedium)
+                            ?.copyWith(
+                              color: colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.w700,
+                            ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: compact ? 2 : 4),
                   Text(
                     rideStatus.description,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onPrimaryContainer.withValues(
-                        alpha: 0.82,
-                      ),
-                    ),
+                    style:
+                        (compact
+                                ? theme.textTheme.bodySmall
+                                : theme.textTheme.bodyMedium)
+                            ?.copyWith(
+                              color: colorScheme.onPrimaryContainer.withValues(
+                                alpha: 0.82,
+                              ),
+                            ),
                   ),
                   if (eta != null || distance != null) ...[
-                    const SizedBox(height: 12),
+                    SizedBox(height: compact ? 8 : 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,

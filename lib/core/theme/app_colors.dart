@@ -13,6 +13,13 @@ class AppColors {
   static const Color brandAccent = Color(0xFF008B8B);
   static const Color primaryContainer = Color(0xFFD8EFEF);
 
+  /// High-contrast route color used over both light and dark Google Maps.
+  ///
+  /// The route is traffic-aware; live congestion remains visible through the
+  /// native traffic layer instead of encoding an unverified traffic level in
+  /// the route stroke itself.
+  static const Color trafficRoute = Color(0xFF3B82F6);
+
   // ---------------------------------------------------------------------------
   // Background
   // ---------------------------------------------------------------------------
