@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   BOOKING_STATUS,
   activeStatus,
+  cancellationExpectedStatuses,
   canTransition,
   distanceMeters,
   nextRatingAggregate,
@@ -27,6 +28,27 @@ test('terminal status detection is stable', () => {
   assert.equal(activeStatus(BOOKING_STATUS.pending), true);
   assert.equal(activeStatus(BOOKING_STATUS.completed), false);
   assert.equal(activeStatus(BOOKING_STATUS.cancelled), false);
+});
+
+test('search timeout can cancel only a still-pending passenger request', () => {
+  assert.deepEqual(
+    cancellationExpectedStatuses({
+      isDriver: false,
+      cancellationCode: 'search_timeout',
+    }),
+    [BOOKING_STATUS.pending],
+  );
+  assert.deepEqual(
+    cancellationExpectedStatuses({
+      isDriver: false,
+      cancellationCode: 'cancelled_by_passenger',
+    }),
+    [
+      BOOKING_STATUS.pending,
+      BOOKING_STATUS.driverAssigned,
+      BOOKING_STATUS.driverArriving,
+    ],
+  );
 });
 
 test('operation and booking IDs reject unsafe values', () => {

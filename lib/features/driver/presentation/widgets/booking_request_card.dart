@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_semantic_colors.dart';
+
 /// ===========================================================================
 /// Booking Request Card
 ///
@@ -36,6 +38,7 @@ class BookingRequestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final semantic = AppSemanticColors.of(context);
 
     return Card(
       elevation: 6,
@@ -97,14 +100,14 @@ class BookingRequestCard extends StatelessWidget {
               icon: Icons.trip_origin,
               label: 'Pickup',
               address: pickupAddress,
-              color: Colors.green,
+              color: semantic.success,
             ),
             const SizedBox(height: 8),
             _LocationLine(
               icon: Icons.location_on,
               label: 'Destination',
               address: destinationAddress,
-              color: Colors.red,
+              color: colorScheme.error,
             ),
             const SizedBox(height: 12),
 

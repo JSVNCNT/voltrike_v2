@@ -216,11 +216,13 @@ class _RideConfirmationSliderState extends State<RideConfirmationSlider> {
                       duration: const Duration(milliseconds: 90),
                       child: Text(
                         statusLabel,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: theme.textTheme.labelLarge?.copyWith(
-                          color: colorScheme.onPrimary,
+                          color: widget.enabled
+                              ? colorScheme.onPrimary
+                              : colorScheme.onSurfaceVariant,
                           fontWeight: FontWeight.w700,
                         ),
                       ),

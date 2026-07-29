@@ -40,6 +40,12 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
   bool _hasSdkLocation = false;
   String? _routedLegKey;
   int _routeEpoch = 0;
+  Brightness? _brightness;
+
+  navigation.NavigationForceNightMode get _forceNightMode =>
+      _brightness == Brightness.dark
+      ? navigation.NavigationForceNightMode.forceNight
+      : navigation.NavigationForceNightMode.forceDay;
 
   @override
   void initState() {
@@ -47,6 +53,18 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_initializeSession());
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    if (_brightness == brightness) return;
+    _brightness = brightness;
+    final controller = _viewController;
+    if (controller != null) {
+      unawaited(controller.setForceNightMode(_forceNightMode));
+    }
   }
 
   @override
@@ -182,6 +200,7 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
         controller.setSpeedLimitIconEnabled(false),
         controller.setTrafficIncidentCardsEnabled(true),
         controller.setTrafficPromptsEnabled(true),
+        controller.setForceNightMode(_forceNightMode),
       ]);
       await controller.followMyLocation(navigation.CameraPerspective.tilted);
       await _setDestinationWhenReady();
@@ -293,6 +312,7 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
           navigation.NavigationUIEnabledPreference.automatic,
       initialMapToolbarEnabled: false,
       initialZoomControlsEnabled: false,
+      initialForceNightMode: _forceNightMode,
     );
   }
 

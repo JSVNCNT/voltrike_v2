@@ -9,6 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app.dart';
 import 'config/firebase_emulator_config.dart';
 import 'config/firebase_options.dart';
+import 'core/providers/theme_provider.dart';
+import 'core/theme/app_theme.dart';
+import 'core/theme/theme_preference_store.dart';
 import 'features/common/services/notification_service.dart';
 
 Future<void> main() async {
@@ -16,6 +19,15 @@ Future<void> main() async {
     () async {
       // Flutter bindings and runApp must use the same zone.
       WidgetsFlutterBinding.ensureInitialized();
+
+      ThemePreferenceStore themePreferenceStore;
+      try {
+        themePreferenceStore =
+            await SharedPreferencesThemePreferenceStore.create();
+      } catch (error) {
+        debugPrint('Theme preferences unavailable: $error');
+        themePreferenceStore = MemoryThemePreferenceStore();
+      }
 
       // Handle Flutter framework errors.
       FlutterError.onError = FlutterError.presentError;
@@ -41,20 +53,20 @@ Future<void> main() async {
         DeviceOrientation.portraitUp,
       ]);
 
-      // Configure the system UI.
+      // Configure the system UI for the first frame. The app and light-only
+      // public routes keep it synchronized after startup.
       SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-          systemNavigationBarColor: Colors.white,
-          systemNavigationBarIconBrightness: Brightness.dark,
-        ),
+        AppTheme.systemUiOverlayStyleFor(themePreferenceStore.read()),
       );
 
       runApp(
-        const ProviderScope(
-          child: VolTrikeApp(),
+        ProviderScope(
+          overrides: [
+            themePreferenceStoreProvider.overrideWithValue(
+              themePreferenceStore,
+            ),
+          ],
+          child: const VolTrikeApp(),
         ),
       );
     },

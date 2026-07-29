@@ -42,6 +42,20 @@ function activeStatus(status) {
     status !== BOOKING_STATUS.cancelled;
 }
 
+function cancellationExpectedStatuses({ isDriver, cancellationCode }) {
+  if (isDriver) {
+    return [BOOKING_STATUS.driverAssigned, BOOKING_STATUS.driverArriving];
+  }
+  if (cancellationCode === 'search_timeout') {
+    return [BOOKING_STATUS.pending];
+  }
+  return [
+    BOOKING_STATUS.pending,
+    BOOKING_STATUS.driverAssigned,
+    BOOKING_STATUS.driverArriving,
+  ];
+}
+
 function validOperationId(value) {
   return typeof value === 'string' &&
     /^[A-Za-z0-9_-]{8,128}$/.test(value);
@@ -98,6 +112,7 @@ module.exports = {
   BOOKING_STATUS,
   TRANSITIONS,
   activeStatus,
+  cancellationExpectedStatuses,
   canTransition,
   distanceMeters,
   nextRatingAggregate,

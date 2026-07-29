@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-import '../../theme/app_text_styles.dart';
-
 class SectionTitle extends StatelessWidget {
   const SectionTitle({
     super.key,
@@ -26,18 +23,13 @@ class SectionTitle extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: AppTextStyles.headlineMedium,
-                ),
+                Text(title, style: Theme.of(context).textTheme.headlineMedium),
 
                 if (subtitle != null) ...[
                   const SizedBox(height: 6),
                   Text(
                     subtitle!,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ],
               ],

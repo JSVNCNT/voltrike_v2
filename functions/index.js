@@ -13,6 +13,7 @@ const {
 const { ServerValue } = require('firebase-admin/database');
 const {
   BOOKING_STATUS,
+  cancellationExpectedStatuses,
   distanceMeters,
   nextRatingAggregate,
   normalizeCoordinate,
@@ -3330,12 +3331,17 @@ exports.transitionBookingLifecycle = onCall(
       } else {
         nextStatus = BOOKING_STATUS.cancelled;
         actorRole = isDriver ? 'driver' : 'passenger';
-        expectedStatuses = isDriver
-          ? [BOOKING_STATUS.driverAssigned, BOOKING_STATUS.driverArriving]
-          : [BOOKING_STATUS.pending, BOOKING_STATUS.driverAssigned, BOOKING_STATUS.driverArriving];
-        cancellationCode = action === 'noShow'
+        const requestedCancellationCode = action === 'noShow'
           ? (isDriver ? 'passenger_no_show' : 'driver_no_show')
-          : requiredString(request.data?.reasonCode || 'cancelled', 'Cancellation reason');
+          : requiredString(
+            request.data?.reasonCode || 'cancelled',
+            'Cancellation reason',
+          );
+        expectedStatuses = cancellationExpectedStatuses({
+          isDriver,
+          cancellationCode: requestedCancellationCode,
+        });
+        cancellationCode = requestedCancellationCode;
       }
       if (data.status === nextStatus) {
         const sameTerminalActor = nextStatus !== BOOKING_STATUS.cancelled ||

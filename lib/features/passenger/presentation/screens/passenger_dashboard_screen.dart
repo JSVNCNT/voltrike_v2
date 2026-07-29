@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/driver_rating.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -21,6 +21,8 @@ class PassengerDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final user = AuthRepository().currentUser;
     if (user == null) {
       return const Scaffold(
@@ -94,19 +96,19 @@ class PassengerDashboardScreen extends ConsumerWidget {
                         icon: Icons.check_circle_outline_rounded,
                         value: '$completedTrips',
                         label: 'Completed',
-                        color: AppColors.success,
+                        color: semantic.success,
                       ),
                       DashboardMetricCard(
                         icon: Icons.schedule_rounded,
                         value: '$pendingTrips',
                         label: 'Pending',
-                        color: AppColors.warning,
+                        color: semantic.warning,
                       ),
                       DashboardMetricCard(
                         icon: Icons.cancel_outlined,
                         value: '$cancelledTrips',
                         label: 'Cancelled',
-                        color: AppColors.error,
+                        color: colors.error,
                       ),
                     ],
                   ),
@@ -123,10 +125,7 @@ class PassengerDashboardScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-                _PassengerRatingsCard(
-                  passengerId: user.uid,
-                  trips: trips,
-                ),
+                _PassengerRatingsCard(passengerId: user.uid, trips: trips),
                 const SizedBox(height: 24),
                 DashboardSection(
                   title: recentTrip == null ? 'Recent trip' : 'Latest trip',
@@ -154,10 +153,8 @@ class PassengerDashboardScreen extends ConsumerWidget {
       return null;
     }
     return FilledButton.icon(
-      onPressed: () => context.push(
-        AppRoutes.driverTracking,
-        extra: booking.bookingId,
-      ),
+      onPressed: () =>
+          context.push(AppRoutes.driverTracking, extra: booking.bookingId),
       icon: const Icon(Icons.map_outlined),
       label: const Text('Open trip'),
     );
@@ -178,16 +175,14 @@ class PassengerDashboardScreen extends ConsumerWidget {
 }
 
 class _PassengerRatingsCard extends StatelessWidget {
-  const _PassengerRatingsCard({
-    required this.passengerId,
-    required this.trips,
-  });
+  const _PassengerRatingsCard({required this.passengerId, required this.trips});
 
   final String passengerId;
   final List<Booking> trips;
 
   @override
   Widget build(BuildContext context) {
+    final semantic = AppSemanticColors.of(context);
     return DashboardSection(
       title: 'Trip feedback',
       child: StreamBuilder<List<DriverRating>>(
@@ -250,10 +245,7 @@ class _PassengerRatingsCard extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(
-                        Icons.star_rounded,
-                        color: AppColors.rating,
-                      ),
+                      Icon(Icons.star_rounded, color: semantic.rating),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -310,9 +302,9 @@ class _PassengerRatingsCard extends StatelessWidget {
                     Text(
                       'Saved ratings could not be refreshed. You can still rate '
                       'a completed trip from Trip History.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.warning,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: semantic.warning),
                     ),
                   ],
                 ],

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
-import '../../theme/app_text_styles.dart';
 
 class OutlinedPrimaryButton extends StatelessWidget {
   const OutlinedPrimaryButton({
@@ -20,6 +18,7 @@ class OutlinedPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: double.infinity,
       child: ConstrainedBox(
@@ -27,8 +26,8 @@ class OutlinedPrimaryButton extends StatelessWidget {
         child: OutlinedButton(
           onPressed: onPressed,
           style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.primary,
-            side: const BorderSide(color: AppColors.primary, width: 1.5),
+            foregroundColor: colorScheme.primary,
+            side: BorderSide(color: colorScheme.primary, width: 1.5),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.md),
             ),
@@ -46,9 +45,9 @@ class OutlinedPrimaryButton extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: AppTextStyles.button.copyWith(
-                    color: AppColors.primary,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(color: colorScheme.primary),
                 ),
               ),
             ],

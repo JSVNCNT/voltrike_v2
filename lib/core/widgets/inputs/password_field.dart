@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-import '../../theme/app_text_styles.dart';
-
 class PasswordField extends StatefulWidget {
   const PasswordField({
     super.key,
@@ -56,14 +53,17 @@ class _PasswordFieldState extends State<PasswordField> {
       autofillHints: widget.autofillHints,
       textInputAction: widget.textInputAction,
       onFieldSubmitted: widget.onFieldSubmitted,
-      style: AppTextStyles.bodyMedium,
+      style: Theme.of(context).textTheme.bodyMedium,
       onTapOutside: (_) {
         FocusScope.of(context).unfocus();
       },
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hint,
-        prefixIcon: Icon(widget.prefixIcon, color: AppColors.primary),
+        prefixIcon: Icon(
+          widget.prefixIcon,
+          color: Theme.of(context).colorScheme.primary,
+        ),
         suffixIcon: IconButton(
           tooltip: _obscure ? 'Show password' : 'Hide password',
           icon: Icon(

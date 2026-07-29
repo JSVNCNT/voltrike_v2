@@ -47,6 +47,7 @@ class DriverBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOffer = onAcceptBooking != null || onDeclineBooking != null;
+    final colors = Theme.of(context).colorScheme;
     // Treat malformed legacy state as idle. The offer card is the only path
     // that may show a request before it is accepted; active-trip details need
     // both trusted addresses.
@@ -60,9 +61,9 @@ class DriverBottomSheet extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
         top: false,
@@ -75,7 +76,7 @@ class DriverBottomSheet extends StatelessWidget {
                 width: 48,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: colors.outlineVariant,
                   borderRadius: BorderRadius.circular(99),
                 ),
               ),
@@ -96,7 +97,7 @@ class DriverBottomSheet extends StatelessWidget {
                     offerCooldownSeconds > 0
                         ? 'New booking offers resume in $offerCooldownSeconds seconds.'
                         : 'Waiting for booking requests...',
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(color: colors.onSurfaceVariant),
                   ),
                 ),
               )
@@ -182,7 +183,7 @@ class _ActiveRideControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final actions = <Widget>[];
     if (status == BookingStatus.driverAssigned) {
-      actions.add(_button('Navigate', onNavigate));
+      actions.add(_button(context, 'Navigate', onNavigate));
       actions.add(
         RideConfirmationSlider(
           action: RidePrimaryAction.arriveAtPickup,
@@ -217,7 +218,9 @@ class _ActiveRideControls extends StatelessWidget {
     }
     if (status == BookingStatus.driverAssigned ||
         status == BookingStatus.driverArriving) {
-      actions.add(_button('Cancel Trip', onCancelTrip, destructive: true));
+      actions.add(
+        _button(context, 'Cancel Trip', onCancelTrip, destructive: true),
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -231,6 +234,7 @@ class _ActiveRideControls extends StatelessWidget {
   }
 
   Widget _button(
+    BuildContext context,
     String label,
     VoidCallback? onPressed, {
     bool filled = false,
@@ -240,7 +244,9 @@ class _ActiveRideControls extends StatelessWidget {
     return OutlinedButton(
       onPressed: onPressed,
       style: destructive
-          ? OutlinedButton.styleFrom(foregroundColor: Colors.red)
+          ? OutlinedButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            )
           : null,
       child: Text(label),
     );

@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/models/app_user.dart';
 import '../../../../data/models/passenger.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -20,6 +20,8 @@ class PassengerProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final firebaseUser = AuthRepository().currentUser;
     if (firebaseUser == null) {
       return const Scaffold(
@@ -88,8 +90,8 @@ class PassengerProfileScreen extends ConsumerWidget {
                       photoUrl: appUser.profileImage,
                       statusLabel: appUser.isActive ? 'Active' : 'Inactive',
                       statusColor: appUser.isActive
-                          ? AppColors.success
-                          : AppColors.error,
+                          ? semantic.success
+                          : colors.error,
                     ),
                     const SizedBox(height: 24),
                     ProfileSection(
@@ -115,8 +117,8 @@ class PassengerProfileScreen extends ConsumerWidget {
                               ? 'Verified'
                               : 'Not verified',
                           iconColor: appUser.emailVerified
-                              ? AppColors.success
-                              : AppColors.warning,
+                              ? semantic.success
+                              : semantic.warning,
                         ),
                         ProfileInfoTile(
                           icon: Icons.calendar_today_outlined,
@@ -140,13 +142,13 @@ class PassengerProfileScreen extends ConsumerWidget {
                           icon: Icons.star_outline_rounded,
                           label: 'Passenger rating',
                           value: '${passenger.rating.toStringAsFixed(1)} / 5',
-                          iconColor: AppColors.rating,
+                          iconColor: semantic.rating,
                         ),
                         ProfileInfoTile(
                           icon: Icons.favorite_outline_rounded,
                           label: 'Favorite locations',
                           value: '${passenger.favoriteLocations.length}',
-                          iconColor: AppColors.error,
+                          iconColor: colors.error,
                         ),
                       ],
                     ),

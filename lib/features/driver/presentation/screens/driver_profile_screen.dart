@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/driver_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
@@ -18,6 +18,8 @@ class DriverProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final firebaseUser = AuthRepository().currentUser;
     if (firebaseUser == null) {
       return const Scaffold(body: Center(child: Text('Driver not signed in.')));
@@ -70,8 +72,8 @@ class DriverProfileScreen extends ConsumerWidget {
                       photoUrl: driver.profilePhotoUrl,
                       statusLabel: driver.isOnline ? 'Online' : 'Offline',
                       statusColor: driver.isOnline
-                          ? AppColors.success
-                          : AppColors.textSecondary,
+                          ? semantic.success
+                          : colors.onSurfaceVariant,
                     ),
                     const SizedBox(height: 24),
                     ProfileSection(
@@ -102,11 +104,10 @@ class DriverProfileScreen extends ConsumerWidget {
                           icon: Icons.event_outlined,
                           label: 'License expiry',
                           value: _date(driver.licenseExpiry),
-                          iconColor: driver.licenseExpiry.isBefore(
-                            DateTime.now(),
-                          )
-                              ? AppColors.error
-                              : AppColors.primary,
+                          iconColor:
+                              driver.licenseExpiry.isBefore(DateTime.now())
+                              ? colors.error
+                              : colors.primary,
                         ),
                         ProfileInfoTile(
                           icon: driver.isApproved
@@ -115,8 +116,8 @@ class DriverProfileScreen extends ConsumerWidget {
                           label: 'Approval status',
                           value: _titleCase(driver.driverStatus),
                           iconColor: driver.isApproved
-                              ? AppColors.success
-                              : AppColors.warning,
+                              ? semantic.success
+                              : semantic.warning,
                         ),
                       ],
                     ),
@@ -132,13 +133,13 @@ class DriverProfileScreen extends ConsumerWidget {
                           value:
                               '${driver.rating.toStringAsFixed(1)} / 5 '
                               '(${driver.ratingCount} ratings)',
-                          iconColor: AppColors.rating,
+                          iconColor: semantic.rating,
                         ),
                         ProfileInfoTile(
                           icon: Icons.check_circle_outline_rounded,
                           label: 'Completed trips',
                           value: '${driver.completedTrips}',
-                          iconColor: AppColors.success,
+                          iconColor: semantic.success,
                         ),
                         ProfileInfoTile(
                           icon: Icons.account_balance_wallet_outlined,
@@ -147,7 +148,7 @@ class DriverProfileScreen extends ConsumerWidget {
                             locale: 'en_PH',
                             symbol: '₱',
                           ).format(driver.totalEarnings),
-                          iconColor: AppColors.success,
+                          iconColor: semantic.success,
                         ),
                       ],
                     ),

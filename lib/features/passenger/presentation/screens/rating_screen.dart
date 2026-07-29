@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../../common/presentation/widgets/star_rating.dart';
@@ -76,9 +76,9 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          icon: const Icon(
+          icon: Icon(
             Icons.check_circle_outline_rounded,
-            color: AppColors.success,
+            color: AppSemanticColors.of(dialogContext).success,
           ),
           title: const Text('Rating submitted'),
           content: const Text(
@@ -97,9 +97,9 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(DomainErrorMapper.message(error))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(DomainErrorMapper.message(error))));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -107,6 +107,8 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final booking = ref
         .watch(bookingListenerProvider(widget.bookingId))
         .asData
@@ -123,13 +125,13 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: AppColors.rating.withValues(alpha: 0.12),
+                  color: semantic.rating.withValues(alpha: 0.16),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.star_rounded,
                   size: 34,
-                  color: AppColors.rating,
+                  color: semantic.rating,
                 ),
               ),
             ),
@@ -143,9 +145,9 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
             Text(
               'Your feedback helps improve the experience for everyone.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: AppColors.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
             ),
             if (booking != null) ...[
               const SizedBox(height: 24),
@@ -155,7 +157,7 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
                   child: Row(
                     children: [
                       CircleAvatar(
-                        backgroundColor: AppColors.primaryContainer,
+                        backgroundColor: colors.primaryContainer,
                         foregroundImage:
                             booking.driverPhotoUrl?.isNotEmpty == true
                             ? NetworkImage(booking.driverPhotoUrl!)

@@ -16,19 +16,21 @@ class LoadingOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Stack(
       children: [
         child,
         if (loading)
           Positioned.fill(
             child: ColoredBox(
-              color: Colors.black45,
+              color: colorScheme.scrim.withValues(alpha: 0.54),
               child: Center(
                 child: Container(
                   width: 180,
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: colorScheme.surfaceContainerHigh,
+                    border: Border.all(color: colorScheme.outlineVariant),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Column(
@@ -37,10 +39,7 @@ class LoadingOverlay extends StatelessWidget {
                       const LoadingIndicator(size: 34),
                       if (message != null) ...[
                         const SizedBox(height: 16),
-                        Text(
-                          message!,
-                          textAlign: TextAlign.center,
-                        ),
+                        Text(message!, textAlign: TextAlign.center),
                       ],
                     ],
                   ),

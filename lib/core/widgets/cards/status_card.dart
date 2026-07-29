@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_radius.dart';
-import '../../theme/app_text_styles.dart';
 
 class StatusCard extends StatelessWidget {
   const StatusCard({
@@ -24,34 +23,23 @@ class StatusCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(
-          color: color.withValues(alpha: 0.20),
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.20)),
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 24,
             backgroundColor: color.withValues(alpha: 0.15),
-            child: Icon(
-              icon,
-              color: color,
-            ),
+            child: Icon(icon, color: color),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: AppTextStyles.titleMedium,
-                ),
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: AppTextStyles.bodyMedium,
-                ),
+                Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
               ],
             ),
           ),

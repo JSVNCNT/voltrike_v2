@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/models/booking.dart';
 import 'profile_avatar.dart';
 
@@ -52,7 +52,9 @@ class DashboardIdentityCard extends StatelessWidget {
               const SizedBox(width: 10),
               _DashboardStatusBadge(
                 label: statusLabel!,
-                color: statusColor ?? AppColors.textSecondary,
+                color:
+                    statusColor ??
+                    Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ],
           ],
@@ -109,7 +111,7 @@ class DashboardMetricGrid extends StatelessWidget {
           runSpacing: spacing,
           children: [
             for (final child in children)
-              SizedBox(width: itemWidth, height: 116, child: child),
+              SizedBox(width: itemWidth, child: child),
           ],
         );
       },
@@ -123,16 +125,17 @@ class DashboardMetricCard extends StatelessWidget {
     required this.icon,
     required this.value,
     required this.label,
-    this.color = AppColors.primary,
+    this.color,
   });
 
   final IconData icon;
   final String value;
   final String label;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedColor = color ?? Theme.of(context).colorScheme.primary;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -142,33 +145,28 @@ class DashboardMetricCard extends StatelessWidget {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
+                color: resolvedColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: color, size: 22),
+              child: Icon(icon, color: resolvedColor, size: 22),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      value,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
+                  Text(
+                    value,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 2),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
+                  Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ],
               ),
@@ -198,6 +196,7 @@ class DashboardMoneySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final semanticColors = AppSemanticColors.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -208,10 +207,10 @@ class DashboardMoneySummary extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: AppColors.success.withValues(alpha: 0.1),
+                color: semanticColors.successContainer,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: AppColors.success),
+              child: Icon(icon, color: semanticColors.onSuccessContainer),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -226,7 +225,7 @@ class DashboardMoneySummary extends StatelessWidget {
                   Text(
                     primaryValue,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: AppColors.success,
+                      color: semanticColors.success,
                     ),
                   ),
                   if (secondaryLabel != null && secondaryValue != null) ...[
@@ -272,6 +271,8 @@ class DashboardTripCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final semanticColors = AppSemanticColors.of(context);
     final trip = booking;
     if (trip == null) {
       return Card(
@@ -279,7 +280,7 @@ class DashboardTripCard extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child: Row(
             children: [
-              const Icon(Icons.route_outlined, color: AppColors.textSecondary),
+              Icon(Icons.route_outlined, color: colorScheme.onSurfaceVariant),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -315,14 +316,14 @@ class DashboardTripCard extends StatelessWidget {
               children: [
                 _DashboardStatusBadge(
                   label: _readableStatus(trip.status),
-                  color: _statusColor(trip.status),
+                  color: _statusColor(context, trip.status),
                 ),
                 const Spacer(),
                 Text(
                   '₱${trip.amountDue.toStringAsFixed(2)}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: AppColors.success),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: semanticColors.success,
+                  ),
                 ),
               ],
             ),
@@ -358,10 +359,11 @@ class _DashboardTripLocation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: AppColors.primary),
+        Icon(icon, size: 20, color: colorScheme.primary),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -415,11 +417,13 @@ String _readableStatus(BookingStatus status) {
   };
 }
 
-Color _statusColor(BookingStatus status) {
+Color _statusColor(BuildContext context, BookingStatus status) {
+  final colorScheme = Theme.of(context).colorScheme;
+  final semanticColors = AppSemanticColors.of(context);
   return switch (status) {
-    BookingStatus.completed => AppColors.success,
-    BookingStatus.cancelled => AppColors.error,
-    BookingStatus.pending => AppColors.warning,
-    _ => AppColors.primary,
+    BookingStatus.completed => semanticColors.success,
+    BookingStatus.cancelled => colorScheme.error,
+    BookingStatus.pending => semanticColors.warning,
+    _ => colorScheme.primary,
   };
 }

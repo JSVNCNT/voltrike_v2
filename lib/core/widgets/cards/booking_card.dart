@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
-import '../../theme/app_shadows.dart';
-import '../../theme/app_text_styles.dart';
 
 class BookingCard extends StatelessWidget {
   const BookingCard({
@@ -32,23 +29,23 @@ class BookingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final leadingWidget = leading;
     final trailingWidget = trailing;
     final footerWidget = footer;
     final statusText = status;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: InkWell(
         onTap: onTap,
-        child: Container(
+        child: Padding(
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            boxShadow: AppShadows.card,
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -65,7 +62,7 @@ class BookingCard extends StatelessWidget {
                       children: [
                         Text(
                           title,
-                          style: AppTextStyles.titleMedium,
+                          style: textTheme.titleMedium,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -74,9 +71,7 @@ class BookingCard extends StatelessWidget {
 
                         Text(
                           subtitle,
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
+                          style: textTheme.bodyMedium,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -93,8 +88,8 @@ class BookingCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   statusText,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.primary,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.primary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -106,16 +101,16 @@ class BookingCard extends StatelessWidget {
                 children: [
                   Text(
                     price,
-                    style: AppTextStyles.titleLarge.copyWith(
-                      color: AppColors.primary,
+                    style: textTheme.titleLarge?.copyWith(
+                      color: colorScheme.primary,
                     ),
                   ),
 
                   const Spacer(),
 
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
-                    color: AppColors.textSecondary,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ],
               ),

@@ -95,7 +95,7 @@ class HomeBottomSheet extends StatelessWidget {
                   width: 48,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade400,
+                    color: theme.colorScheme.outline,
                     borderRadius: BorderRadius.circular(100),
                   ),
                 ),

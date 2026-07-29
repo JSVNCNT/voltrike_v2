@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
-
 class ProfileIdentityHeader extends StatelessWidget {
   const ProfileIdentityHeader({
     super.key,
@@ -20,6 +18,7 @@ class ProfileIdentityHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final image = photoUrl?.trim();
     return Card(
       child: Padding(
@@ -28,16 +27,16 @@ class ProfileIdentityHeader extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 48,
-              backgroundColor: AppColors.primaryContainer,
+              backgroundColor: colorScheme.primaryContainer,
               foregroundImage: image?.isNotEmpty == true
                   ? NetworkImage(image!)
                   : null,
               child: image?.isNotEmpty == true
                   ? null
-                  : const Icon(
+                  : Icon(
                       Icons.person_outline_rounded,
                       size: 48,
-                      color: AppColors.primaryDark,
+                      color: colorScheme.onPrimaryContainer,
                     ),
             ),
             const SizedBox(height: 14),
@@ -60,7 +59,7 @@ class ProfileIdentityHeader extends StatelessWidget {
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: (statusColor ?? AppColors.primary).withValues(
+                  color: (statusColor ?? colorScheme.primary).withValues(
                     alpha: 0.1,
                   ),
                   borderRadius: BorderRadius.circular(100),
@@ -68,7 +67,7 @@ class ProfileIdentityHeader extends StatelessWidget {
                 child: Text(
                   statusLabel!,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: statusColor ?? AppColors.primary,
+                    color: statusColor ?? colorScheme.primary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -123,26 +122,28 @@ class ProfileInfoTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
-    this.iconColor = AppColors.primary,
+    this.iconColor,
   });
 
   final IconData icon;
   final String label;
   final String value;
-  final Color iconColor;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedIconColor =
+        iconColor ?? Theme.of(context).colorScheme.primary;
     return ListTile(
       minTileHeight: 64,
       leading: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: 0.1),
+          color: resolvedIconColor.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Icon(icon, color: iconColor, size: 21),
+        child: Icon(icon, color: resolvedIconColor, size: 21),
       ),
       title: Text(label),
       subtitle: Text(value),

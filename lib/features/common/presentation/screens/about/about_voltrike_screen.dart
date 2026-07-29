@@ -8,13 +8,18 @@ class AboutVoltrikeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       appBar: const AppAppBar(title: 'About VolTrike'),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            Image.asset(AppAssets.logoDark, height: 112),
+            Image.asset(
+              isDark ? AppAssets.logoLight : AppAssets.logoDark,
+              height: 112,
+            ),
             const SizedBox(height: 16),
             Text(
               'VolTrike',

@@ -467,18 +467,25 @@ class _DriverBookingTrackingScreenState
                 ],
                 if (navigation.restrictionWarning?.isNotEmpty == true) ...[
                   Material(
-                    color: Colors.red.shade50,
+                    color: colorScheme.errorContainer,
                     borderRadius: BorderRadius.circular(12),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.warning_amber_rounded,
-                            color: Colors.red,
+                            color: colorScheme.onErrorContainer,
                           ),
                           const SizedBox(width: 8),
-                          Expanded(child: Text(navigation.restrictionWarning!)),
+                          Expanded(
+                            child: Text(
+                              navigation.restrictionWarning!,
+                              style: TextStyle(
+                                color: colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -558,6 +565,7 @@ class _DriverBookingTrackingScreenState
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final booking = ref.watch(driverCurrentBookingProvider);
 
     if (booking == null) {
@@ -677,19 +685,24 @@ class _DriverBookingTrackingScreenState
                   children: [
                     if (navigation.restrictionWarning?.isNotEmpty == true) ...[
                       Material(
-                        color: Colors.red.shade50,
+                        color: colorScheme.errorContainer,
                         borderRadius: BorderRadius.circular(12),
                         child: Padding(
                           padding: const EdgeInsets.all(12),
                           child: Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.warning_amber_rounded,
-                                color: Colors.red,
+                                color: colorScheme.onErrorContainer,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text(navigation.restrictionWarning!),
+                                child: Text(
+                                  navigation.restrictionWarning!,
+                                  style: TextStyle(
+                                    color: colorScheme.onErrorContainer,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -706,11 +719,11 @@ class _DriverBookingTrackingScreenState
                     if (navigation.instruction?.isNotEmpty == true) ...[
                       const SizedBox(height: 10),
                       Card(
-                        color: Colors.teal.shade50,
+                        color: colorScheme.secondaryContainer,
                         child: ListTile(
-                          leading: const Icon(
+                          leading: Icon(
                             Icons.navigation,
-                            color: Colors.teal,
+                            color: colorScheme.onSecondaryContainer,
                           ),
                           title: Text(navigation.instruction!),
                           subtitle: navigation.nextInstruction == null

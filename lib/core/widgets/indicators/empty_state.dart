@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-import '../../theme/app_text_styles.dart';
-
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
@@ -19,6 +16,7 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -27,11 +25,11 @@ class EmptyState extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 46,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.10),
+              backgroundColor: colorScheme.primaryContainer,
               child: Icon(
                 icon,
                 size: 52,
-                color: AppColors.primary,
+                color: colorScheme.onPrimaryContainer,
               ),
             ),
 
@@ -39,7 +37,7 @@ class EmptyState extends StatelessWidget {
 
             Text(
               title,
-              style: AppTextStyles.titleLarge,
+              style: Theme.of(context).textTheme.titleLarge,
               textAlign: TextAlign.center,
             ),
 
@@ -48,15 +46,10 @@ class EmptyState extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
 
-            if (button != null) ...[
-              const SizedBox(height: 28),
-              button!,
-            ],
+            if (button != null) ...[const SizedBox(height: 28), button!],
           ],
         ),
       ),

@@ -47,15 +47,18 @@ class _TripHistoryViewState extends State<TripHistoryView> {
   Widget build(BuildContext context) {
     final filtered = _filtered;
     final visible = filtered.take(_visibleCount).toList();
-    final entries = _entriesFor(visible, hasMore: filtered.length > visible.length);
+    final entries = _entriesFor(
+      visible,
+      hasMore: filtered.length > visible.length,
+    );
 
     return CustomScrollView(
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           sliver: SliverToBoxAdapter(
-            child: SizedBox(
-              width: double.infinity,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
               child: SegmentedButton<TripHistoryFilter>(
                 showSelectedIcon: false,
                 segments: const [

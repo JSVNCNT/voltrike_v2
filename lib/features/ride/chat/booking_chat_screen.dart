@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/errors/domain_error_mapper.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../data/models/chat_message.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/chat_repository.dart';
@@ -53,6 +52,7 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final user = AuthRepository().currentUser;
     if (user == null) {
       return const Scaffold(body: Center(child: Text('Not signed in.')));
@@ -123,9 +123,11 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
             top: false,
             child: Container(
               padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
-              decoration: const BoxDecoration(
-                color: AppColors.surface,
-                border: Border(top: BorderSide(color: AppColors.border)),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer,
+                border: Border(
+                  top: BorderSide(color: colorScheme.outlineVariant),
+                ),
               ),
               child: Row(
                 children: [
@@ -146,8 +148,8 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
                   IconButton(
                     tooltip: 'Send message',
                     style: IconButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.textWhite,
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
                     ),
                     icon: const Icon(Icons.send_rounded),
                     onPressed: () => _send(user.uid),
@@ -225,6 +227,7 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) => Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -233,8 +236,10 @@ class _MessageBubble extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 4),
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
           decoration: BoxDecoration(
-            color: mine ? AppColors.primary : AppColors.surface,
-            border: mine ? null : Border.all(color: AppColors.border),
+            color: mine
+                ? colorScheme.primary
+                : colorScheme.surfaceContainerHigh,
+            border: mine ? null : Border.all(color: colorScheme.outlineVariant),
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(16),
               topRight: const Radius.circular(16),
@@ -248,9 +253,7 @@ class _MessageBubble extends StatelessWidget {
               Text(
                 message.text,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: mine
-                      ? AppColors.textWhite
-                      : AppColors.textPrimary,
+                  color: mine ? colorScheme.onPrimary : colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 3),
@@ -258,8 +261,8 @@ class _MessageBubble extends StatelessWidget {
                 DateFormat('h:mm a').format(message.sentAt),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: mine
-                      ? AppColors.textWhite.withValues(alpha: 0.78)
-                      : AppColors.textSecondary,
+                      ? colorScheme.onPrimary.withValues(alpha: 0.78)
+                      : colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -281,10 +284,10 @@ class _EmptyChat extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.chat_bubble_outline_rounded,
               size: 48,
-              color: AppColors.textSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 14),
             Text(

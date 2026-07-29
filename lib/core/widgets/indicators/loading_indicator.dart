@@ -1,13 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-
 class LoadingIndicator extends StatelessWidget {
-  const LoadingIndicator({
-    super.key,
-    this.size = 28,
-    this.strokeWidth = 3,
-  });
+  const LoadingIndicator({super.key, this.size = 28, this.strokeWidth = 3});
 
   final double size;
   final double strokeWidth;
@@ -19,7 +13,7 @@ class LoadingIndicator extends StatelessWidget {
       height: size,
       child: CircularProgressIndicator(
         strokeWidth: strokeWidth,
-        color: AppColors.primary,
+        color: Theme.of(context).colorScheme.primary,
       ),
     );
   }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_radius.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../core/utils/distance_formatter.dart';
 
 /// ===========================================================================
@@ -44,6 +44,9 @@ class PlaceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final semantic = AppSemanticColors.of(context);
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -55,14 +58,14 @@ class PlaceTile extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: isRecommended
-                    ? AppColors.primary
-                    : AppColors.primary.withValues(alpha: 0.10),
+                color: isRecommended ? colors.primary : colors.primaryContainer,
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
               child: Icon(
                 icon,
-                color: isRecommended ? Colors.white : AppColors.primary,
+                color: isRecommended
+                    ? colors.onPrimary
+                    : colors.onPrimaryContainer,
               ),
             ),
             const SizedBox(width: 12),
@@ -74,9 +77,9 @@ class PlaceTile extends StatelessWidget {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: theme.textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                      color: colors.onSurface,
                     ),
                   ),
                   if (subtitle.isNotEmpty) ...[
@@ -85,20 +88,22 @@ class PlaceTile extends StatelessWidget {
                       subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.textSecondary),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                   ],
                   if (isRecommended) ...[
                     const SizedBox(height: 6),
-                    const Row(
+                    Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.near_me, size: 15, color: AppColors.success),
-                        SizedBox(width: 4),
+                        Icon(Icons.near_me, size: 15, color: semantic.success),
+                        const SizedBox(width: 4),
                         Text(
                           'Recommended · Nearest',
                           style: TextStyle(
-                            color: AppColors.success,
+                            color: semantic.success,
                             fontWeight: FontWeight.w600,
                             fontSize: 12,
                           ),
@@ -114,14 +119,14 @@ class PlaceTile extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
-                  color: AppColors.background,
+                  color: colors.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(color: AppColors.border),
+                  border: Border.all(color: colors.outlineVariant),
                 ),
                 child: Text(
                   DistanceFormatter.compactMeters(distanceMeters!),
-                  style: const TextStyle(
-                    color: AppColors.primaryDark,
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),

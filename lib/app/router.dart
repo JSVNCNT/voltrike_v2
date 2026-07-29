@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/theme/fixed_light_theme.dart';
 import '../features/auth/presentation/screens/email_verification/email_verification_screen.dart';
 import '../features/auth/presentation/screens/forgot_password/forgot_password_screen.dart';
 import '../features/auth/presentation/screens/intro/intro_screen.dart';
@@ -52,6 +53,10 @@ Widget _driverGate(Widget child) {
   return AccountStatusGate(driverAccount: true, child: child);
 }
 
+Widget _publicLight(Widget child) {
+  return FixedLightTheme(child: child);
+}
+
 final GoRouter appRouter = GoRouter(
   initialLocation: AppRoutes.splash,
   debugLogDiagnostics: true,
@@ -73,12 +78,12 @@ final GoRouter appRouter = GoRouter(
     //==========================================================================
     GoRoute(
       path: AppRoutes.splash,
-      builder: (context, state) => const SplashScreen(),
+      builder: (context, state) => _publicLight(const SplashScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.intro,
-      builder: (context, state) => const IntroScreen(),
+      builder: (context, state) => _publicLight(const IntroScreen()),
     ),
 
     //==========================================================================
@@ -86,23 +91,25 @@ final GoRouter appRouter = GoRouter(
     //==========================================================================
     GoRoute(
       path: AppRoutes.login,
-      builder: (context, state) => const LoginScreen(),
+      builder: (context, state) => _publicLight(const LoginScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.forgotPassword,
-      builder: (context, state) => const ForgotPasswordScreen(),
+      builder: (context, state) => _publicLight(const ForgotPasswordScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.emailVerification,
-      builder: (context, state) => const EmailVerificationScreen(),
+      builder: (context, state) =>
+          _publicLight(const EmailVerificationScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.accountSuspended,
-      builder: (context, state) =>
-          const AccountStatusGate(child: _AccountRestoredRedirect()),
+      builder: (context, state) => _publicLight(
+        const AccountStatusGate(child: _AccountRestoredRedirect()),
+      ),
     ),
 
     //==========================================================================
@@ -110,12 +117,14 @@ final GoRouter appRouter = GoRouter(
     //==========================================================================
     GoRoute(
       path: AppRoutes.passengerRegister,
-      builder: (context, state) => const PassengerRegistrationScreen(),
+      builder: (context, state) =>
+          _publicLight(const PassengerRegistrationScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.passengerRegisterSuccess,
-      builder: (context, state) => const PassengerRegistrationSuccessScreen(),
+      builder: (context, state) =>
+          _publicLight(const PassengerRegistrationSuccessScreen()),
     ),
 
     //==========================================================================
@@ -123,45 +132,56 @@ final GoRouter appRouter = GoRouter(
     //==========================================================================
     GoRoute(
       path: AppRoutes.driverRegister,
-      builder: (context, state) => const DriverRegistrationStep1Screen(),
+      builder: (context, state) =>
+          _publicLight(const DriverRegistrationStep1Screen()),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep1,
-      builder: (context, state) => DriverRegistrationStep1Screen(
-        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      builder: (context, state) => _publicLight(
+        DriverRegistrationStep1Screen(
+          returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+        ),
       ),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep2,
-      builder: (context, state) => DriverRegistrationStep2Screen(
-        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      builder: (context, state) => _publicLight(
+        DriverRegistrationStep2Screen(
+          returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+        ),
       ),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterStep3,
-      builder: (context, state) => DriverRegistrationStep3Screen(
-        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      builder: (context, state) => _publicLight(
+        DriverRegistrationStep3Screen(
+          returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+        ),
       ),
     ),
 
     GoRoute(
       path: AppRoutes.uploadDocuments,
-      builder: (context, state) => UploadDocumentsScreen(
-        returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+      builder: (context, state) => _publicLight(
+        UploadDocumentsScreen(
+          returnToReview: state.uri.queryParameters['returnToReview'] == 'true',
+        ),
       ),
     ),
 
     GoRoute(
       path: AppRoutes.driverRegisterReview,
-      builder: (context, state) => const DriverRegistrationReviewScreen(),
+      builder: (context, state) =>
+          _publicLight(const DriverRegistrationReviewScreen()),
     ),
 
     GoRoute(
       path: AppRoutes.driverUnderReview,
-      builder: (context, state) => const DriverUnderReviewScreen(),
+      builder: (context, state) =>
+          _publicLight(const DriverUnderReviewScreen()),
     ),
 
     //==========================================================================
@@ -298,18 +318,26 @@ final GoRouter appRouter = GoRouter(
 
     GoRoute(
       path: AppRoutes.privacyPolicy,
-      builder: (context, state) => privacy.PrivacyPolicyScreen(
-        acknowledgementRequired:
-            state.uri.queryParameters['acknowledge'] == 'true',
-      ),
+      builder: (context, state) {
+        final acknowledgementRequired =
+            state.uri.queryParameters['acknowledge'] == 'true';
+        final screen = privacy.PrivacyPolicyScreen(
+          acknowledgementRequired: acknowledgementRequired,
+        );
+        return acknowledgementRequired ? _publicLight(screen) : screen;
+      },
     ),
 
     GoRoute(
       path: AppRoutes.termsAndConditions,
-      builder: (context, state) => TermsAndConditionsScreen(
-        acknowledgementRequired:
-            state.uri.queryParameters['acknowledge'] == 'true',
-      ),
+      builder: (context, state) {
+        final acknowledgementRequired =
+            state.uri.queryParameters['acknowledge'] == 'true';
+        final screen = TermsAndConditionsScreen(
+          acknowledgementRequired: acknowledgementRequired,
+        );
+        return acknowledgementRequired ? _publicLight(screen) : screen;
+      },
     ),
 
     GoRoute(

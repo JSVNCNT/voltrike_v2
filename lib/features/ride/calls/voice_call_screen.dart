@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/errors/domain_error_mapper.dart';
@@ -327,175 +328,187 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) unawaited(_handlePopAttempt());
       },
-      child: Scaffold(
-        backgroundColor: const Color(0xFF071717),
-        appBar: AppBar(
-          centerTitle: true,
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          leading: IconButton(
-            tooltip: terminal ? 'Close' : 'End call and go back',
-            onPressed: _ending ? null : _close,
-            icon: Icon(
-              terminal ? Icons.close_rounded : Icons.arrow_back_rounded,
-            ),
-          ),
-          title: const Text('Voice call'),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          systemNavigationBarColor: Color(0xFF071717),
+          systemNavigationBarIconBrightness: Brightness.light,
         ),
-        body: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF123434), Color(0xFF071717)],
+        child: Scaffold(
+          backgroundColor: const Color(0xFF071717),
+          appBar: AppBar(
+            centerTitle: true,
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            leading: IconButton(
+              tooltip: terminal ? 'Close' : 'End call and go back',
+              onPressed: _ending ? null : _close,
+              icon: Icon(
+                terminal ? Icons.close_rounded : Icons.arrow_back_rounded,
+              ),
             ),
+            title: const Text('Voice call'),
           ),
-          child: SafeArea(
-            top: false,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - 60,
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          children: [
-                            CallParticipantAvatar(identity: _participant),
-                            const SizedBox(height: 24),
-                            Text(
-                              _participant.name,
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: .1),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    _participant.roleLabel == 'Your driver'
-                                        ? Icons.electric_rickshaw_rounded
-                                        : Icons.person_rounded,
-                                    size: 17,
-                                    color: Colors.white70,
-                                  ),
-                                  const SizedBox(width: 7),
-                                  Text(
-                                    _participant.roleLabel,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(color: Colors.white70),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 28),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 220),
-                              child: Text(
-                                _statusText,
-                                key: ValueKey(_statusText),
+          body: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF123434), Color(0xFF071717)],
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight - 60,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            children: [
+                              CallParticipantAvatar(identity: _participant),
+                              const SizedBox(height: 24),
+                              Text(
+                                _participant.name,
                                 textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.titleMedium
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
                                     ?.copyWith(
-                                      color: _error == null
-                                          ? Colors.white
-                                          : const Color(0xFFFFB4AB),
-                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
                                     ),
                               ),
-                            ),
-                            if (showTimer) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                _effectiveStatus == BookingCallStatus.ringing
-                                    ? 'Invitation expires in 0:$seconds'
-                                    : 'Call ends in $minutes:$seconds',
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(color: Colors.white60),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: .1),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _participant.roleLabel == 'Your driver'
+                                          ? Icons.electric_rickshaw_rounded
+                                          : Icons.person_rounded,
+                                      size: 17,
+                                      color: Colors.white70,
+                                    ),
+                                    const SizedBox(width: 7),
+                                    Text(
+                                      _participant.roleLabel,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(color: Colors.white70),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
-                            if (!terminal &&
-                                _effectiveStatus ==
-                                    BookingCallStatus.accepted) ...[
-                              const SizedBox(height: 16),
-                              const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.lock_rounded,
-                                    color: Colors.white54,
-                                    size: 15,
-                                  ),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Secure ride call',
-                                    style: TextStyle(color: Colors.white54),
-                                  ),
-                                ],
+                              const SizedBox(height: 28),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 220),
+                                child: Text(
+                                  _statusText,
+                                  key: ValueKey(_statusText),
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        color: _error == null
+                                            ? Colors.white
+                                            : const Color(0xFFFFB4AB),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                ),
                               ),
-                            ],
-                          ],
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 42),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _CallControlButton(
-                                tooltip: _muted ? 'Unmute' : 'Mute',
-                                label: _muted ? 'Unmute' : 'Mute',
-                                icon: _muted
-                                    ? Icons.mic_off_rounded
-                                    : Icons.mic_rounded,
-                                onPressed: !_service.isConnected || terminal
-                                    ? null
-                                    : () async {
-                                        await _service.setMuted(!_muted);
-                                        if (mounted) {
-                                          setState(() => _muted = !_muted);
-                                        }
-                                      },
-                                backgroundColor: _muted
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Colors.white.withValues(alpha: .14),
-                                foregroundColor: Colors.white,
-                              ),
-                              const SizedBox(width: 36),
-                              _CallControlButton(
-                                tooltip: terminal ? 'Close' : 'End call',
-                                label: terminal ? 'Close' : 'End call',
-                                icon: terminal
-                                    ? Icons.close_rounded
-                                    : Icons.call_end_rounded,
-                                onPressed: _ending ? null : _close,
-                                backgroundColor: const Color(0xFFD92D20),
-                                foregroundColor: Colors.white,
-                              ),
+                              if (showTimer) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  _effectiveStatus == BookingCallStatus.ringing
+                                      ? 'Invitation expires in 0:$seconds'
+                                      : 'Call ends in $minutes:$seconds',
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: Colors.white60),
+                                ),
+                              ],
+                              if (!terminal &&
+                                  _effectiveStatus ==
+                                      BookingCallStatus.accepted) ...[
+                                const SizedBox(height: 16),
+                                const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.lock_rounded,
+                                      color: Colors.white54,
+                                      size: 15,
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Secure ride call',
+                                      style: TextStyle(color: Colors.white54),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
-                        ),
-                      ],
+                          Padding(
+                            padding: const EdgeInsets.only(top: 42),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _CallControlButton(
+                                  tooltip: _muted ? 'Unmute' : 'Mute',
+                                  label: _muted ? 'Unmute' : 'Mute',
+                                  icon: _muted
+                                      ? Icons.mic_off_rounded
+                                      : Icons.mic_rounded,
+                                  onPressed: !_service.isConnected || terminal
+                                      ? null
+                                      : () async {
+                                          await _service.setMuted(!_muted);
+                                          if (mounted) {
+                                            setState(() => _muted = !_muted);
+                                          }
+                                        },
+                                  backgroundColor: _muted
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Colors.white.withValues(alpha: .14),
+                                  foregroundColor: Colors.white,
+                                ),
+                                const SizedBox(width: 36),
+                                _CallControlButton(
+                                  tooltip: terminal ? 'Close' : 'End call',
+                                  label: terminal ? 'Close' : 'End call',
+                                  icon: terminal
+                                      ? Icons.close_rounded
+                                      : Icons.call_end_rounded,
+                                  onPressed: _ending ? null : _close,
+                                  backgroundColor: const Color(0xFFD92D20),
+                                  foregroundColor: Colors.white,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ),

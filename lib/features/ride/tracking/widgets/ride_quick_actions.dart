@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 
 /// Compact, glanceable actions that stay near the other ride participant.
 ///
@@ -29,14 +29,15 @@ class RideQuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final actions = <_QuickAction>[
       if (onCall != null)
         _QuickAction(
           icon: Icons.call_rounded,
           label: 'Call',
           onPressed: onCall!,
-          foregroundColor: Colors.white,
-          backgroundColor: AppColors.callAction,
+          foregroundColor: semantic.onCallAction,
+          backgroundColor: semantic.callAction,
         ),
       if (onChat != null)
         _QuickAction(
@@ -44,16 +45,16 @@ class RideQuickActions extends StatelessWidget {
           label: 'Chat',
           onPressed: onChat!,
           badge: messageBadge,
-          foregroundColor: Colors.white,
-          backgroundColor: AppColors.chatAction,
+          foregroundColor: semantic.onChatAction,
+          backgroundColor: semantic.chatAction,
         ),
       if (onReport != null)
         _QuickAction(
           icon: Icons.description_outlined,
           label: 'Report',
           onPressed: onReport!,
-          foregroundColor: Colors.white,
-          backgroundColor: AppColors.reportAction,
+          foregroundColor: semantic.onReportAction,
+          backgroundColor: semantic.reportAction,
         ),
       if (onSos != null && onSafetyUpdate == null)
         _QuickAction(
@@ -68,8 +69,8 @@ class RideQuickActions extends StatelessWidget {
           icon: Icons.gpp_good_rounded,
           label: 'Update safety status',
           onPressed: onSafetyUpdate!,
-          foregroundColor: Colors.white,
-          backgroundColor: AppColors.safetyAction,
+          foregroundColor: semantic.onSafetyAction,
+          backgroundColor: semantic.safetyAction,
         ),
     ];
 
@@ -91,7 +92,7 @@ class RideQuickActions extends StatelessWidget {
               foregroundColor: action.foregroundColor,
               backgroundColor: action.backgroundColor,
               badge: action.badge,
-              size: buttonSize,
+              size: buttonSize < 48 ? 48 : buttonSize,
             ),
         ],
       ),

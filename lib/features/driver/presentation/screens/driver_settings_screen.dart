@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../../common/presentation/widgets/settings_view.dart';
@@ -46,7 +45,8 @@ Future<bool> _confirmLogout(BuildContext context) async {
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: AppColors.error,
+                backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                foregroundColor: Theme.of(dialogContext).colorScheme.onError,
               ),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Log out'),

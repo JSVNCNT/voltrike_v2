@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/booking_state_machine.dart';
 import '../widgets/trip_history_card.dart';
@@ -26,6 +26,8 @@ class TripHistoryDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final completed = booking.status == BookingStatus.completed;
     final terminalDate = BookingStateMachine.terminalDate(booking);
     final counterpartName = driverView
@@ -58,15 +60,15 @@ class TripHistoryDetailScreen extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 26,
-                  backgroundColor: AppColors.primaryContainer,
+                  backgroundColor: colors.primaryContainer,
                   foregroundImage: counterpartPhoto?.trim().isNotEmpty == true
                       ? NetworkImage(counterpartPhoto!)
                       : null,
                   child: counterpartPhoto?.trim().isNotEmpty == true
                       ? null
-                      : const Icon(
+                      : Icon(
                           Icons.person_outline_rounded,
-                          color: AppColors.primaryDark,
+                          color: colors.onPrimaryContainer,
                         ),
                 ),
                 const SizedBox(width: 12),
@@ -81,12 +83,10 @@ class TripHistoryDetailScreen extends StatelessWidget {
                       if (!driverView && completed) ...[
                         const SizedBox(height: 3),
                         Text(
-                          [
-                            booking.vehicleNumber,
-                            booking.plateNumber,
-                          ].whereType<String>().where((e) => e.isNotEmpty).join(
-                            ' • ',
-                          ),
+                          [booking.vehicleNumber, booking.plateNumber]
+                              .whereType<String>()
+                              .where((e) => e.isNotEmpty)
+                              .join(' • '),
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ],
@@ -94,7 +94,7 @@ class TripHistoryDetailScreen extends StatelessWidget {
                   ),
                 ),
                 if (submittedRating != null) ...[
-                  const Icon(Icons.star_rounded, color: AppColors.rating),
+                  Icon(Icons.star_rounded, color: semantic.rating),
                   Text(
                     '$submittedRating',
                     style: Theme.of(context).textTheme.titleMedium,
@@ -213,13 +213,21 @@ class _StatusSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = completed ? AppColors.success : AppColors.error;
+    final theme = Theme.of(context);
+    final semantic = AppSemanticColors.of(context);
+    final color = completed ? semantic.success : theme.colorScheme.error;
+    final containerColor = completed
+        ? semantic.successContainer
+        : theme.colorScheme.errorContainer;
+    final onContainerColor = completed
+        ? semantic.onSuccessContainer
+        : theme.colorScheme.onErrorContainer;
     return Semantics(
       label: '$label on ${DateFormat('MMMM d, yyyy').format(terminalDate)}',
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: containerColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: color.withValues(alpha: 0.22)),
         ),
@@ -237,15 +245,13 @@ class _StatusSummary extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: color,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleMedium?.copyWith(color: onContainerColor),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    DateFormat(
-                      'MMMM d, yyyy • h:mm a',
-                    ).format(terminalDate),
+                    DateFormat('MMMM d, yyyy • h:mm a').format(terminalDate),
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ],
@@ -301,11 +307,15 @@ class _InformationRow extends StatelessWidget {
         Container(
           width: 40,
           height: 40,
-          decoration: const BoxDecoration(
-            color: AppColors.primaryContainer,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primaryContainer,
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, color: AppColors.primaryDark, size: 21),
+          child: Icon(
+            icon,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+            size: 21,
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -349,9 +359,9 @@ class _SummaryRow extends StatelessWidget {
             child: Text(
               value,
               textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -383,9 +393,13 @@ class _DetailActions extends StatelessWidget {
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border)),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: Border(
+            top: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
         ),
         child: Wrap(
           spacing: 10,

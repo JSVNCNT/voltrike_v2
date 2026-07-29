@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/providers/theme_provider.dart';
 import 'profile_widgets.dart';
 import 'system_diagnostics_tile.dart';
 
-class VolTrikeSettingsView extends StatelessWidget {
+class VolTrikeSettingsView extends ConsumerWidget {
   const VolTrikeSettingsView({
     super.key,
     required this.onEditPhoto,
@@ -17,7 +18,10 @@ class VolTrikeSettingsView extends StatelessWidget {
   final VoidCallback onLogout;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final darkMode = ref.watch(themeModeProvider) == ThemeMode.dark;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
@@ -26,9 +30,9 @@ class VolTrikeSettingsView extends StatelessWidget {
           children: [
             ListTile(
               minTileHeight: 64,
-              leading: const Icon(
+              leading: Icon(
                 Icons.account_circle_outlined,
-                color: AppColors.primary,
+                color: colorScheme.primary,
               ),
               title: const Text('Change profile photo'),
               subtitle: const Text('Choose a new account photo'),
@@ -36,6 +40,40 @@ class VolTrikeSettingsView extends StatelessWidget {
               onTap: onEditPhoto,
             ),
             const SystemDiagnosticsTile(),
+          ],
+        ),
+        const SizedBox(height: 24),
+        ProfileSection(
+          title: 'Appearance',
+          children: [
+            SwitchListTile(
+              minTileHeight: 68,
+              secondary: Icon(
+                darkMode ? Icons.dark_mode_rounded : Icons.light_mode_outlined,
+                color: colorScheme.primary,
+              ),
+              title: const Text('Dark mode'),
+              subtitle: Text(
+                darkMode
+                    ? 'Use the darker VolTrike theme'
+                    : 'Use the light VolTrike theme',
+              ),
+              value: darkMode,
+              onChanged: (enabled) async {
+                final saved = await ref
+                    .read(themeModeProvider.notifier)
+                    .setDarkMode(enabled);
+                if (!saved && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Theme preference could not be saved. Try again.',
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
           ],
         ),
         const SizedBox(height: 24),
@@ -82,11 +120,11 @@ class VolTrikeSettingsView extends StatelessWidget {
           children: [
             ListTile(
               minTileHeight: 60,
-              leading: const Icon(Icons.logout_rounded, color: AppColors.error),
-              title: const Text(
+              leading: Icon(Icons.logout_rounded, color: colorScheme.error),
+              title: Text(
                 'Log out',
                 style: TextStyle(
-                  color: AppColors.error,
+                  color: colorScheme.error,
                   fontWeight: FontWeight.w600,
                 ),
               ),

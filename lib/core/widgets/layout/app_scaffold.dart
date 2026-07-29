@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
 import 'screen_padding.dart';
 
 class AppScaffold extends StatelessWidget {
@@ -43,41 +42,33 @@ class AppScaffold extends StatelessWidget {
     Widget page = body;
 
     if (padding) {
-      page = ScreenPadding(
-        child: page,
-      );
+      page = ScreenPadding(child: page);
     }
 
     if (scrollable) {
       page = SingleChildScrollView(
-        keyboardDismissBehavior:
-            ScrollViewKeyboardDismissBehavior.onDrag,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         child: page,
       );
     }
 
     if (safeArea) {
-      page = SafeArea(
-        child: page,
-      );
+      page = SafeArea(child: page);
     }
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         backgroundColor:
-            backgroundColor ?? AppColors.scaffold,
+            backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,
 
-        resizeToAvoidBottomInset:
-            resizeToAvoidBottomInset,
+        resizeToAvoidBottomInset: resizeToAvoidBottomInset,
 
         appBar: appBar,
 
-        floatingActionButton:
-            floatingActionButton,
+        floatingActionButton: floatingActionButton,
 
-        bottomNavigationBar:
-            bottomNavigationBar,
+        bottomNavigationBar: bottomNavigationBar,
 
         body: page,
       ),

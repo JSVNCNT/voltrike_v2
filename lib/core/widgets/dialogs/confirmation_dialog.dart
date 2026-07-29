@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
-import '../../theme/app_text_styles.dart';
 import '../buttons/outlined_button.dart';
 import '../buttons/primary_button.dart';
 
@@ -33,10 +31,10 @@ class ConfirmationDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.help_outline_rounded,
               size: 60,
-              color: AppColors.primary,
+              color: Theme.of(context).colorScheme.primary,
             ),
 
             const SizedBox(height: 20),
@@ -44,7 +42,7 @@ class ConfirmationDialog extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: AppTextStyles.titleLarge,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
 
             const SizedBox(height: 12),
@@ -52,7 +50,7 @@ class ConfirmationDialog extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
 
             const SizedBox(height: 28),

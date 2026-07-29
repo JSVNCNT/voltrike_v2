@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/driver_rating.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -22,6 +22,8 @@ class DriverDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final auth = AuthRepository();
     final user = auth.currentUser;
     if (user == null) {
@@ -78,14 +80,10 @@ class DriverDashboardScreen extends ConsumerWidget {
 
               final bookings = bookingSnapshot.data ?? const <Booking>[];
               final completedTrips = bookings
-                  .where(
-                    (booking) => booking.status == BookingStatus.completed,
-                  )
+                  .where((booking) => booking.status == BookingStatus.completed)
                   .length;
               final cancelledTrips = bookings
-                  .where(
-                    (booking) => booking.status == BookingStatus.cancelled,
-                  )
+                  .where((booking) => booking.status == BookingStatus.cancelled)
                   .length;
               final currentBooking = _activeBooking(bookings);
               final totalEarnings = bookings.fold<double>(0, (total, booking) {
@@ -114,8 +112,8 @@ class DriverDashboardScreen extends ConsumerWidget {
                               : driver.profilePhotoUrl,
                           statusLabel: driver.isOnline ? 'Online' : 'Offline',
                           statusColor: driver.isOnline
-                              ? AppColors.success
-                              : AppColors.textSecondary,
+                              ? semantic.success
+                              : colors.onSurfaceVariant,
                         );
                       },
                     ),
@@ -129,19 +127,19 @@ class DriverDashboardScreen extends ConsumerWidget {
                             icon: Icons.star_rounded,
                             value: driver.rating.toStringAsFixed(1),
                             label: 'Rating',
-                            color: AppColors.rating,
+                            color: semantic.rating,
                           ),
                           DashboardMetricCard(
                             icon: Icons.check_circle_outline_rounded,
                             value: '$completedTrips',
                             label: 'Completed',
-                            color: AppColors.success,
+                            color: semantic.success,
                           ),
                           DashboardMetricCard(
                             icon: Icons.cancel_outlined,
                             value: '$cancelledTrips',
                             label: 'Cancelled',
-                            color: AppColors.error,
+                            color: colors.error,
                           ),
                           DashboardMetricCard(
                             icon: Icons.route_rounded,
@@ -204,17 +202,15 @@ class DriverDashboardScreen extends ConsumerWidget {
                           children: [
                             ListTile(
                               minTileHeight: 64,
-                              leading: const Icon(
+                              leading: Icon(
                                 Icons.account_balance_wallet_outlined,
-                                color: AppColors.primary,
+                                color: colors.primary,
                               ),
                               title: const Text('Earnings details'),
                               subtitle: const Text(
                                 'View today, week, month, and total summaries',
                               ),
-                              trailing: const Icon(
-                                Icons.chevron_right_rounded,
-                              ),
+                              trailing: const Icon(Icons.chevron_right_rounded),
                               onTap: () => context.push(
                                 AppRoutes.driverEarnings,
                                 extra: driver.uid,
@@ -227,8 +223,8 @@ class DriverDashboardScreen extends ConsumerWidget {
                                     ? Icons.location_on_rounded
                                     : Icons.location_off_outlined,
                                 color: driver.isOnline
-                                    ? AppColors.success
-                                    : AppColors.textSecondary,
+                                    ? semantic.success
+                                    : colors.onSurfaceVariant,
                               ),
                               title: Text(
                                 driver.isOnline ? 'Available' : 'Unavailable',
@@ -275,6 +271,7 @@ class _DriverRatingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final semantic = AppSemanticColors.of(context);
     return DashboardSection(
       title: 'Passenger feedback',
       child: StreamBuilder<List<DriverRating>>(
@@ -289,7 +286,7 @@ class _DriverRatingsCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.star_rounded, color: AppColors.rating),
+                      Icon(Icons.star_rounded, color: semantic.rating),
                       const SizedBox(width: 8),
                       Text(
                         aggregateRating.toStringAsFixed(1),
@@ -311,9 +308,9 @@ class _DriverRatingsCard extends StatelessWidget {
                     const SizedBox(height: 12),
                     Text(
                       'Recent feedback could not be refreshed.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.warning,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: semantic.warning),
                     ),
                   ] else if (recent.isEmpty) ...[
                     const SizedBox(height: 12),
@@ -331,7 +328,7 @@ class _DriverRatingsCard extends StatelessWidget {
                             '${rating.rating}/5',
                             style: Theme.of(context).textTheme.bodyLarge
                                 ?.copyWith(
-                                  color: AppColors.rating,
+                                  color: semantic.rating,
                                   fontWeight: FontWeight.w700,
                                 ),
                           ),

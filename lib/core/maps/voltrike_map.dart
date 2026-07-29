@@ -302,6 +302,23 @@ class _GoogleMapState extends State<GoogleMap> {
 
   bool _syncing = false;
   bool _syncPending = false;
+  Brightness? _brightness;
+
+  navigation.MapColorScheme get _mapColorScheme =>
+      _brightness == Brightness.dark
+      ? navigation.MapColorScheme.dark
+      : navigation.MapColorScheme.light;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    if (_brightness == brightness) return;
+    _brightness = brightness;
+    if (_controller != null) {
+      unawaited(_configureView());
+    }
+  }
 
   @override
   void didUpdateWidget(covariant GoogleMap oldWidget) {
@@ -349,6 +366,7 @@ class _GoogleMapState extends State<GoogleMap> {
       ),
     );
     await _safe(() => controller.setPadding(widget.padding));
+    await _safe(() => controller.setMapColorScheme(_mapColorScheme));
   }
 
   Future<void> _safe(Future<void> Function() operation) async {
@@ -541,6 +559,7 @@ class _GoogleMapState extends State<GoogleMap> {
       initialMapToolbarEnabled: widget.mapToolbarEnabled,
       initialZoomControlsEnabled: widget.zoomControlsEnabled,
       initialPadding: widget.padding,
+      initialMapColorScheme: _mapColorScheme,
       onViewCreated: _onViewCreated,
     );
   }

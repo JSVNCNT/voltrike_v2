@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_radius.dart';
+import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/booking_state_machine.dart';
 
@@ -26,12 +26,12 @@ class TripHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final semantic = AppSemanticColors.of(context);
     final completed = booking.status == BookingStatus.completed;
     final terminalDate = BookingStateMachine.terminalDate(booking);
-    final statusLabel = completed
-        ? 'Completed'
-        : cancellationLabelFor(booking);
-    final statusColor = completed ? AppColors.success : AppColors.error;
+    final statusLabel = completed ? 'Completed' : cancellationLabelFor(booking);
+    final statusColor = completed ? semantic.success : colors.error;
     final photoUrl = otherPartyPhotoUrl?.trim();
 
     return Semantics(
@@ -54,15 +54,15 @@ class TripHistoryCard extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 22,
-                      backgroundColor: AppColors.primaryContainer,
+                      backgroundColor: colors.primaryContainer,
                       foregroundImage: photoUrl?.isNotEmpty == true
                           ? NetworkImage(photoUrl!)
                           : null,
                       child: photoUrl?.isNotEmpty == true
                           ? null
-                          : const Icon(
+                          : Icon(
                               Icons.person_outline_rounded,
-                              color: AppColors.primaryDark,
+                              color: colors.onPrimaryContainer,
                             ),
                     ),
                     const SizedBox(width: 12),
@@ -93,7 +93,7 @@ class TripHistoryCard extends StatelessWidget {
                 const SizedBox(height: 16),
                 _RouteLine(
                   icon: Icons.trip_origin_rounded,
-                  iconColor: AppColors.primary,
+                  iconColor: colors.primary,
                   address: booking.pickupAddress,
                 ),
                 Padding(
@@ -101,12 +101,12 @@ class TripHistoryCard extends StatelessWidget {
                   child: Container(
                     width: 2,
                     height: 12,
-                    color: AppColors.border,
+                    color: colors.outlineVariant,
                   ),
                 ),
                 _RouteLine(
                   icon: Icons.location_on_rounded,
-                  iconColor: AppColors.primaryDark,
+                  iconColor: colors.secondary,
                   address: booking.destinationAddress,
                 ),
                 const SizedBox(height: 14),
@@ -119,7 +119,9 @@ class TripHistoryCard extends StatelessWidget {
                         locale: 'en_PH',
                         symbol: '₱',
                       ).format(booking.amountDue),
-                      style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -128,10 +130,10 @@ class TripHistoryCard extends StatelessWidget {
                     ),
                     const Spacer(),
                     if (completed && submittedRating != null) ...[
-                      const Icon(
+                      Icon(
                         Icons.star_rounded,
                         size: 18,
-                        color: AppColors.rating,
+                        color: semantic.rating,
                       ),
                       const SizedBox(width: 2),
                       Text(
@@ -142,9 +144,9 @@ class TripHistoryCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    const Icon(
+                    Icon(
                       Icons.chevron_right_rounded,
-                      color: AppColors.textSecondary,
+                      color: colors.onSurfaceVariant,
                     ),
                   ],
                 ),
@@ -214,7 +216,7 @@ class _RouteLine extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.textPrimary,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ),

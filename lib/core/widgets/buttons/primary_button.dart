@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
-import '../../theme/app_text_styles.dart';
 
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
@@ -24,6 +22,7 @@ class PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: width ?? double.infinity,
       child: ConstrainedBox(
@@ -32,21 +31,25 @@ class PrimaryButton extends StatelessWidget {
           onPressed: isLoading ? null : onPressed,
           style: FilledButton.styleFrom(
             elevation: 0,
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
-            disabledForegroundColor: Colors.white70,
+            backgroundColor: colorScheme.primary,
+            foregroundColor: colorScheme.onPrimary,
+            disabledBackgroundColor: colorScheme.onSurface.withValues(
+              alpha: 0.12,
+            ),
+            disabledForegroundColor: colorScheme.onSurface.withValues(
+              alpha: 0.38,
+            ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.md),
             ),
           ),
           child: isLoading
-              ? const SizedBox(
+              ? SizedBox(
                   height: 22,
                   width: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
-                    color: Colors.white,
+                    color: colorScheme.onPrimary,
                   ),
                 )
               : Row(
@@ -62,8 +65,8 @@ class PrimaryButton extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: AppTextStyles.button.copyWith(
-                          color: Colors.white,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: colorScheme.onPrimary,
                         ),
                       ),
                     ),

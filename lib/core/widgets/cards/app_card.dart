@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_radius.dart';
-import '../../theme/app_shadows.dart';
 
 class AppCard extends StatelessWidget {
   const AppCard({
@@ -19,28 +18,17 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final card = Container(
+    final content = Padding(padding: padding, child: child);
+    final card = Card(
       margin: margin,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        boxShadow: AppShadows.card,
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
       ),
-      child: child,
+      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
     );
 
-    if (onTap == null) {
-      return card;
-    }
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        onTap: onTap,
-        child: card,
-      ),
-    );
+    return card;
   }
 }

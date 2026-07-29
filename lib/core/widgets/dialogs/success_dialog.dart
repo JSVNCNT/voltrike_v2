@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_radius.dart';
-import '../../theme/app_text_styles.dart';
+import '../../theme/app_semantic_colors.dart';
 import '../buttons/primary_button.dart';
 
 class SuccessDialog extends StatelessWidget {
@@ -18,6 +18,7 @@ class SuccessDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final semanticColors = AppSemanticColors.of(context);
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -27,12 +28,12 @@ class SuccessDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircleAvatar(
+            CircleAvatar(
               radius: 32,
-              backgroundColor: Color(0xFFE8F5E9),
+              backgroundColor: semanticColors.successContainer,
               child: Icon(
                 Icons.check_circle_outline_rounded,
-                color: Colors.green,
+                color: semanticColors.onSuccessContainer,
                 size: 34,
               ),
             ),
@@ -42,7 +43,7 @@ class SuccessDialog extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: AppTextStyles.titleLarge,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
 
             const SizedBox(height: 12),
@@ -50,7 +51,7 @@ class SuccessDialog extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
 
             const SizedBox(height: 24),

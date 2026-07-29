@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/routes.dart';
@@ -202,146 +203,154 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
     final canRespond =
         session?.effectiveStatus() == BookingCallStatus.ringing && !_responding;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF071717),
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF123434), Color(0xFF071717)],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Color(0xFF071717),
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF071717),
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF123434), Color(0xFF071717)],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(28, 28, 28, 36),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 64,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.electric_rickshaw_rounded,
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'VolTrike voice call',
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(
-                                      color: Colors.white70,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 44),
-                          CallParticipantAvatar(
-                            identity: _participant,
-                            radius: 74,
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            _participant.name,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineMedium
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          const SizedBox(height: 7),
-                          Text(
-                            _participant.roleLabel,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.white60),
-                          ),
-                          const SizedBox(height: 28),
-                          Text(
-                            'Incoming voice call',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            _error ??
-                                (session == null
-                                    ? 'Checking the call invitation...'
-                                    : '${_participant.name} is calling about your current ride.'),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: _error == null
-                                      ? Colors.white70
-                                      : const Color(0xFFFFB4AB),
-                                ),
-                          ),
-                          if (session != null && canRespond) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              'Expires in 0:${seconds.toString().padLeft(2, '0')}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.white54),
-                            ),
-                          ],
-                        ],
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 44),
-                        child: Column(
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(28, 28, 28, 36),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - 64,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                _IncomingCallAction(
-                                  tooltip: 'Decline call',
-                                  label: 'Decline',
-                                  icon: Icons.call_end_rounded,
-                                  color: const Color(0xFFD92D20),
-                                  onPressed: canRespond ? _decline : null,
+                                Icon(
+                                  Icons.electric_rickshaw_rounded,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  size: 20,
                                 ),
-                                const SizedBox(width: 58),
-                                _IncomingCallAction(
-                                  tooltip: 'Accept call',
-                                  label: 'Accept',
-                                  icon: Icons.call_rounded,
-                                  color: const Color(0xFF16803C),
-                                  onPressed: canRespond ? _accept : null,
+                                const SizedBox(width: 8),
+                                Text(
+                                  'VolTrike voice call',
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        color: Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
                               ],
                             ),
-                            if (_error != null) ...[
-                              const SizedBox(height: 24),
-                              TextButton.icon(
-                                onPressed: _close,
-                                icon: const Icon(Icons.close_rounded),
-                                label: const Text('Close'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.white70,
-                                ),
+                            const SizedBox(height: 44),
+                            CallParticipantAvatar(
+                              identity: _participant,
+                              radius: 74,
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              _participant.name,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.headlineMedium
+                                  ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            const SizedBox(height: 7),
+                            Text(
+                              _participant.roleLabel,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.white60),
+                            ),
+                            const SizedBox(height: 28),
+                            Text(
+                              'Incoming voice call',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _error ??
+                                  (session == null
+                                      ? 'Checking the call invitation...'
+                                      : '${_participant.name} is calling about your current ride.'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: _error == null
+                                        ? Colors.white70
+                                        : const Color(0xFFFFB4AB),
+                                  ),
+                            ),
+                            if (session != null && canRespond) ...[
+                              const SizedBox(height: 12),
+                              Text(
+                                'Expires in 0:${seconds.toString().padLeft(2, '0')}',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.white54),
                               ),
                             ],
                           ],
                         ),
-                      ),
-                    ],
+                        Padding(
+                          padding: const EdgeInsets.only(top: 44),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _IncomingCallAction(
+                                    tooltip: 'Decline call',
+                                    label: 'Decline',
+                                    icon: Icons.call_end_rounded,
+                                    color: const Color(0xFFD92D20),
+                                    onPressed: canRespond ? _decline : null,
+                                  ),
+                                  const SizedBox(width: 58),
+                                  _IncomingCallAction(
+                                    tooltip: 'Accept call',
+                                    label: 'Accept',
+                                    icon: Icons.call_rounded,
+                                    color: const Color(0xFF16803C),
+                                    onPressed: canRespond ? _accept : null,
+                                  ),
+                                ],
+                              ),
+                              if (_error != null) ...[
+                                const SizedBox(height: 24),
+                                TextButton.icon(
+                                  onPressed: _close,
+                                  icon: const Icon(Icons.close_rounded),
+                                  label: const Text('Close'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),

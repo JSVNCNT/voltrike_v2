@@ -175,7 +175,10 @@ class _ActionButton extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        SizedBox(width: double.infinity, height: 48, child: button),
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: SizedBox(width: double.infinity, child: button),
+        ),
         if (badge > 0)
           Positioned(
             top: -6,

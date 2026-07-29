@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/errors/domain_error_mapper.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/report_repository.dart';
 
@@ -76,9 +75,9 @@ class _ReportRideDialogState extends State<ReportRideDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     scrollable: true,
-    icon: const Icon(
+    icon: Icon(
       Icons.assignment_late_outlined,
-      color: AppColors.error,
+      color: Theme.of(context).colorScheme.error,
     ),
     title: const Text('Report ride'),
     content: Column(
@@ -142,9 +141,7 @@ class _ReportRideDialogState extends State<ReportRideDialog> {
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(DomainErrorMapper.message(error))),
         );
       }

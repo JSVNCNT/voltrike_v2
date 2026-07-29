@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../theme/app_colors.dart';
-import '../../theme/app_text_styles.dart';
-
 class AppTextField extends StatelessWidget {
   const AppTextField({
     super.key,
@@ -81,7 +78,7 @@ class AppTextField extends StatelessWidget {
       autofocus: autofocus,
       onChanged: onChanged,
       onFieldSubmitted: onFieldSubmitted,
-      style: AppTextStyles.bodyMedium,
+      style: Theme.of(context).textTheme.bodyMedium,
       onTapOutside: (_) {
         FocusManager.instance.primaryFocus?.unfocus();
       },
@@ -89,7 +86,7 @@ class AppTextField extends StatelessWidget {
         labelText: label,
         hintText: hint,
         prefixIcon: prefixIcon != null
-            ? Icon(prefixIcon, color: AppColors.primary)
+            ? Icon(prefixIcon, color: Theme.of(context).colorScheme.primary)
             : null,
       ),
     );
