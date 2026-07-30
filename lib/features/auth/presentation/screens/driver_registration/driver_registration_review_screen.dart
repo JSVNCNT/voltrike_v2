@@ -159,18 +159,51 @@ class _DriverRegistrationReviewScreenState
       termsVersion: LegalDocumentVersions.terms,
       privacyVersion: LegalDocumentVersions.privacy,
     );
+    final registrationNotifier = ref.read(
+      driverRegistrationDataProvider.notifier,
+    );
 
     try {
       await ref
           .read(driverRegistrationControllerProvider.notifier)
           .register(submission);
+      await _deletePreparedRegistrationImages(registration);
+      registrationNotifier.clear();
       if (!mounted) return;
-      ref.read(driverRegistrationDataProvider.notifier).clear();
       context.go(AppRoutes.driverUnderReview);
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = DomainErrorMapper.message(error));
     }
+  }
+
+  Future<void> _deletePreparedRegistrationImages(
+    DriverRegistrationData registration,
+  ) async {
+    final paths = <String?>[
+      registration.profilePhoto,
+      registration.driverLicenseFront,
+      registration.driverLicenseBack,
+      registration.governmentId,
+      registration.orDocument,
+      registration.crDocument,
+      registration.vehiclePhoto,
+    ];
+    await Future.wait(
+      paths.whereType<String>().map((path) async {
+        if (!path.endsWith('.voltrike.jpg')) return;
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (_) {
+          debugPrint(
+            'A submitted local registration image could not be removed.',
+          );
+        }
+      }),
+    );
   }
 
   @override

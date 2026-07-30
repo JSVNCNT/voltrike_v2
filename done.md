@@ -685,3 +685,179 @@ in Bacolod yet.
 - App Check, production rollout flags, full Admin interaction automation,
   private disciplinary notes, physical-device route tests, retention/appeal
   policy, and the broader Rust migration remain open.
+
+## Rust migration implementation log - 2026-07-30
+
+This tail section is the sole completion log for the Rust migration. Earlier
+sections remain historical and are not used as implementation context.
+
+- Received the explicit GO signal.
+- Confirmed the migration boundary: Flutter remains the UI and orchestration
+  layer, Node remains the Firebase authority, and Rust starts as an
+  Android-first pure-compute core with a Dart fallback.
+- Confirmed that no Rust code, dependency, generated binding, or product
+  behavior change was made before this log and its matching checklist were
+  appended.
+- Added the Android-first Rust core at `rust/` with Rust 1.97.1, Cargo
+  `--locked`, FRB 2.12.0, and generated bindings behind a hand-written Dart
+  interface. Firebase, Node Functions, LiveKit/WebRTC, maps, GPS, permissions,
+  Riverpod/UI, and the TSX admin remain outside Rust.
+- Added compile-time `off`, `shadow`, and `on` rollout modes. The default is
+  `off`; unsupported platforms, initialization errors, invalid native input,
+  and invalid returned indices always use the existing Dart implementation.
+  Shadow mode returns Dart's result while logging parity and end-to-end timing.
+- Ported the first route-versus-restriction conflict operation as one packed
+  native batch. It preserves latitude/longitude order, boundary inclusion,
+  active/type/corridor filtering, multiple areas, and original restriction
+  ordering. Rust stops at the first conflict and rejects malformed,
+  non-finite, out-of-range, oversized, or excessive-work batches without a
+  panic.
+- Shared JSON fixtures pass in Dart and Rust. Final verification passed 10 Rust
+  tests, Rustfmt, Clippy with warnings denied, FRB generation, 135 Flutter
+  tests, and full Flutter analysis with no issues.
+- The physical `SM-A566B` device on Android 16/API 36 and ARM64 passed all
+  three native integration tests, including typed invalid input and a real
+  filtered-corridor/multiple-area/original-index remap with no Dart fallback.
+- Final profile measurements on that device showed that Rust is workload
+  dependent, not universally faster. Typical full-scan median/p95 was Dart
+  459/2,561 microseconds versus Rust 663/4,938; an early conflict was Dart
+  8/17 versus Rust 453/4,358; the 256-point/128-restriction stress batch was
+  Dart 5,514/5,809 versus Rust 1,689/2,000, a 3.26x median improvement. The
+  first cold call was Dart 848 microseconds versus Rust 13,766. General `on`
+  rollout therefore remains disabled; shadow data must justify large-batch
+  use.
+- The final universal release APK is 149,218,733 bytes versus the
+  146,959,689-byte pre-Rust baseline: +2,259,044 bytes (+1.537%). It contains
+  Rust libraries for ARMv7 (414,624 bytes), ARM64 (586,520), and x86_64
+  (623,696), with no legacy 32-bit x86.
+- ARM64 and x86_64 Rust ELF load segments are `0x4000` aligned, and the final
+  APK passes Android build-tools 36.1.0 `zipalign -c -P 16 4`.
+- PSGC indexing and LiveKit stage instrumentation remain separate follow-up
+  work. ARMv7 is packaged but not runtime-tested here. Production distribution
+  also remains blocked by the pre-existing Android debug certificate; Flutter
+  SDK/Cargokit runner pinning is still a CI hardening task.
+
+## Rust migration R2 implementation log - 2026-07-30
+
+This bottom section is the sole active completion log for R2. All preceding
+entries remain preserved as historical context and are not used as R2 inputs.
+
+- Received the explicit `GO R2 all this` authorization for the compact PSGC
+  index, cached/fused route geometry, cache-backed live distance queries, and
+  the measured registration image-processing experiment.
+- Appended the R2 checklist and completion log before making any R2 code,
+  dependency, generated-binding, or product-behavior changes.
+- Implementation and verification results will be appended below this line.
+- Kept the existing root-level `rust/` workspace as the only native core.
+  Flutter remains the UI, state, lifecycle, GPS, permissions, and fallback
+  layer; Node remains the Firebase authority; LiveKit/WebRTC and the TSX Admin
+  remain outside Rust.
+
+### Compact PSGC result
+
+- Generated the deterministic `psgc_index_v1.bin` artifact and generated Dart
+  metadata from the four canonical JSON inputs. The artifact is 3,474,156
+  bytes versus 11,383,135 source bytes, a 69.5% reduction, with payload FNV-1a
+  `57417d883f20e124` and artifact SHA-256
+  `03C4F4454995E1780A414A565AA5EAD8FB7CA7FC8EA53C143E8DD4A9BE577147`.
+- Exhaustive parity preserves source order, codes, names, boolean values, and
+  all 17 regions, 81 provinces, 1,634 cities/municipalities, and 42,046
+  barangays. Check mode validates both the artifact and generated metadata.
+- The release bundle contains one compact PSGC asset and no raw PSGC JSON.
+  The dataset is not embedded once per native ABI.
+- On the physical SM-A566B profile run, legacy JSON decode took 193,116
+  microseconds, compact Dart initialization 37,466, and Rust initialization
+  42,655. For 100 child queries, legacy/Dart/Rust took
+  328,822/20,321/25,336 microseconds; for 1,000 exact lookups they took
+  945,687/41/1,424.
+- Retained compact Dart as the production default because it was fastest.
+  Native PSGC remains independently opt-in through `VOLTRIKE_PSGC_MODE`.
+  Legacy JSON remains generation input only. The cumulative PSGC memory run
+  was order/GC-confounded, so no isolated Rust RSS saving is claimed.
+
+### Cached geometry and live-query result
+
+- Added a versioned, atomically replaced Rust restriction cache, fused Google
+  encoded-polyline decoding/conflict evaluation, cached nearest/inside/distance
+  queries, bounds pruning, bounded parsing/work limits, panic-safe typed
+  errors, Dart fallback parity, original-index remapping, stale-cache
+  protection, and an online-session epoch that rejects queued GPS work from a
+  prior online session.
+- Kept GPS freshness/accuracy gating, boundary behavior, hysteresis,
+  confirmation samples, cooldowns, notifications, alerts, and backend
+  reporting in Dart.
+- Split rollout controls so `VOLTRIKE_GEOMETRY_MODE` does not also enable the
+  slower native PSGC backend. The physical result also led to a separate
+  `VOLTRIKE_GEOMETRY_PROXIMITY_MODE`; enabling cached route processing no
+  longer enables tiny live proximity FFI calls.
+- The SM-A566B passed all four native geometry integration cases, including
+  typed invalid input, filtered restriction/index remapping, cache
+  installation/reuse, fused encoded-polyline evaluation, and proximity result
+  mapping.
+- In the final 30-sample profile benchmark, the uncached typical batch was
+  Dart/Rust 490/612 microseconds median, the early-conflict batch 9/317, and
+  the 256-point/128-restriction stress batch 7,336/755, making Rust 9.72x
+  faster only for that larger batch.
+- Geometry v2 improved the same 256-point/128-restriction encoded-route median
+  from 6,881 microseconds in bounded Dart to 340 using the Rust cache, a
+  20.24x speedup. Cold Dart decode/evaluation was 10,438 microseconds versus
+  2,967 for Rust cache install plus evaluation.
+- Rejected native proximity as the live default on this workload: Dart/Rust
+  medians were 72/376 microseconds and p95 values 416/1,807, so FFI overhead
+  dominated. The native cache-backed query remains available for explicit
+  shadow/on experiments, while live production behavior stays on Dart.
+- Exact PSGC and geometry profile results are retained under `test/fixtures/`.
+
+### Registration image result
+
+- Added file-path-only Rust image preparation with EXIF-aware orientation,
+  center crop/resize, JPEG output, a 32 MiB source cap, 4,096-pixel edge cap,
+  8-megapixel decoded-image cap, 64 MiB decoder-allocation cap, 4 MiB output
+  cap, typed failures, panic containment, and atomic temporary-file rename.
+- Matched the same bounds in Dart. Native safety-limit failures are terminal
+  instead of falling through to an unsafe Dart decode; only native
+  initialization/transport failure uses Dart fallback. Output JPEG markers,
+  reported bytes, and dimensions are validated.
+- Serialized registration processing in the UI and clean up replaced,
+  unmounted, and successfully submitted prepared temporary files.
+- On the SM-A566B image profile, Dart median/p95 was
+  1,805,448/1,818,521 microseconds and Rust was 132,184/142,541, a 13.6586x
+  median speedup. Dart median/max sampled RSS delta was
+  164,540,416/173,285,376 bytes versus Rust
+  52,785,152/52,842,496. Both produced 1600x1009 JPEGs; byte identity is not
+  claimed.
+- Retained the guarded Android native image path in `auto` mode. A build can
+  force the Dart implementation with `VOLTRIKE_IMAGE_ENGINE=dart`.
+
+### Final verification and release boundary
+
+- Rust 1.97.1 verification passed: Rustfmt, Clippy with warnings denied, 17
+  unit tests, and 3 integration tests. Generated bridge code and the
+  deterministic PSGC check are current.
+- Full Flutter tests passed after the final rollout change: 169 tests. Full
+  analysis passed before that isolated rollout change, and a post-change
+  targeted analysis of the affected implementation and test files reported no
+  issues. `git diff --check` reports no source whitespace errors.
+- Physical profile integration/benchmark coverage passed on an Android
+  16/API-36 ARM64 SM-A566B. ARMv7 and x86_64 are packaged; ARMv7 still lacks
+  runtime validation on an actual 32-bit device.
+- The final universal release-mode APK is 151,619,618 bytes, SHA-256
+  `5CFA6FC476C817226E1FF0FB92E41CEF2FF711F1B5A9B721F61EC180E7682ACC`,
+  and is 2,400,885 bytes (1.609%) larger than the R1 APK. It packages Rust for
+  ARMv7 (835,084 bytes), ARM64 (1,262,928), and x86_64 (1,402,192).
+- Android build-tools 36.1.0 verifies ZIP/page alignment. ARM64 and x86_64
+  Rust ELF load segments are 0x4000-aligned; ARMv7 remains 0x1000-aligned.
+- This is a valid release-mode build, not a production-distribution build.
+  It is still signed by `C=US, O=Android, CN=Android Debug`, and the current
+  application ID is `com.example.voltrike_v2`. Production signing and the
+  intended final application ID must be configured before store distribution.
+- Remaining work outside R2 is unchanged: isolated PSGC fresh-process RSS
+  profiling, real low-end/ARMv7 runtime and broader real-document image
+  testing, CI Flutter/Cargokit pinning, production signing, and separate
+  LiveKit stage instrumentation/optimization. Rollback controls are
+  build-time rather than remote. Changes remain local, uncommitted, and
+  undeployed.
+- After splitting the live-proximity rollout, the device benchmark and bridge
+  integration constructors explicitly opt into native proximity so future
+  results cannot accidentally measure Dart twice. Their targeted analysis
+  passes, and the retained fixture semantically matches the device report.

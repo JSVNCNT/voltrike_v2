@@ -1,0 +1,121 @@
+{
+  "coordinate_order": "latitude_longitude",
+  "cases": [
+    {
+      "name": "route crosses a polygon",
+      "route": [
+        [10.65, 122.95],
+        [10.69, 122.95]
+      ],
+      "restrictions": [
+        {
+          "areas": [
+            [
+              [10.66, 122.94],
+              [10.66, 122.96],
+              [10.68, 122.96],
+              [10.68, 122.94]
+            ]
+          ]
+        }
+      ],
+      "expected_conflict_indices": [0]
+    },
+    {
+      "name": "route remains outside",
+      "route": [
+        [10.65, 122.93],
+        [10.69, 122.93]
+      ],
+      "restrictions": [
+        {
+          "areas": [
+            [
+              [10.66, 122.94],
+              [10.66, 122.96],
+              [10.68, 122.96],
+              [10.68, 122.94]
+            ]
+          ]
+        }
+      ],
+      "expected_conflict_indices": []
+    },
+    {
+      "name": "polygon boundary is included",
+      "route": [
+        [10.65, 122.94],
+        [10.66, 122.94]
+      ],
+      "restrictions": [
+        {
+          "areas": [
+            [
+              [10.66, 122.94],
+              [10.66, 122.96],
+              [10.68, 122.96],
+              [10.68, 122.94]
+            ]
+          ]
+        }
+      ],
+      "expected_conflict_indices": [0]
+    },
+    {
+      "name": "multiple restrictions return the first conflict in input order",
+      "route": [
+        [10.65, 122.95],
+        [10.71, 122.99]
+      ],
+      "restrictions": [
+        {
+          "areas": [
+            [
+              [10.66, 122.94],
+              [10.66, 122.96],
+              [10.68, 122.96],
+              [10.68, 122.94]
+            ]
+          ]
+        },
+        {
+          "areas": [
+            [
+              [10.70, 122.98],
+              [10.70, 123.00],
+              [10.72, 123.00],
+              [10.72, 122.98]
+            ]
+          ]
+        }
+      ],
+      "expected_conflict_indices": [0]
+    },
+    {
+      "name": "separate areas belong to one restriction",
+      "route": [
+        [10.69, 122.99],
+        [10.71, 122.99]
+      ],
+      "restrictions": [
+        {
+          "areas": [
+            [
+              [10.66, 122.94],
+              [10.66, 122.96],
+              [10.68, 122.96],
+              [10.68, 122.94]
+            ],
+            [
+              [10.70, 122.98],
+              [10.70, 123.00],
+              [10.72, 123.00],
+              [10.72, 122.98]
+            ]
+          ]
+        }
+      ],
+      "expected_conflict_indices": [0]
+    }
+  ]
+}

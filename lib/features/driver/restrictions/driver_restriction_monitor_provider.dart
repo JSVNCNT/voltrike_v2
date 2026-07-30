@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/native/route_restriction_engine.dart';
 import '../../../core/services/route_restriction_service.dart';
 import '../../../data/models/route_restriction.dart';
 import '../../../data/repositories/driver_violation_repository.dart';
@@ -87,12 +88,14 @@ class DriverRestrictionMonitorController
   final NotificationService _notificationService;
 
   bool _online = false;
+  int _onlineSession = 0;
   Future<void> _queue = Future.value();
   Future<void> _reportQueue = Future.value();
   DateTime? _lastReportedObservationAt;
 
   void setOnline(bool online) {
     _online = online;
+    _onlineSession++;
     if (online) return;
     _engine.reset();
     _lastReportedObservationAt = null;
@@ -107,10 +110,17 @@ class DriverRestrictionMonitorController
         locationState.observedAt == null) {
       return;
     }
+    final onlineSession = _onlineSession;
     _queue = _queue
-        .then((_) => _processLocation(locationState, bookingId: bookingId))
+        .then(
+          (_) => _processLocation(
+            locationState,
+            bookingId: bookingId,
+            onlineSession: onlineSession,
+          ),
+        )
         .catchError((Object _, StackTrace _) {
-          if (!_online || !mounted) return;
+          if (!_isCurrentOnlineSession(onlineSession) || !mounted) return;
           state = state.copyWith(
             reportError:
                 'Restricted-area checks are temporarily unavailable. '
@@ -122,16 +132,34 @@ class DriverRestrictionMonitorController
   Future<void> _processLocation(
     DriverLocationState locationState, {
     String? bookingId,
+    required int onlineSession,
   }) async {
-    if (!_online) return;
+    if (!_isCurrentOnlineSession(onlineSession)) return;
+    final accuracyMeters = locationState.accuracyMeters!;
+    final observedAt = locationState.observedAt!;
+    if (!_engine.isSampleEligible(
+      accuracyMeters: accuracyMeters,
+      observedAt: observedAt,
+      now: DateTime.now(),
+    )) {
+      return;
+    }
     final restrictions = await _restrictionService.activeRestrictions();
-    if (!_online) return;
+    if (!_isCurrentOnlineSession(onlineSession)) return;
+    final point = locationState.location!;
+    final proximity = await RouteRestrictionEngine.instance.pointProximity(
+      point: point,
+      restrictions: restrictions,
+      preferredRestrictionId: _engine.current.restriction?.id,
+    );
+    if (!_isCurrentOnlineSession(onlineSession)) return;
     final transition = _engine.evaluate(
-      point: locationState.location!,
-      accuracyMeters: locationState.accuracyMeters!,
-      observedAt: locationState.observedAt!,
+      point: point,
+      accuracyMeters: accuracyMeters,
+      observedAt: observedAt,
       now: DateTime.now(),
       restrictions: restrictions,
+      proximity: proximity,
     );
     // RTDB writes already invoke the authoritative backend monitor. Keep the
     // callable as an immediate/backstop path only while locally inside a
@@ -140,9 +168,15 @@ class DriverRestrictionMonitorController
     if (_engine.current.phase == DriverRestrictionPhase.inside ||
         transition?.exited == true) {
       _reportQueue = _reportQueue
-          .then((_) => _reportPublishedFix(locationState, bookingId: bookingId))
+          .then(
+            (_) => _reportPublishedFix(
+              locationState,
+              bookingId: bookingId,
+              onlineSession: onlineSession,
+            ),
+          )
           .catchError((Object _, StackTrace _) {
-            if (!_online || !mounted) return;
+            if (!_isCurrentOnlineSession(onlineSession) || !mounted) return;
             state = state.copyWith(
               reporting: false,
               reportError:
@@ -166,21 +200,27 @@ class DriverRestrictionMonitorController
     if (current.phase == DriverRestrictionPhase.clear) {
       await _notificationService.clearDriverRestrictionAlert();
     } else if (transition.shouldAlert) {
-      await _alert(current);
+      await _alert(current, onlineSession: onlineSession);
     }
   }
 
-  Future<void> _alert(DriverRestrictionObservation observation) async {
+  Future<void> _alert(
+    DriverRestrictionObservation observation, {
+    required int onlineSession,
+  }) async {
+    if (!_isCurrentOnlineSession(onlineSession)) return;
     final restriction = observation.restriction;
     if (restriction == null) return;
     final inside = observation.phase == DriverRestrictionPhase.inside;
     if (inside) {
       await HapticFeedback.heavyImpact();
       await Future<void>.delayed(const Duration(milliseconds: 180));
+      if (!_isCurrentOnlineSession(onlineSession)) return;
       await HapticFeedback.heavyImpact();
     } else {
       await HapticFeedback.mediumImpact();
     }
+    if (!_isCurrentOnlineSession(onlineSession)) return;
     await _notificationService.showDriverRestrictionAlert(
       restrictionName: restriction.name,
       inside: inside,
@@ -190,11 +230,12 @@ class DriverRestrictionMonitorController
   Future<void> _reportPublishedFix(
     DriverLocationState locationState, {
     String? bookingId,
+    required int onlineSession,
   }) async {
     final observedAt = locationState.observedAt;
     final publishedObservedAt = locationState.lastPublishedObservedAt;
     final accuracy = locationState.accuracyMeters;
-    if (!_online ||
+    if (!_isCurrentOnlineSession(onlineSession) ||
         observedAt == null ||
         publishedObservedAt != observedAt ||
         _lastReportedObservationAt == observedAt ||
@@ -212,7 +253,7 @@ class DriverRestrictionMonitorController
       final result = await _violationRepository.reportPublishedPosition(
         bookingId: bookingId,
       );
-      if (mounted) {
+      if (mounted && _isCurrentOnlineSession(onlineSession)) {
         final newViolationId = result.createdViolationIds.firstOrNull;
         state = state.copyWith(
           reporting: false,
@@ -221,7 +262,7 @@ class DriverRestrictionMonitorController
         );
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && _isCurrentOnlineSession(onlineSession)) {
         state = state.copyWith(
           reporting: false,
           reportError:
@@ -230,6 +271,10 @@ class DriverRestrictionMonitorController
         );
       }
     }
+  }
+
+  bool _isCurrentOnlineSession(int onlineSession) {
+    return _online && onlineSession == _onlineSession;
   }
 }
 

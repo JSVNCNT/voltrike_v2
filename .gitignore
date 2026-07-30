@@ -55,5 +55,5 @@ app.*.map.json
 **/node_modules/
 
 
-#Api Key
-lib\core\config\api_keys.dart
+# API key generated from the local build environment.
+/lib/core/config/api_keys.dart

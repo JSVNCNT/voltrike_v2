@@ -107,4 +107,45 @@ void main() {
       isFalse,
     );
   });
+
+  test('point proximity preserves source order and boundary semantics', () {
+    const corridor = RouteRestriction(
+      id: 'legacy-highway',
+      name: 'Legacy Highway Corridor',
+      type: 'prohibited_highway',
+      polygon: [LatLng(10.66, 122.95), LatLng(10.68, 122.95)],
+      areas: [
+        [LatLng(10.66, 122.95), LatLng(10.68, 122.95)],
+      ],
+      geometryType: 'corridor',
+      isActive: true,
+    );
+    const first = RouteRestriction(
+      id: 'first',
+      name: 'First',
+      type: 'no_service_area',
+      polygon: polygon,
+      areas: [polygon],
+      isActive: true,
+    );
+    const second = RouteRestriction(
+      id: 'second',
+      name: 'Second',
+      type: 'restricted_driving_area',
+      polygon: polygon,
+      areas: [polygon],
+      isActive: true,
+    );
+
+    final result = RouteRestrictionMatcher.pointProximity(
+      const LatLng(10.67, 122.94),
+      const [corridor, first, second],
+      preferredRestrictionId: 'second',
+    );
+
+    expect(result.insideRestrictionIndex, 1);
+    expect(result.nearestRestrictionIndex, 1);
+    expect(result.nearestDistanceMeters, 0);
+    expect(result.preferredDistanceMeters, 0);
+  });
 }

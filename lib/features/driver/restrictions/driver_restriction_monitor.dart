@@ -73,29 +73,42 @@ class DriverRestrictionTransitionEngine {
 
   DriverRestrictionObservation get current => _current;
 
+  bool isSampleEligible({
+    required double accuracyMeters,
+    required DateTime observedAt,
+    required DateTime now,
+  }) {
+    if (!accuracyMeters.isFinite ||
+        accuracyMeters < 0 ||
+        accuracyMeters > maximumAccuracyMeters) {
+      return false;
+    }
+    final age = now.difference(observedAt);
+    if (age > maximumSampleAge || age < const Duration(seconds: -10)) {
+      return false;
+    }
+    final previousObservedAt = _lastAcceptedObservedAt;
+    return previousObservedAt == null || observedAt.isAfter(previousObservedAt);
+  }
+
   DriverRestrictionTransition? evaluate({
     required LatLng point,
     required double accuracyMeters,
     required DateTime observedAt,
     required DateTime now,
     required List<RouteRestriction> restrictions,
+    RouteRestrictionProximity? proximity,
   }) {
-    if (!accuracyMeters.isFinite ||
-        accuracyMeters < 0 ||
-        accuracyMeters > maximumAccuracyMeters) {
-      return null;
-    }
-    final age = now.difference(observedAt);
-    if (age > maximumSampleAge || age < const Duration(seconds: -10)) {
-      return null;
-    }
-    final previousObservedAt = _lastAcceptedObservedAt;
-    if (previousObservedAt != null && !observedAt.isAfter(previousObservedAt)) {
+    if (!isSampleEligible(
+      accuracyMeters: accuracyMeters,
+      observedAt: observedAt,
+      now: now,
+    )) {
       return null;
     }
     _lastAcceptedObservedAt = observedAt;
 
-    final desired = _classify(point, restrictions);
+    final desired = _classify(point, restrictions, proximity);
     if (_sameTarget(desired, _current)) {
       _candidate = null;
       _candidateSamples = 0;
@@ -155,11 +168,16 @@ class DriverRestrictionTransitionEngine {
   DriverRestrictionObservation _classify(
     LatLng point,
     List<RouteRestriction> restrictions,
+    RouteRestrictionProximity? proximity,
   ) {
-    final supported = restrictions
-        .where(RouteRestrictionMatcher.isEnforcedPolygon)
-        .toList(growable: false);
-    if (supported.isEmpty) {
+    final resolvedProximity =
+        proximity ??
+        RouteRestrictionMatcher.pointProximity(
+          point,
+          restrictions,
+          preferredRestrictionId: _current.restriction?.id,
+        );
+    if (resolvedProximity.nearestRestrictionIndex == null) {
       return const DriverRestrictionObservation(
         phase: DriverRestrictionPhase.clear,
       );
@@ -167,11 +185,13 @@ class DriverRestrictionTransitionEngine {
 
     final currentRestrictionId = _current.restriction?.id;
     if (currentRestrictionId != null) {
-      final currentRestriction = supported
+      final currentRestriction = restrictions
+          .where(RouteRestrictionMatcher.isEnforcedPolygon)
           .where((item) => item.id == currentRestrictionId)
           .firstOrNull;
       if (currentRestriction != null) {
         final distance =
+            resolvedProximity.preferredDistanceMeters ??
             RouteRestrictionMatcher.distanceToEnforcedPolygonMeters(
               point,
               currentRestriction,
@@ -196,25 +216,24 @@ class DriverRestrictionTransitionEngine {
       }
     }
 
-    RouteRestriction? closest;
-    var closestDistance = double.infinity;
-    for (final restriction in supported) {
-      final distance = RouteRestrictionMatcher.distanceToEnforcedPolygonMeters(
-        point,
-        restriction,
+    final inside = _restrictionAt(
+      restrictions,
+      resolvedProximity.insideRestrictionIndex,
+    );
+    if (inside != null) {
+      return DriverRestrictionObservation(
+        phase: DriverRestrictionPhase.inside,
+        restriction: inside,
+        distanceMeters: 0,
       );
-      if (distance == 0) {
-        return DriverRestrictionObservation(
-          phase: DriverRestrictionPhase.inside,
-          restriction: restriction,
-          distanceMeters: 0,
-        );
-      }
-      if (distance < closestDistance) {
-        closest = restriction;
-        closestDistance = distance;
-      }
     }
+
+    final closest = _restrictionAt(
+      restrictions,
+      resolvedProximity.nearestRestrictionIndex,
+    );
+    final closestDistance =
+        resolvedProximity.nearestDistanceMeters ?? double.infinity;
     if (closest != null && closestDistance <= approachDistanceMeters) {
       return DriverRestrictionObservation(
         phase: DriverRestrictionPhase.approaching,
@@ -225,6 +244,17 @@ class DriverRestrictionTransitionEngine {
     return const DriverRestrictionObservation(
       phase: DriverRestrictionPhase.clear,
     );
+  }
+
+  RouteRestriction? _restrictionAt(
+    List<RouteRestriction> restrictions,
+    int? index,
+  ) {
+    if (index == null || index < 0 || index >= restrictions.length) return null;
+    final restriction = restrictions[index];
+    return RouteRestrictionMatcher.isEnforcedPolygon(restriction)
+        ? restriction
+        : null;
   }
 
   bool _sameTarget(

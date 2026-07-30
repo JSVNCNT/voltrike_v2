@@ -1,0 +1,72 @@
+{
+  "device": {
+    "model": "SM-A566B",
+    "androidRelease": "16",
+    "sdkInt": 36,
+    "supportedAbis": [
+      "arm64-v8a"
+    ]
+  },
+  "benchmarks": [
+    {
+      "scenario": "typical",
+      "buildMode": "profile",
+      "routePoints": 96,
+      "restrictions": 24,
+      "firstRestrictionConflicts": false,
+      "samples": 30,
+      "dartMedianUs": 490,
+      "dartP95Us": 599,
+      "rustMedianUs": 612,
+      "rustP95Us": 3217,
+      "dartToRustMedianRatio": 0.8006535947712419,
+      "dartColdFirstCallUs": 572,
+      "rustColdFirstCallUs": 29872
+    },
+    {
+      "scenario": "early-conflict",
+      "buildMode": "profile",
+      "routePoints": 96,
+      "restrictions": 24,
+      "firstRestrictionConflicts": true,
+      "samples": 30,
+      "dartMedianUs": 9,
+      "dartP95Us": 25,
+      "rustMedianUs": 317,
+      "rustP95Us": 2751,
+      "dartToRustMedianRatio": 0.028391167192429023
+    },
+    {
+      "scenario": "stress",
+      "buildMode": "profile",
+      "routePoints": 256,
+      "restrictions": 128,
+      "firstRestrictionConflicts": false,
+      "samples": 30,
+      "dartMedianUs": 7336,
+      "dartP95Us": 12947,
+      "rustMedianUs": 755,
+      "rustP95Us": 6308,
+      "dartToRustMedianRatio": 9.716556291390729
+    }
+  ],
+  "cachedV2": {
+    "buildMode": "profile",
+    "routePoints": 256,
+    "encodedBytes": 520,
+    "restrictions": 128,
+    "samples": 30,
+    "dartColdEncodedUs": 10438,
+    "rustColdEncodedAndCacheInstallUs": 2967,
+    "dartEncodedMedianUs": 6881,
+    "dartEncodedP95Us": 11947,
+    "rustCachedEncodedMedianUs": 340,
+    "rustCachedEncodedP95Us": 1280,
+    "encodedDartToRustMedianRatio": 20.238235294117647,
+    "dartProximityMedianUs": 72,
+    "dartProximityP95Us": 416,
+    "rustCachedProximityMedianUs": 376,
+    "rustCachedProximityP95Us": 1807,
+    "proximityDartToRustMedianRatio": 0.19148936170212766
+  }
+}

@@ -891,3 +891,63 @@ they must not be deleted merely because new corridor creation is removed.
 - [ ] Keep geo-indexed dispatch, a global multi-booking optimizer, and the
   proposed app-wide Rust bridge as separate projects; they are not blockers
   for this safety/operations feature.
+
+## Rust migration implementation - 2026-07-30
+
+This tail section is the sole working checklist for the Rust migration. Earlier
+sections remain historical and are not inputs to this implementation.
+
+- [x] Capture the current Android/Flutter size, behavior, and performance
+  baseline without changing product behavior.
+- [x] Add an Android-first Rust workspace pinned to Rust 1.97.1 and a stable,
+  reproducible Flutter bridge behind a hand-written Dart boundary.
+- [x] Preserve a Dart fallback and add off/shadow/on rollout modes so bridge
+  failure cannot block the working application.
+- [x] Port one coarse-grained, pure geospatial batch operation while preserving
+  the current coordinate order, boundary behavior, and restriction semantics.
+- [x] Add Dart-versus-Rust parity fixtures, malformed-input coverage, bridge
+  integration tests, and panic-safe typed error handling.
+- [x] Verify formatting, Rust tests/lints, Flutter analysis/tests, Android ABI
+  packaging, 16 KB native-library compatibility, and binary-size impact.
+- [x] Measure the pilot on realistic workloads and retain Rust only where it
+  produces a documented improvement over the Dart reference.
+- [ ] Profile and then decide whether the compact PSGC index is the next Rust
+  workload; do not duplicate the large dataset across ABI libraries.
+- [ ] Instrument and optimize LiveKit call stages separately because network,
+  Functions, permission, and ICE/TURN delay are outside the Rust compute path.
+- [x] Keep Firebase SDK access, Node Functions, LiveKit/WebRTC, maps, GPS,
+  permissions, Riverpod/UI, and the TSX admin outside the Rust core.
+- [ ] Validate native ARMv7 execution on a real 32-bit device or emulator
+  before treating the packaged low-end ABI as field-validated.
+- [ ] Replace the pre-existing Android debug release certificate with
+  production signing before distribution.
+- [ ] Pin the Flutter SDK and Cargokit temporary runner dependency graph in CI,
+  and preserve the documented custom Cargokit patches during FRB regeneration.
+
+## Rust migration R2 - 2026-07-30
+
+This bottom section is the sole active checklist for R2. All preceding entries
+remain preserved as historical context and are not inputs to this phase.
+
+- [x] Capture physical-device baselines for PSGC readiness, route/restriction
+  evaluation, live proximity queries, and registration image preparation.
+- [x] Add a deterministic compact PSGC artifact and native-owned indexed query
+  engine without embedding the dataset in each Android ABI library.
+- [x] Preserve exact PSGC ordering, codes, names, lookup behavior, and a Dart
+  fallback; verify canonical counts and source/artifact hashes.
+- [x] Replace repeated route polygon transfer with a versioned native
+  restriction cache and one fused encoded-polyline conflict query.
+- [x] Preserve route-selection order, boundary inclusion, malformed-input
+  handling, original restriction index mapping, rollout controls, and Dart
+  fallback behavior.
+- [x] Add nearest-restriction, inside, and distance queries that reuse the same
+  native cache while keeping GPS gating, hysteresis, cooldowns, alerts, and
+  backend reporting in Dart.
+- [x] Implement a file-path-based Rust registration image preparation
+  experiment with bounded decode safeguards and exact orientation/crop/resize
+  behavior; retain it only when physical-device measurements justify it.
+- [x] Run Rust formatting/tests/lints, bridge generation checks, Dart
+  formatting/analysis/tests, Android packaging checks, and physical-device
+  integration/benchmark coverage.
+- [x] Record retained and rejected R2 work, measurements, limitations, and
+  rollback behavior in the matching bottom section of `done.md`.

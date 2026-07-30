@@ -52,6 +52,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
   File? _vehiclePhoto;
 
   String? _error;
+  bool _isPreparing = false;
 
   @override
   void initState() {
@@ -74,35 +75,41 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
 
   Future<void> _pickImage({
     required void Function(File file) setter,
+    required File? Function() currentFile,
     required double aspectRatio,
     required int targetWidth,
     required bool allowGallery,
   }) async {
-    final source = allowGallery
-        ? await showModalBottomSheet<ImageSource>(
-            context: context,
-            showDragHandle: true,
-            builder: (context) => SafeArea(
-              child: Wrap(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.photo_camera_outlined),
-                    title: const Text('Take photo'),
-                    onTap: () => Navigator.pop(context, ImageSource.camera),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.photo_library_outlined),
-                    title: const Text('Choose from gallery'),
-                    onTap: () => Navigator.pop(context, ImageSource.gallery),
-                  ),
-                ],
-              ),
-            ),
-          )
-        : ImageSource.camera;
-    if (source == null) return;
-
+    if (_isPreparing) return;
+    setState(() {
+      _isPreparing = true;
+      _error = null;
+    });
     try {
+      final source = allowGallery
+          ? await showModalBottomSheet<ImageSource>(
+              context: context,
+              showDragHandle: true,
+              builder: (context) => SafeArea(
+                child: Wrap(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.photo_camera_outlined),
+                      title: const Text('Take photo'),
+                      onTap: () => Navigator.pop(context, ImageSource.camera),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.photo_library_outlined),
+                      title: const Text('Choose from gallery'),
+                      onTap: () => Navigator.pop(context, ImageSource.gallery),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : ImageSource.camera;
+      if (source == null) return;
+
       final picked = await _picker.pickImage(
         source: source,
         preferredCameraDevice: CameraDevice.rear,
@@ -117,12 +124,19 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
         targetAspectRatio: aspectRatio,
         targetWidth: targetWidth,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        await _deletePreparedImage(file);
+        return;
+      }
+      final previous = currentFile();
       setState(() {
         setter(file);
         _error = null;
       });
       _persistDocuments();
+      if (previous?.path != file.path) {
+        await _deletePreparedImage(previous);
+      }
     } catch (error, stackTrace) {
       debugPrint('Registration image preparation failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -132,6 +146,21 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
             ? error.message
             : 'Could not prepare that image. Please try again.';
       });
+    } finally {
+      if (mounted) {
+        setState(() => _isPreparing = false);
+      }
+    }
+  }
+
+  Future<void> _deletePreparedImage(File? file) async {
+    if (file == null || !file.path.endsWith('.voltrike.jpg')) return;
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      debugPrint('An obsolete prepared registration image was not removed.');
     }
   }
 
@@ -183,7 +212,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
           ? AppRoutes.driverRegisterReview
           : AppRoutes.driverRegisterStep3,
       child: LoadingOverlay(
-        isLoading: false,
+        isLoading: _isPreparing,
+        message: 'Preparing image\u2026',
         child: AuthScaffold(
           child: SingleChildScrollView(
             child: Column(
@@ -241,6 +271,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   instruction: 'Camera or gallery • square portrait',
                   onTap: () => _pickImage(
                     setter: (file) => _profilePhoto = file,
+                    currentFile: () => _profilePhoto,
                     aspectRatio: 1,
                     targetWidth: 1080,
                     allowGallery: true,
@@ -265,6 +296,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   cameraOnly: true,
                   onTap: () => _pickImage(
                     setter: (file) => _licenseFront = file,
+                    currentFile: () => _licenseFront,
                     aspectRatio: 1.586,
                     targetWidth: 1600,
                     allowGallery: false,
@@ -289,6 +321,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   cameraOnly: true,
                   onTap: () => _pickImage(
                     setter: (file) => _licenseBack = file,
+                    currentFile: () => _licenseBack,
                     aspectRatio: 1.586,
                     targetWidth: 1600,
                     allowGallery: false,
@@ -313,6 +346,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   cameraOnly: true,
                   onTap: () => _pickImage(
                     setter: (file) => _governmentId = file,
+                    currentFile: () => _governmentId,
                     aspectRatio: 1.586,
                     targetWidth: 1600,
                     allowGallery: false,
@@ -337,6 +371,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   cameraOnly: true,
                   onTap: () => _pickImage(
                     setter: (file) => _orDocument = file,
+                    currentFile: () => _orDocument,
                     aspectRatio: 1 / 1.414,
                     targetWidth: 1400,
                     allowGallery: false,
@@ -361,6 +396,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   cameraOnly: true,
                   onTap: () => _pickImage(
                     setter: (file) => _crDocument = file,
+                    currentFile: () => _crDocument,
                     aspectRatio: 1 / 1.414,
                     targetWidth: 1400,
                     allowGallery: false,
@@ -384,6 +420,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   instruction: 'Camera or gallery • show the full vehicle',
                   onTap: () => _pickImage(
                     setter: (file) => _vehiclePhoto = file,
+                    currentFile: () => _vehiclePhoto,
                     aspectRatio: 4 / 3,
                     targetWidth: 1600,
                     allowGallery: true,

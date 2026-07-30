@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import '../../data/models/route_info.dart';
 import '../../data/models/route_policy_advisory.dart';
 import '../config/api_keys.dart';
-import 'polyline_service.dart';
 import 'route_restriction_service.dart';
 
 class RoutesService {
@@ -53,8 +52,8 @@ class RoutesService {
       RouteInfo? highwayAdvisoryFallback;
       for (final raw in rawRoutes) {
         final route = parseGoogleRoute(raw as Map<String, dynamic>);
-        final conflict = await restrictions.routeConflict(
-          PolylineService.decodePolyline(route.encodedPolyline),
+        final conflict = await restrictions.encodedRouteConflict(
+          route.encodedPolyline,
         );
         if (conflict == null) {
           final candidate = route.copyWith(

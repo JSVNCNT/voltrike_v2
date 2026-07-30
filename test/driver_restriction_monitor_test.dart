@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
+import 'package:voltrike_v2/core/services/route_restriction_matcher.dart';
 import 'package:voltrike_v2/data/models/route_restriction.dart';
 import 'package:voltrike_v2/features/driver/restrictions/driver_restriction_monitor.dart';
 
@@ -107,5 +108,93 @@ void main() {
       isNull,
     );
     expect(engine.current.phase, DriverRestrictionPhase.clear);
+  });
+
+  test('sample eligibility preflight is non-mutating', () {
+    final engine = DriverRestrictionTransitionEngine(confirmationSamples: 1);
+    final observedAt = DateTime.utc(2026, 7, 30, 1);
+
+    expect(
+      engine.isSampleEligible(
+        accuracyMeters: 5,
+        observedAt: observedAt,
+        now: observedAt,
+      ),
+      isTrue,
+    );
+    expect(
+      engine.isSampleEligible(
+        accuracyMeters: 5,
+        observedAt: observedAt,
+        now: observedAt,
+      ),
+      isTrue,
+    );
+
+    engine.evaluate(
+      point: const LatLng(10.0005, 122.0005),
+      accuracyMeters: 5,
+      observedAt: observedAt,
+      now: observedAt,
+      restrictions: [restriction],
+    );
+    expect(
+      engine.isSampleEligible(
+        accuracyMeters: 5,
+        observedAt: observedAt,
+        now: observedAt,
+      ),
+      isFalse,
+    );
+  });
+
+  test('uses supplied proximity while preserving boundary hysteresis', () {
+    final engine = DriverRestrictionTransitionEngine(confirmationSamples: 1);
+    final base = DateTime.utc(2026, 7, 30, 1);
+
+    final approach = engine.evaluate(
+      point: const LatLng(0, 0),
+      accuracyMeters: 5,
+      observedAt: base,
+      now: base,
+      restrictions: [restriction],
+      proximity: const RouteRestrictionProximity(
+        nearestRestrictionIndex: 0,
+        nearestDistanceMeters: 50,
+      ),
+    );
+    expect(approach?.current.phase, DriverRestrictionPhase.approaching);
+
+    final retained = engine.evaluate(
+      point: const LatLng(0, 0),
+      accuracyMeters: 5,
+      observedAt: base.add(const Duration(seconds: 1)),
+      now: base.add(const Duration(seconds: 1)),
+      restrictions: [restriction],
+      proximity: const RouteRestrictionProximity(
+        nearestRestrictionIndex: 0,
+        nearestDistanceMeters: 120,
+        preferredDistanceMeters: 120,
+      ),
+    );
+    expect(retained, isNull);
+    expect(engine.current.phase, DriverRestrictionPhase.approaching);
+    expect(engine.current.distanceMeters, 120);
+
+    final entry = engine.evaluate(
+      point: const LatLng(0, 0),
+      accuracyMeters: 5,
+      observedAt: base.add(const Duration(seconds: 2)),
+      now: base.add(const Duration(seconds: 2)),
+      restrictions: [restriction],
+      proximity: const RouteRestrictionProximity(
+        insideRestrictionIndex: 0,
+        nearestRestrictionIndex: 0,
+        nearestDistanceMeters: 0,
+        preferredDistanceMeters: 0,
+      ),
+    );
+    expect(entry?.entered, isTrue);
+    expect(entry?.current.phase, DriverRestrictionPhase.inside);
   });
 }
