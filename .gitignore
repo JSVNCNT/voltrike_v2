@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/rust/target/
 
 # Symbolication related
 app.*.symbols
@@ -52,3 +53,7 @@ app.*.map.json
 !/admin/.env.example
 !/admin/.env.emulator
 **/node_modules/
+
+
+#Api Key
+lib\core\config\api_keys.dart
