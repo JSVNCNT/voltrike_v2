@@ -8,12 +8,11 @@ import '../../../../app/routes.dart';
 import '../../../../core/config/booking_config.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../../core/maps/voltrike_map.dart';
-import '../../../../core/services/navigation_service.dart';
+import '../../../../core/services/polyline_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/booking.dart';
 import '../../../ride/routing/booking_route_coordinator.dart';
 import '../../../ride/routing/booking_route_resolver.dart';
-import '../../controllers/passenger_booking_flow_controller.dart';
 import '../models/driver_search_presentation.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_listener_provider.dart';
@@ -62,15 +61,11 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
         next.whenData((booking) {
           _latestBooking = booking;
           if (booking == null) {
-            ref.read(passengerBookingFlowProvider.notifier).clear();
             _stopSearchTimer();
             return;
           }
 
-          ref
-              .read(passengerBookingFlowProvider.notifier)
-              .updateStatus(booking.status);
-          unawaited(_loadRequestedRoute(booking));
+          _loadRequestedRoute(booking);
           _syncSearchTimer(booking);
           _handleStatusChange(booking);
         });
@@ -78,17 +73,13 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
     );
   }
 
-  Future<void> _loadRequestedRoute(Booking booking) async {
+  void _loadRequestedRoute(Booking booking) {
     if (_loadedRouteBookingId == booking.bookingId) return;
     _loadedRouteBookingId = booking.bookingId;
     try {
-      final route = await NavigationService.instance.computeRouteInfo(
-        origin: booking.pickup,
-        destination: booking.destination,
-      );
-      final points = route == null || route.encodedPolyline.isEmpty
+      final points = booking.authoritativeRoutePolyline.isEmpty
           ? <LatLng>[booking.pickup, booking.destination]
-          : NavigationService.instance.decodePolyline(route.encodedPolyline);
+          : PolylineService.decodePolyline(booking.authoritativeRoutePolyline);
       if (mounted) setState(() => _routePoints = points);
     } catch (_) {
       if (mounted) {
@@ -116,6 +107,7 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
     final nextRemaining = DriverSearchPresentation.remainingSeconds(
       bookingCreatedAt: booking.createdAt,
       now: DateTime.now(),
+      searchExpiresAt: booking.searchExpiresAt,
     );
     if (mounted && nextRemaining != _remainingSeconds) {
       setState(() => _remainingSeconds = nextRemaining);
@@ -143,6 +135,7 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
     final nextRemaining = DriverSearchPresentation.remainingSeconds(
       bookingCreatedAt: booking.createdAt,
       now: DateTime.now(),
+      searchExpiresAt: booking.searchExpiresAt,
     );
     if (nextRemaining != _remainingSeconds) {
       setState(() => _remainingSeconds = nextRemaining);
@@ -242,7 +235,6 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
             reasonDetail: 'Passenger cancelled while searching for a driver.',
           );
       if (!mounted) return;
-      ref.read(passengerBookingFlowProvider.notifier).clear();
       context.go(AppRoutes.passengerHome);
     } catch (error) {
       if (!mounted) return;
@@ -254,7 +246,6 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
   }
 
   void _returnHome() {
-    ref.read(passengerBookingFlowProvider.notifier).clear();
     context.go(AppRoutes.passengerHome);
   }
 

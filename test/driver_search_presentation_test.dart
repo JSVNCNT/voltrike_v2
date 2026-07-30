@@ -39,6 +39,18 @@ void main() {
       );
     });
 
+    test('prefers the authoritative backend search deadline', () {
+      final backendDeadline = createdAt.add(const Duration(seconds: 30));
+      expect(
+        DriverSearchPresentation.remainingSeconds(
+          bookingCreatedAt: createdAt,
+          searchExpiresAt: backendDeadline,
+          now: createdAt.add(const Duration(seconds: 10)),
+        ),
+        20,
+      );
+    });
+
     test('formats a stable timer label', () {
       expect(DriverSearchPresentation.formatCountdown(60), '1:00');
       expect(DriverSearchPresentation.formatCountdown(9), '0:09');

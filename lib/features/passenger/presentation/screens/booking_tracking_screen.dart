@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
+import '../../../../core/native/active_route_navigation_engine.dart';
+import '../../../../core/native/rust_navigation_bridge.dart';
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/services/polyline_service.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../../app/routes.dart';
 import '../../../../data/models/booking.dart';
@@ -16,6 +20,7 @@ import '../../../../data/repositories/safety_repository.dart';
 import '../../providers/booking_listener_provider.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/driver_location_listener_provider.dart';
+import '../../services/driver_location_listener_service.dart';
 
 import '../widgets/driver_information_card.dart';
 
@@ -50,6 +55,8 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   //==========================================================================
 
   final NavigationService _navigation = NavigationService.instance;
+  final ActiveRouteNavigationEngine _activeRouteEngine =
+      ActiveRouteNavigationEngine();
 
   //==========================================================================
   // Google Map
@@ -67,6 +74,12 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   String? _eta;
   String? _remainingDistance;
   String? _routeWarning;
+  String? _loadedAuthoritativeRouteKey;
+  LatLng? _lastCameraTarget;
+  DateTime? _lastCameraMovedAt;
+  LatLng? _filteredDriverLocation;
+  String? _activeRouteEngineKey;
+  bool _processingRouteSample = false;
 
   //==========================================================================
   // Navigation
@@ -146,6 +159,9 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   @override
   void dispose() {
     _bookingSubscription?.close();
+    if (_activeRouteEngineKey != null) {
+      unawaited(_activeRouteEngine.clearRoute());
+    }
     _mapController?.dispose();
     super.dispose();
   }
@@ -158,6 +174,31 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     required Booking booking,
     required LatLng driverLocation,
   }) async {
+    if (_tripStarted(booking) &&
+        booking.authoritativeRoutePolyline.isNotEmpty) {
+      final routeKey =
+          '${booking.bookingId}:${booking.authoritativeRoutePolyline.hashCode}';
+      if (_loadedAuthoritativeRouteKey != routeKey) {
+        try {
+          final points = PolylineService.decodePolyline(
+            booking.authoritativeRoutePolyline,
+          );
+          if (!mounted) return;
+          setState(() {
+            _loadedAuthoritativeRouteKey = routeKey;
+            _routePoints = points;
+            _remainingDistance =
+                '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km route';
+            _routeWarning = null;
+          });
+        } on FormatException {
+          // Fall through to the bounded live-route fallback for malformed
+          // legacy data.
+        }
+      }
+      if (_loadedAuthoritativeRouteKey == routeKey) return;
+    }
+
     final destination = _routeDestination(booking);
     if (!_routeRefreshPolicy.shouldRefresh(
       origin: driverLocation,
@@ -210,6 +251,70 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
       origin: driverLocation,
       destination: destination,
     );
+  }
+
+  Future<void> _processActiveRouteSample({
+    required Booking booking,
+    required DriverLocationSample sample,
+  }) async {
+    if (_processingRouteSample ||
+        !_tripStarted(booking) ||
+        booking.authoritativeRoutePolyline.isEmpty) {
+      return;
+    }
+    _processingRouteSample = true;
+    try {
+      final routeKey =
+          '${booking.bookingId}:${booking.authoritativeRoutePolyline.hashCode}';
+      if (_activeRouteEngineKey != routeKey) {
+        if (_activeRouteEngineKey != null) {
+          await _activeRouteEngine.clearRoute();
+        }
+        _filteredDriverLocation = null;
+        await _activeRouteEngine.installRoute(
+          booking.authoritativeRoutePolyline,
+        );
+        _activeRouteEngineKey = routeKey;
+      }
+
+      final batch = await _activeRouteEngine.processSamples([
+        ActiveRouteGpsSample(
+          latitude: sample.location.latitude,
+          longitude: sample.location.longitude,
+          accuracyMeters: sample.accuracyMeters,
+          timestampMillis: sample.observedAt.millisecondsSinceEpoch,
+        ),
+      ]);
+      ActiveRouteSampleResponse? accepted;
+      for (final response in batch.samples.reversed) {
+        if (response.isAccepted) {
+          accepted = response;
+          break;
+        }
+      }
+      final result = accepted;
+      if (!mounted || result == null) return;
+      setState(() {
+        final latitude = result.filteredLatitude;
+        final longitude = result.filteredLongitude;
+        if (latitude != null && longitude != null) {
+          _filteredDriverLocation = LatLng(latitude, longitude);
+        }
+        final remaining = result.remainingDistanceMeters;
+        if (remaining != null) {
+          _remainingDistance =
+              '${(remaining / 1000).toStringAsFixed(1)} km remaining';
+        }
+        _routeWarning = (result.offRouteConfidence ?? 0) >= 0.7
+            ? 'Driver may be off the planned route.'
+            : null;
+      });
+    } catch (_) {
+      // The engine lazily restores its bounded Dart fallback if Rust fails.
+      // A malformed legacy route can still use the bounded network path.
+    } finally {
+      _processingRouteSample = false;
+    }
   }
 
   Future<void> _cancelBooking(Booking booking) async {
@@ -383,13 +488,44 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
       return;
     }
 
+    final now = DateTime.now();
+    final previous = _lastCameraTarget;
+    final lastMovedAt = _lastCameraMovedAt;
+    if (previous != null &&
+        lastMovedAt != null &&
+        _distanceMeters(previous, target) < 8 &&
+        now.difference(lastMovedAt) < const Duration(seconds: 15)) {
+      return;
+    }
+    _lastCameraTarget = target;
+    _lastCameraMovedAt = now;
     await _mapController!.animateCamera(CameraUpdate.newLatLngZoom(target, 16));
   }
 
+  double _distanceMeters(LatLng start, LatLng end) {
+    const earthRadiusMeters = 6371000.0;
+    final latitudeDelta = _radians(end.latitude - start.latitude);
+    final longitudeDelta = _radians(end.longitude - start.longitude);
+    final startLatitude = _radians(start.latitude);
+    final endLatitude = _radians(end.latitude);
+    final haversine =
+        math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
+        math.cos(startLatitude) *
+            math.cos(endLatitude) *
+            math.sin(longitudeDelta / 2) *
+            math.sin(longitudeDelta / 2);
+    return earthRadiusMeters *
+        2 *
+        math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+  }
+
+  double _radians(double degrees) => degrees * math.pi / 180;
+
   Future<void> _followDriver({
     required Booking booking,
-    required LatLng? driverLocation,
+    required DriverLocationSample? driverSample,
   }) async {
+    final driverLocation = driverSample?.location;
     if (driverLocation == null) {
       return;
     }
@@ -397,6 +533,9 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     await _moveCamera(driverLocation);
 
     await _loadRoute(booking: booking, driverLocation: driverLocation);
+    if (driverSample != null) {
+      await _processActiveRouteSample(booking: booking, sample: driverSample);
+    }
   }
 
   //==========================================================================
@@ -649,9 +788,17 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
             body: Center(child: Text(DomainErrorMapper.message(error))),
           ),
 
-          data: (driverLocation) {
+          data: (driverSample) {
+            final rawDriverLocation = driverSample?.location;
+            final driverLocation = driverSample == null
+                ? null
+                : _tripStarted(booking)
+                ? _filteredDriverLocation ?? rawDriverLocation
+                : rawDriverLocation;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              _followDriver(booking: booking, driverLocation: driverLocation);
+              unawaited(
+                _followDriver(booking: booking, driverSample: driverSample),
+              );
             });
 
             return Scaffold(

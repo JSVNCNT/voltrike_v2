@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -15,6 +17,90 @@ class BookingVoiceCallCredentials {
   final String token;
   final String callId;
   final DateTime endsAt;
+
+  bool isUsableFor(String expectedCallId, [DateTime? at]) {
+    return callId == expectedCallId && endsAt.isAfter(at ?? DateTime.now());
+  }
+}
+
+/// Ephemeral result returned by a call lifecycle callable.
+///
+/// Credentials are deliberately kept out of [BookingCallSession] because that
+/// model also represents Firestore data. A token returned by a callable must
+/// never be persisted in the booking-call document.
+class BookingVoiceCallActionResult {
+  const BookingVoiceCallActionResult({
+    required this.session,
+    this.serverUrl,
+    this.credentials,
+  });
+
+  final BookingCallSession session;
+  final String? serverUrl;
+  final BookingVoiceCallCredentials? credentials;
+
+  factory BookingVoiceCallActionResult.fromCallableData(
+    Map<Object?, Object?> data,
+  ) {
+    final bookingId = _nonEmptyString(data['bookingId']);
+    final callId = _nonEmptyString(data['callId']);
+    final callerId = _nonEmptyString(data['callerId']);
+    final recipientId = _nonEmptyString(data['recipientId']);
+    final expiresAtMillis = _intValue(data['expiresAtMillis']);
+    if (bookingId == null ||
+        callId == null ||
+        callerId == null ||
+        recipientId == null ||
+        expiresAtMillis == null) {
+      throw StateError('Voice service returned incomplete call state.');
+    }
+
+    final endsAtMillis = _intValue(data['endsAtMillis']);
+    final serverUrl = _nonEmptyString(data['serverUrl']);
+    final token = _nonEmptyString(data['token']);
+    BookingVoiceCallCredentials? credentials;
+    if (token != null) {
+      if (serverUrl == null || endsAtMillis == null) {
+        throw StateError('Voice service returned incomplete call credentials.');
+      }
+      credentials = BookingVoiceCallCredentials(
+        serverUrl: serverUrl,
+        token: token,
+        callId: callId,
+        endsAt: DateTime.fromMillisecondsSinceEpoch(endsAtMillis),
+      );
+    }
+
+    return BookingVoiceCallActionResult(
+      session: BookingCallSession.fromMap(
+        bookingId: bookingId,
+        data: {
+          'bookingId': bookingId,
+          'callId': callId,
+          'callerId': callerId,
+          'recipientId': recipientId,
+          'status': data['status'],
+          'createdAt': DateTime.now(),
+          'expiresAt': expiresAtMillis,
+          'endsAt': endsAtMillis,
+        },
+      ),
+      serverUrl: serverUrl,
+      credentials: credentials,
+    );
+  }
+
+  static String? _nonEmptyString(Object? value) {
+    return value is String && value.trim().isNotEmpty ? value.trim() : null;
+  }
+
+  static int? _intValue(Object? value) {
+    return switch (value) {
+      int number => number,
+      num number => number.toInt(),
+      _ => null,
+    };
+  }
 }
 
 /// Coordinates the server-authoritative booking call lifecycle. The LiveKit
@@ -30,6 +116,10 @@ class BookingVoiceCallRepository {
 
   final FirebaseFunctions _functions;
   final FirebaseFirestore _firestore;
+
+  static const Duration _stateCallTimeout = Duration(seconds: 10);
+  static const Duration _tokenCallTimeout = Duration(seconds: 10);
+  static const Duration _endCallTimeout = Duration(seconds: 6);
 
   Stream<BookingCallSession?> watchCall(String bookingId) {
     return _firestore.collection('bookingCalls').doc(bookingId).snapshots().map(
@@ -60,10 +150,19 @@ class BookingVoiceCallRepository {
   }
 
   Future<BookingCallSession> startCall(String bookingId) async {
-    final result = await _functions
-        .httpsCallable('startBookingCall')
-        .call<Map<Object?, Object?>>({'bookingId': bookingId});
-    return _sessionFromCallable(result.data);
+    return (await startCallWithResult(bookingId)).session;
+  }
+
+  Future<BookingVoiceCallActionResult> startCallWithResult(
+    String bookingId,
+  ) async {
+    final result = await _callWithOneRetry(
+      () => _functions
+          .httpsCallable('startBookingCall')
+          .call<Map<Object?, Object?>>({'bookingId': bookingId}),
+      timeout: _stateCallTimeout,
+    );
+    return BookingVoiceCallActionResult.fromCallableData(result.data);
   }
 
   Future<BookingCallSession> respondCall({
@@ -78,26 +177,51 @@ class BookingVoiceCallRepository {
     ].contains(response)) {
       throw ArgumentError.value(response, 'response');
     }
-    final result = await _functions
-        .httpsCallable('respondBookingCall')
-        .call<Map<Object?, Object?>>({
-          'bookingId': bookingId,
-          'callId': callId,
-          'response': response.name,
-        });
-    return _sessionFromCallable(result.data);
+    return (await respondCallWithResult(
+      bookingId: bookingId,
+      callId: callId,
+      response: response,
+    )).session;
+  }
+
+  Future<BookingVoiceCallActionResult> respondCallWithResult({
+    required String bookingId,
+    required String callId,
+    required BookingCallStatus response,
+  }) async {
+    if (![
+      BookingCallStatus.accepted,
+      BookingCallStatus.declined,
+      BookingCallStatus.expired,
+    ].contains(response)) {
+      throw ArgumentError.value(response, 'response');
+    }
+    final result = await _callWithOneRetry(
+      () => _functions
+          .httpsCallable('respondBookingCall')
+          .call<Map<Object?, Object?>>({
+            'bookingId': bookingId,
+            'callId': callId,
+            'response': response.name,
+          }),
+      timeout: _stateCallTimeout,
+    );
+    return BookingVoiceCallActionResult.fromCallableData(result.data);
   }
 
   Future<BookingVoiceCallCredentials> createCredentials({
     required String bookingId,
     required String callId,
   }) async {
-    final result = await _functions
-        .httpsCallable('createBookingCallToken')
-        .call<Map<Object?, Object?>>({
-          'bookingId': bookingId,
-          'callId': callId,
-        });
+    final result = await _callWithOneRetry(
+      () => _functions
+          .httpsCallable('createBookingCallToken')
+          .call<Map<Object?, Object?>>({
+            'bookingId': bookingId,
+            'callId': callId,
+          }),
+      timeout: _tokenCallTimeout,
+    );
     final data = result.data;
     final serverUrl = data['serverUrl'] as String?;
     final token = data['token'] as String?;
@@ -121,38 +245,33 @@ class BookingVoiceCallRepository {
     required String bookingId,
     required String callId,
   }) async {
-    await _functions.httpsCallable('endBookingCall').call<void>({
-      'bookingId': bookingId,
-      'callId': callId,
-    });
-  }
-
-  BookingCallSession _sessionFromCallable(Map<Object?, Object?> data) {
-    final bookingId = data['bookingId'] as String?;
-    final callId = data['callId'] as String?;
-    final callerId = data['callerId'] as String?;
-    final recipientId = data['recipientId'] as String?;
-    final expiresAtMillis = _int(data['expiresAtMillis']);
-    if (bookingId == null ||
-        callId == null ||
-        callerId == null ||
-        recipientId == null ||
-        expiresAtMillis == null) {
-      throw StateError('Voice service returned incomplete call state.');
-    }
-    return BookingCallSession.fromMap(
-      bookingId: bookingId,
-      data: {
+    await _callWithOneRetry(
+      () => _functions.httpsCallable('endBookingCall').call<void>({
         'bookingId': bookingId,
         'callId': callId,
-        'callerId': callerId,
-        'recipientId': recipientId,
-        'status': data['status'],
-        'createdAt': DateTime.now(),
-        'expiresAt': expiresAtMillis,
-        'endsAt': _int(data['endsAtMillis']),
-      },
+      }),
+      timeout: _endCallTimeout,
     );
+  }
+
+  Future<T> _callWithOneRetry<T>(
+    Future<T> Function() operation, {
+    required Duration timeout,
+  }) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await operation().timeout(timeout);
+      } catch (error) {
+        if (attempt > 0 || !_isRetryable(error)) rethrow;
+      }
+    }
+    throw StateError('Unreachable voice-call retry state.');
+  }
+
+  static bool _isRetryable(Object error) {
+    if (error is TimeoutException) return true;
+    return error is FirebaseFunctionsException &&
+        (error.code == 'deadline-exceeded' || error.code == 'unavailable');
   }
 
   static int? _int(Object? value) {

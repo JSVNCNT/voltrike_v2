@@ -7,7 +7,6 @@ import '../../../data/models/booking.dart';
 import '../../../data/repositories/booking_repository.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../providers/driver_incoming_booking_provider.dart';
-import '../providers/driver_trip_provider.dart';
 
 /// ===========================================================================
 /// Driver Booking Listener
@@ -81,8 +80,6 @@ class DriverBookingListener {
 
               _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
 
-              _ref.read(driverTripProvider.notifier).waitingBooking();
-
               developer.log(
                 'Trip state -> waitingBooking',
                 name: 'DriverBookingListener',
@@ -130,8 +127,6 @@ class DriverBookingListener {
               'Updating trip state -> bookingReceived',
               name: 'DriverBookingListener',
             );
-
-            _ref.read(driverTripProvider.notifier).bookingReceived();
           },
           onError: (Object error, StackTrace stackTrace) {
             // The booking document is readable only while this driver has an
@@ -143,8 +138,6 @@ class DriverBookingListener {
               stackTrace: stackTrace,
             );
             _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
-            _ref.read(driverTripProvider.notifier).waitingBooking();
-
             if (!_shouldListen) return;
             _retryTimer?.cancel();
             _retryTimer = Timer(const Duration(seconds: 1), () {

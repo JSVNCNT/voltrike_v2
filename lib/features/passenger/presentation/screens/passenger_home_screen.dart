@@ -45,6 +45,7 @@ class PassengerHomeScreen extends ConsumerStatefulWidget {
 
 class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
   int _routeCalculationGeneration = 0;
+  bool _bookingCreationInProgress = false;
 
   FareConfiguration get _fareConfiguration =>
       ref.read(fareConfigurationProvider).valueOrNull ?? devFareConfiguration;
@@ -180,7 +181,6 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       coverage = await TodaCoverageService.instance.classifyTrip(
         pickup: pickup,
         destination: destination,
-        forceRefresh: true,
       );
     } catch (_) {
       if (!mounted || calculationGeneration != _routeCalculationGeneration) {
@@ -196,9 +196,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     if (!mounted || calculationGeneration != _routeCalculationGeneration) {
       return;
     }
-    RouteRestrictionService.instance
-      ..invalidate()
-      ..clearLastConflict();
+    RouteRestrictionService.instance.clearLastConflict();
     final endpointRestriction =
         await RouteRestrictionService.instance.bookingEndpointConflict(
           pickup,
@@ -450,6 +448,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
     final bookingState = ref.watch(bookingProvider);
     final routeSelectionLocked =
+        _bookingCreationInProgress ||
         bookingState == PassengerBookingState.estimatingFare ||
         bookingState == PassengerBookingState.searchingDriver;
 
@@ -525,7 +524,9 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
                 onDecreaseBaggage: _decreaseBaggage,
 
-                onBookRide: session.hasRoute ? _bookRide : null,
+                onBookRide: session.hasRoute && !_bookingCreationInProgress
+                    ? _bookRide
+                    : null,
               );
             },
           ),
@@ -539,6 +540,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
   //==========================================================================
 
   Future<void> _bookRide() async {
+    if (_bookingCreationInProgress) return;
     final session = ref.read(bookingSessionProvider);
 
     if (!session.hasRoute ||
@@ -547,6 +549,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       return;
     }
 
+    setState(() => _bookingCreationInProgress = true);
     try {
       final creation = await ref
           .read(bookingControllerProvider.notifier)
@@ -572,6 +575,17 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         return value is num && value.isFinite ? value.toDouble() : fallback;
       }
 
+      var confirmedRoutePoints = session.routePoints;
+      if (creation.authoritativeRoutePolyline.isNotEmpty) {
+        try {
+          confirmedRoutePoints = PolylineService.decodePolyline(
+            creation.authoritativeRoutePolyline,
+          );
+        } on FormatException {
+          // The durable booking remains valid; retain the already-rendered
+          // client route if a malformed legacy response is encountered.
+        }
+      }
       final serverRouteAdvisory = creation.avoidedRouteRestrictionNames.isEmpty
           ? creation.routePolicy.hasNotice
                 ? creation.routePolicy.passengerMessage
@@ -580,6 +594,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 '${creation.avoidedRouteRestrictionNames.join(', ')}. '
                 'Follow the route shown in the app.';
       final serverConfirmedSession = session.copyWith(
+        routePoints: confirmedRoutePoints,
         distanceMeters: creation.distanceMeters,
         routeAdvisory: serverRouteAdvisory,
         routePolicy: creation.routePolicy,
@@ -640,6 +655,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Booking failed: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _bookingCreationInProgress = false);
+      }
     }
   }
 }

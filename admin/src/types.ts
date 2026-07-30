@@ -133,6 +133,42 @@ export interface TodaCommission {
   updatedAt?: string | null;
 }
 
+export interface TodaCommissionReportSummary {
+  grossFare: number;
+  commissionAmount: number;
+  driverNetEarnings: number;
+  completedRides: number;
+  pendingSettlements: number;
+  settledSettlements: number;
+  disputedSettlements: number;
+}
+
+export interface TodaCommissionReportItem {
+  bookingId: string;
+  receiptNumber?: string | null;
+  driverId: string;
+  driverName: string;
+  completedAt: string | null;
+  grossFare: number;
+  commissionPercent: number;
+  commissionAmount: number;
+  driverNetEarnings: number;
+  settlementStatus: string;
+  adjustmentStatus?: string | null;
+  disputeReason?: string | null;
+}
+
+export interface TodaCommissionReport {
+  summary: TodaCommissionReportSummary;
+  items: TodaCommissionReportItem[];
+  nextCursor: string | null;
+}
+
+export interface TodaCommissionReportOptions {
+  cursor?: string | null;
+  summaryOnly?: boolean;
+}
+
 export interface LiveDriver {
   uid: string;
   name: string;

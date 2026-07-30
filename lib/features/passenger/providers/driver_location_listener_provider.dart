@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../services/driver_location_listener_service.dart';
 
@@ -15,18 +14,7 @@ import '../services/driver_location_listener_service.dart';
 /// • DriverTrackingScreen
 /// • PassengerTripScreen
 /// ===========================================================================
-final driverLocationListenerProvider =
-    StreamProvider.family<
-        LatLng?,
-        String>(
-  (
-    ref,
-    driverId,
-  ) {
-    return DriverLocationListenerService
-        .instance
-        .listen(
-          driverId,
-        );
-  },
-);
+final driverLocationListenerProvider = StreamProvider.autoDispose
+    .family<DriverLocationSample?, String>((ref, driverId) {
+      return DriverLocationListenerService.instance.listenSamples(driverId);
+    });

@@ -9,7 +9,9 @@ import '../../../data/repositories/booking_repository.dart';
 /// This provider is intentionally Firestore-backed: it restores the durable
 /// ride lifecycle, while the tracking screen separately consumes live RTDB
 /// location updates for the assigned driver.
-final activePassengerBookingProvider = StreamProvider<Booking?>((ref) {
+final activePassengerBookingProvider = StreamProvider.autoDispose<Booking?>((
+  ref,
+) {
   final user = AuthRepository().currentUser;
 
   if (user == null) {

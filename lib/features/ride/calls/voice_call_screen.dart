@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/errors/domain_error_mapper.dart';
 import '../../../data/models/booking.dart';
@@ -12,6 +11,7 @@ import '../../../data/repositories/booking_repository.dart';
 import '../../../data/repositories/booking_voice_call_repository.dart';
 import '../../common/services/ringtone_service.dart';
 import 'call_participant_identity.dart';
+import 'microphone_permission.dart';
 import 'voice_call_service.dart';
 
 class VoiceCallScreen extends StatefulWidget {
@@ -20,12 +20,16 @@ class VoiceCallScreen extends StatefulWidget {
     required this.bookingId,
     required this.outgoing,
     this.callId,
+    this.initialServerUrl,
+    this.initialCredentials,
     this.repository,
   });
 
   final String bookingId;
   final bool outgoing;
   final String? callId;
+  final String? initialServerUrl;
+  final BookingVoiceCallCredentials? initialCredentials;
   final BookingVoiceCallRepository? repository;
 
   @override
@@ -54,6 +58,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   bool _allowPop = false;
   bool _timedOut = false;
   bool _wasConnected = false;
+  int _joinGeneration = 0;
+  BookingVoiceCallCredentials? _credentials;
 
   @override
   void initState() {
@@ -62,6 +68,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     _bookingRepository = BookingRepository();
     _service = VoiceCallService(onChanged: _onLiveKitChanged);
     _callId = widget.callId;
+    _credentials = widget.initialCredentials;
     unawaited(RingtoneService.instance.stopIncomingCall());
     _bookingSubscription = _bookingRepository
         .watchBooking(widget.bookingId)
@@ -75,6 +82,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         _error = 'This call invitation is no longer available.';
       } else {
         _watchCall(callId);
+        if (_credentials?.isUsableFor(callId) ?? false) {
+          unawaited(_join(callId));
+        }
       }
     }
   }
@@ -93,16 +103,40 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     if (_starting) return;
     _starting = true;
     try {
-      final session = await _repository.startCall(widget.bookingId);
+      // Do not create a durable ringing invitation if this device cannot
+      // provide the microphone needed to complete it.
+      await ensureVoiceCallMicrophonePermission();
+      final result = await _repository.startCallWithResult(widget.bookingId);
       if (!mounted) return;
+      final session = result.session;
       setState(() {
         _session = session;
         _callId = session.callId;
+        _credentials = result.credentials;
       });
+      final serverUrl =
+          result.serverUrl ??
+          result.credentials?.serverUrl ??
+          widget.initialServerUrl;
+      if (serverUrl != null && serverUrl.isNotEmpty) {
+        unawaited(
+          _service.prepareConnection(
+            serverUrl: serverUrl,
+            token: result.credentials?.token,
+          ),
+        );
+      }
       _watchCall(session.callId);
     } catch (error) {
       if (mounted) {
-        setState(() => _error = DomainErrorMapper.message(error));
+        setState(() {
+          _error = switch (error) {
+            StateError stateError => stateError.message.toString(),
+            TimeoutException _ =>
+              'The voice call service timed out. Please try again.',
+            _ => DomainErrorMapper.message(error),
+          };
+        });
       }
     } finally {
       _starting = false;
@@ -117,6 +151,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
           (session) {
             if (!mounted || session == null) return;
             if (!session.matches(callId)) {
+              _joinGeneration++;
+              _joining = false;
               setState(() {
                 _error = 'A newer ride call replaced this call.';
               });
@@ -137,6 +173,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                 !_joining) {
               unawaited(_join(callId));
             } else if (status.isTerminal) {
+              _joinGeneration++;
+              _joining = false;
               unawaited(_service.disconnect());
             }
           },
@@ -149,55 +187,87 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
 
   Future<void> _join(String callId) async {
     if (_joining || _service.isConnected) return;
+    final attempt = ++_joinGeneration;
     _joining = true;
+    if (mounted) setState(() => _error = null);
     try {
       // The incoming ringtone owns the same device audio focus. Fully release
       // it before LiveKit enables the microphone and WebRTC audio processing.
       await RingtoneService.instance.stopIncomingCall();
-      final permission = await Permission.microphone.request();
-      if (!permission.isGranted) {
-        throw StateError(
-          permission.isPermanentlyDenied
-              ? 'Microphone access is disabled in system settings.'
-              : 'Microphone permission is required for a voice call.',
+      await ensureVoiceCallMicrophonePermission();
+      if (!_isCurrentJoin(attempt, callId)) return;
+
+      var credentials = _credentials;
+      if (!(credentials?.isUsableFor(callId) ?? false)) {
+        credentials = await _repository.createCredentials(
+          bookingId: widget.bookingId,
+          callId: callId,
         );
       }
-      final credentials = await _repository.createCredentials(
-        bookingId: widget.bookingId,
-        callId: callId,
-      );
-      if (credentials.callId != callId) {
+      if (!_isCurrentJoin(attempt, callId)) return;
+      final activeCredentials = credentials;
+      if (activeCredentials == null || !activeCredentials.isUsableFor(callId)) {
         throw StateError('The call changed while connecting.');
       }
+      _credentials = activeCredentials;
       await _service.connect(
-        serverUrl: credentials.serverUrl,
-        token: credentials.token,
+        serverUrl: activeCredentials.serverUrl,
+        token: activeCredentials.token,
       );
+      if (!_isCurrentJoin(attempt, callId)) {
+        await _service.disconnect();
+        return;
+      }
       _wasConnected = true;
       if (mounted) setState(() {});
+    } on VoiceCallConnectionCancelled {
+      // A terminal Firestore state, navigation, or a newer call invalidated
+      // this connection attempt. Its Room has already been cleaned up.
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentJoin(attempt, callId)) return;
       setState(() {
-        _error = error is StateError
-            ? error.message.toString()
-            : DomainErrorMapper.message(error);
+        _error = switch (error) {
+          StateError stateError => stateError.message.toString(),
+          TimeoutException _ =>
+            'The secure call connection timed out. Please try again.',
+          _ => DomainErrorMapper.message(error),
+        };
       });
     } finally {
-      _joining = false;
+      if (attempt == _joinGeneration) {
+        _joining = false;
+        if (mounted) setState(() {});
+      }
     }
+  }
+
+  bool _isCurrentJoin(int attempt, String callId) {
+    return mounted &&
+        attempt == _joinGeneration &&
+        _callId == callId &&
+        !_effectiveStatus.isTerminal &&
+        !_ending;
   }
 
   void _onLiveKitChanged() {
     if (!mounted) return;
     if (_wasConnected &&
         !_service.isConnected &&
+        !_service.isResuming &&
         !_service.isReconnecting &&
         !_ending &&
         _effectiveStatus == BookingCallStatus.accepted) {
       setState(() => _error = 'The call connection was lost.');
       return;
     }
-    setState(() {});
+    setState(() {
+      if (_error == 'The call connection was lost.' &&
+          (_service.isConnected ||
+              _service.isResuming ||
+              _service.isReconnecting)) {
+        _error = null;
+      }
+    });
   }
 
   void _tick() {
@@ -244,6 +314,8 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       await _service.disconnect();
       return;
     }
+    _joinGeneration++;
+    _joining = false;
     _ending = true;
     try {
       await _repository.endCall(bookingId: widget.bookingId, callId: callId);
@@ -287,13 +359,25 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     return switch (_effectiveStatus) {
       BookingCallStatus.starting => 'Starting the ride call...',
       BookingCallStatus.ringing => 'Calling $name...',
+      BookingCallStatus.accepted when _service.isResuming =>
+        'Restoring the secure connection...',
       BookingCallStatus.accepted when _service.isReconnecting =>
-        'Reconnecting...',
+        'Reconnecting call audio...',
       BookingCallStatus.accepted when !_service.isConnected =>
         'Connecting securely...',
-      BookingCallStatus.accepted when _service.hasRemoteParticipant =>
+      BookingCallStatus.accepted when !_service.isMicrophonePublished =>
+        'Securing your microphone...',
+      BookingCallStatus.accepted when !_service.hasRemoteParticipant =>
+        'Waiting for $name to connect...',
+      BookingCallStatus.accepted when _service.remoteAudioSubscriptionFailed =>
+        '$name joined, but audio could not connect.',
+      BookingCallStatus.accepted when !_service.hasRemoteAudio =>
+        '$name joined • connecting audio...',
+      BookingCallStatus.accepted when _service.hasPoorConnection =>
+        'Connected to $name • Poor connection',
+      BookingCallStatus.accepted when _service.isMediaReady =>
         'Connected to $name',
-      BookingCallStatus.accepted => 'Waiting for $name to connect...',
+      BookingCallStatus.accepted => 'Connecting call audio...',
       BookingCallStatus.declined => '$name declined the call.',
       BookingCallStatus.expired => 'The call invitation expired.',
       BookingCallStatus.ended when _timedOut =>
@@ -304,6 +388,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
 
   @override
   void dispose() {
+    _joinGeneration++;
     _ticker?.cancel();
     unawaited(_statusSubscription?.cancel());
     unawaited(_bookingSubscription?.cancel());
@@ -462,6 +547,22 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                     ),
                                   ],
                                 ),
+                                if (_error != null && !_joining) ...[
+                                  const SizedBox(height: 10),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      final callId = _callId;
+                                      if (callId != null) {
+                                        unawaited(_join(callId));
+                                      }
+                                    },
+                                    icon: const Icon(Icons.refresh_rounded),
+                                    label: const Text('Try again'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.white70,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ],
                           ),
@@ -479,9 +580,18 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                   onPressed: !_service.isConnected || terminal
                                       ? null
                                       : () async {
-                                          await _service.setMuted(!_muted);
-                                          if (mounted) {
-                                            setState(() => _muted = !_muted);
+                                          try {
+                                            await _service.setMuted(!_muted);
+                                            if (mounted) {
+                                              setState(() => _muted = !_muted);
+                                            }
+                                          } catch (_) {
+                                            if (mounted) {
+                                              setState(
+                                                () => _error =
+                                                    'Could not update the microphone. Please try again.',
+                                              );
+                                            }
                                           }
                                         },
                                   backgroundColor: _muted

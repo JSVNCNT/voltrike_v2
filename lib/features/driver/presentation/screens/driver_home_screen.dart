@@ -19,7 +19,6 @@ import '../../providers/driver_location_controller_provider.dart';
 import '../../providers/driver_location_provider.dart';
 import '../../providers/driver_offer_cooldown_provider.dart';
 import '../../providers/driver_status_provider.dart';
-import '../../providers/driver_trip_provider.dart';
 
 import '../widgets/booking_request_card.dart';
 import '../widgets/driver_bottom_sheet.dart';
@@ -61,7 +60,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
           .read(driverBookingControllerProvider.notifier)
           .cancelTrip(booking);
       if (!mounted) return;
-      ref.read(driverTripProvider.notifier).waitingBooking();
       setState(() => _routePoints.clear());
       ScaffoldMessenger.of(
         context,
@@ -210,7 +208,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
       // Remove the pending booking only after the backend transaction commits.
       ref.read(driverIncomingBookingProvider.notifier).clearBooking();
-      ref.read(driverTripProvider.notifier).bookingAccepted();
       if (mounted) {
         context.go(AppRoutes.driverBookingTracking, extra: booking.bookingId);
       }
@@ -221,7 +218,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
       final isExpired = message.toLowerCase().contains('offer has expired');
       if (isExpired) {
         ref.read(driverIncomingBookingProvider.notifier).clearBooking();
-        ref.read(driverTripProvider.notifier).waitingBooking();
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -255,8 +251,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     ref.read(driverOfferCooldownProvider.notifier).start();
 
     ref.read(driverIncomingBookingProvider.notifier).clearBooking();
-
-    ref.read(driverTripProvider.notifier).waitingBooking();
 
     if (mounted) {
       setState(() {
@@ -313,8 +307,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
         _navigation.encodedPolyline(route),
       );
     });
-
-    ref.read(driverTripProvider.notifier).navigatingToPickup();
   }
 
   Future<void> _navigateToDestination() async {
@@ -344,8 +336,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
         _navigation.encodedPolyline(route),
       );
     });
-
-    ref.read(driverTripProvider.notifier).navigatingToDestination();
   }
 
   //==========================================================================
@@ -360,8 +350,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     }
 
     await ref.read(driverBookingControllerProvider.notifier).arrived(booking);
-
-    ref.read(driverTripProvider.notifier).arrived();
 
     if (!mounted) {
       return;
@@ -380,8 +368,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     }
 
     await ref.read(driverBookingControllerProvider.notifier).startTrip(booking);
-
-    ref.read(driverTripProvider.notifier).passengerOnBoard();
 
     await _navigateToDestination();
 
@@ -425,8 +411,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
     ref.read(driverCurrentBookingProvider.notifier).clearBooking();
 
-    ref.read(driverTripProvider.notifier).completed();
-
     if (mounted) {
       setState(() {
         _routePoints.clear();
@@ -455,8 +439,6 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     final driverLocation = ref.watch(driverLocationProvider);
 
     final driverStatus = ref.watch(driverStatusProvider);
-
-    final tripStatus = ref.watch(driverTripProvider);
 
     final offerCooldown = ref.watch(driverOfferCooldownProvider);
 
@@ -502,8 +484,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
           //------------------------------------------------------------------
           // Incoming Booking Card
           //------------------------------------------------------------------
-          if (hasIncomingBooking &&
-              tripStatus == DriverTripStatus.bookingReceived)
+          if (hasIncomingBooking)
             Align(
               alignment: Alignment.bottomCenter,
               child: SafeArea(
@@ -528,8 +509,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
           //------------------------------------------------------------------
           // Bottom Sheet
           //------------------------------------------------------------------
-          if (!hasIncomingBooking ||
-              tripStatus != DriverTripStatus.bookingReceived)
+          if (!hasIncomingBooking)
             Align(
               alignment: Alignment.bottomCenter,
               child: DriverBottomSheet(

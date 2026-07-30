@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme/fixed_light_theme.dart';
+import '../data/repositories/booking_voice_call_repository.dart';
 import '../features/auth/presentation/screens/email_verification/email_verification_screen.dart';
 import '../features/auth/presentation/screens/forgot_password/forgot_password_screen.dart';
 import '../features/auth/presentation/screens/intro/intro_screen.dart';
@@ -425,6 +426,8 @@ final GoRouter appRouter = GoRouter(
             ? extra
             : details?['bookingId'] as String?;
         final callId = details?['callId'] as String?;
+        final serverUrl = details?['serverUrl'] as String?;
+        final credentials = details?['credentials'];
         final outgoing = extra is String || details?['outgoing'] != false;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
@@ -433,6 +436,10 @@ final GoRouter appRouter = GoRouter(
           bookingId: bookingId,
           callId: callId,
           outgoing: outgoing,
+          initialServerUrl: serverUrl,
+          initialCredentials: credentials is BookingVoiceCallCredentials
+              ? credentials
+              : null,
         );
       },
     ),

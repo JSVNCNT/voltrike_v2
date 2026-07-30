@@ -12,6 +12,7 @@ void main() {
       'driverId': 'driver-1',
       'driverName': 'Juan Dela Cruz',
       'driverPhotoUrl': 'https://example.com/driver.jpg',
+      'status': 'driverAssigned',
     },
   );
 

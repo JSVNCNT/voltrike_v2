@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
@@ -10,6 +11,14 @@ import 'route_restriction_service.dart';
 
 class RoutesService {
   RoutesService._();
+
+  static const Duration _timeout = Duration(seconds: 12);
+  static const Duration _cacheTtl = Duration(seconds: 45);
+  static const int _maximumCacheEntries = 24;
+  static final LinkedHashMap<String, _CachedRoute> _cache =
+      LinkedHashMap<String, _CachedRoute>();
+  static final Map<String, Future<RouteInfo?>> _inFlight =
+      <String, Future<RouteInfo?>>{};
 
   static const String _baseUrl =
       'https://routes.googleapis.com/directions/v2:computeRoutes';
@@ -33,14 +42,48 @@ class RoutesService {
     required LatLng origin,
     required LatLng destination,
   }) async {
+    final key = _routeKey(origin, destination);
+    final now = DateTime.now();
+    final cached = _cache.remove(key);
+    if (cached != null && now.difference(cached.createdAt) <= _cacheTtl) {
+      _cache[key] = cached;
+      return cached.route;
+    }
+
+    final existing = _inFlight[key];
+    if (existing != null) return existing;
+    final request = _computeRoute(origin: origin, destination: destination);
+    _inFlight[key] = request;
     try {
-      final response = await http.post(
-        Uri.parse(_baseUrl),
-        headers: _headers,
-        body: jsonEncode(
-          buildRequest(origin: origin, destination: destination),
-        ),
-      );
+      final route = await request;
+      if (route != null) {
+        _cache[key] = _CachedRoute(route: route, createdAt: DateTime.now());
+        while (_cache.length > _maximumCacheEntries) {
+          _cache.remove(_cache.keys.first);
+        }
+      }
+      return route;
+    } finally {
+      if (identical(_inFlight[key], request)) {
+        _inFlight.remove(key);
+      }
+    }
+  }
+
+  static Future<RouteInfo?> _computeRoute({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_baseUrl),
+            headers: _headers,
+            body: jsonEncode(
+              buildRequest(origin: origin, destination: destination),
+            ),
+          )
+          .timeout(_timeout);
       if (response.statusCode != 200) return null;
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final rawRoutes = decoded['routes'] as List?;
@@ -182,4 +225,18 @@ class RoutesService {
 
   static int _durationSeconds(String value) =>
       (double.tryParse(value.replaceAll('s', '')) ?? 0).round();
+
+  static String _routeKey(LatLng origin, LatLng destination) {
+    String coordinate(LatLng point) =>
+        '${point.latitude.toStringAsFixed(5)},'
+        '${point.longitude.toStringAsFixed(5)}';
+    return '${coordinate(origin)}>${coordinate(destination)}';
+  }
+}
+
+class _CachedRoute {
+  const _CachedRoute({required this.route, required this.createdAt});
+
+  final RouteInfo route;
+  final DateTime createdAt;
 }

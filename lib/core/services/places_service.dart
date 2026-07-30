@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -12,7 +13,13 @@ class PlacesService {
   static const String _baseUrl = 'https://places.googleapis.com/v1';
   static const double searchRadiusMeters = 10000;
   static const Duration _timeout = Duration(seconds: 10);
-  static final Map<String, Map<String, dynamic>> _detailsCache = {};
+  static const Duration _detailsCacheTtl = Duration(minutes: 10);
+  static const int _maximumDetailsCacheEntries = 64;
+  static const int _maximumDetailsConcurrency = 4;
+  static final LinkedHashMap<String, _CachedPlaceDetails> _detailsCache =
+      LinkedHashMap<String, _CachedPlaceDetails>();
+  static final Map<String, Future<Map<String, dynamic>?>> _detailsInFlight =
+      <String, Future<Map<String, dynamic>?>>{};
 
   static Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -79,6 +86,7 @@ class PlacesService {
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final suggestions = decoded['suggestions'] as List? ?? const [];
     final predictions = <PlacePrediction>[];
+    final missingDistances = <_PendingPlacePrediction>[];
 
     for (final item in suggestions) {
       if (item is! Map) continue;
@@ -91,31 +99,41 @@ class PlacesService {
       final mainText = structured['mainText'] as Map? ?? const {};
       final secondaryText = structured['secondaryText'] as Map? ?? const {};
       final fullText = place['text'] as Map? ?? const {};
-      var distance = (place['distanceMeters'] as num?)?.round();
+      final distance = (place['distanceMeters'] as num?)?.round();
 
-      if (distance == null) {
-        final details = await getPlaceDetails(placeId);
-        final detailLatitude = (details?['latitude'] as num?)?.toDouble();
-        final detailLongitude = (details?['longitude'] as num?)?.toDouble();
-        if (detailLatitude != null && detailLongitude != null) {
-          distance = proximityMeters(
-            latitude,
-            longitude,
-            detailLatitude,
-            detailLongitude,
-          ).round();
-        }
-      }
-      if (distance == null || !isWithinSearchRadius(distance)) continue;
-
-      predictions.add(
-        PlacePrediction(
-          placeId: placeId,
-          title: (mainText['text'] ?? fullText['text'] ?? 'Place').toString(),
-          subtitle: secondaryText['text']?.toString(),
-          distanceMeters: distance,
-        ),
+      final pending = _PendingPlacePrediction(
+        placeId: placeId,
+        title: (mainText['text'] ?? fullText['text'] ?? 'Place').toString(),
+        subtitle: secondaryText['text']?.toString(),
       );
+      if (distance == null) {
+        missingDistances.add(pending);
+      } else if (isWithinSearchRadius(distance)) {
+        predictions.add(pending.toPrediction(distance));
+      }
+    }
+
+    for (
+      var start = 0;
+      start < missingDistances.length;
+      start += _maximumDetailsConcurrency
+    ) {
+      final end = math.min(
+        start + _maximumDetailsConcurrency,
+        missingDistances.length,
+      );
+      final resolved = await Future.wait(
+        missingDistances
+            .sublist(start, end)
+            .map(
+              (pending) => _resolvePredictionDistance(
+                pending,
+                latitude: latitude,
+                longitude: longitude,
+              ),
+            ),
+      );
+      predictions.addAll(resolved.whereType<PlacePrediction>());
     }
 
     predictions.sort(
@@ -125,9 +143,29 @@ class PlacesService {
   }
 
   static Future<Map<String, dynamic>?> getPlaceDetails(String placeId) async {
-    final cached = _detailsCache[placeId];
-    if (cached != null) return Map<String, dynamic>.from(cached);
+    final cached = _detailsCache.remove(placeId);
+    if (cached != null &&
+        DateTime.now().difference(cached.createdAt) <= _detailsCacheTtl) {
+      _detailsCache[placeId] = cached;
+      return Map<String, dynamic>.from(cached.details);
+    }
 
+    final existing = _detailsInFlight[placeId];
+    if (existing != null) return existing;
+    final request = _fetchPlaceDetails(placeId);
+    _detailsInFlight[placeId] = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_detailsInFlight[placeId], request)) {
+        _detailsInFlight.remove(placeId);
+      }
+    }
+  }
+
+  static Future<Map<String, dynamic>?> _fetchPlaceDetails(
+    String placeId,
+  ) async {
     final response = await http
         .get(
           Uri.parse('$_baseUrl/places/$placeId'),
@@ -152,8 +190,37 @@ class PlacesService {
     if (details['latitude'] == null || details['longitude'] == null) {
       return null;
     }
-    _detailsCache[placeId] = details;
+    _detailsCache[placeId] = _CachedPlaceDetails(
+      details: Map<String, dynamic>.unmodifiable(details),
+      createdAt: DateTime.now(),
+    );
+    while (_detailsCache.length > _maximumDetailsCacheEntries) {
+      _detailsCache.remove(_detailsCache.keys.first);
+    }
     return Map<String, dynamic>.from(details);
+  }
+
+  static Future<PlacePrediction?> _resolvePredictionDistance(
+    _PendingPlacePrediction pending, {
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final details = await getPlaceDetails(pending.placeId);
+      final detailLatitude = (details?['latitude'] as num?)?.toDouble();
+      final detailLongitude = (details?['longitude'] as num?)?.toDouble();
+      if (detailLatitude == null || detailLongitude == null) return null;
+      final distance = proximityMeters(
+        latitude,
+        longitude,
+        detailLatitude,
+        detailLongitude,
+      ).round();
+      if (!isWithinSearchRadius(distance)) return null;
+      return pending.toPrediction(distance);
+    } catch (_) {
+      return null;
+    }
   }
 
   static bool isWithinSearchRadius(num distanceMeters) {
@@ -183,4 +250,30 @@ class PlacesService {
   }
 
   static double _radians(double degrees) => degrees * math.pi / 180;
+}
+
+class _PendingPlacePrediction {
+  const _PendingPlacePrediction({
+    required this.placeId,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String placeId;
+  final String title;
+  final String? subtitle;
+
+  PlacePrediction toPrediction(int distanceMeters) => PlacePrediction(
+    placeId: placeId,
+    title: title,
+    subtitle: subtitle,
+    distanceMeters: distanceMeters,
+  );
+}
+
+class _CachedPlaceDetails {
+  const _CachedPlaceDetails({required this.details, required this.createdAt});
+
+  final Map<String, dynamic> details;
+  final DateTime createdAt;
 }

@@ -30,6 +30,8 @@ import type {
   SafetyIncident,
   Toda,
   TodaCommission,
+  TodaCommissionReport,
+  TodaCommissionReportOptions,
   ViolationFilters,
   ViolationMessage,
   ZoneRequest,
@@ -365,6 +367,9 @@ function callableErrorMessage(name: string, error: unknown): string {
   if (name === 'adminListDriverViolations') {
     return 'The server could not load restriction violations for this administrator scope. Refresh and try again.';
   }
+  if (name === 'adminGetTodaCommissionReport') {
+    return 'The server could not load this TODA commission report. Refresh and try again.';
+  }
   if (name === 'adminUpdateDriverViolation') {
     return 'The server could not update this violation case. Refresh the case and try again.';
   }
@@ -461,6 +466,25 @@ export const adminApi = {
   todaCommission: () => call<TodaCommission>('adminGetTodaCommission', {}),
   setTodaCommission: (percent: number) =>
     call<TodaCommission>('adminSetTodaCommission', { percent }),
+  todaCommissionReport(
+    startDate: string,
+    endDate: string,
+    options: TodaCommissionReportOptions = {},
+  ) {
+    const data: Record<string, unknown> = {
+      startDate,
+      endDate,
+      summaryOnly: options.summaryOnly === true,
+    };
+    if (!options.summaryOnly) {
+      data.cursor = options.cursor || '';
+      data.pageSize = 25;
+    }
+    return call<TodaCommissionReport>(
+      'adminGetTodaCommissionReport',
+      data,
+    );
+  },
   cancelBookingForSafety: (incidentId: string) =>
     call<{ cancelled: boolean }>('adminCancelBookingForSafety', { incidentId }),
   updateSafetyIncidentResponse: (

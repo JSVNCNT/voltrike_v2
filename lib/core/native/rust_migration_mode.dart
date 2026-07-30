@@ -39,6 +39,15 @@ enum RustMigrationMode {
     );
   }
 
+  static RustMigrationMode navigationFromEnvironment() {
+    return parse(
+      const String.fromEnvironment(
+        'VOLTRIKE_NAVIGATION_MODE',
+        defaultValue: _legacyEnvironmentValue,
+      ),
+    );
+  }
+
   static RustMigrationMode parse(String value) {
     return switch (value.trim().toLowerCase()) {
       'shadow' => RustMigrationMode.shadow,

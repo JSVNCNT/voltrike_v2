@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:uuid/uuid.dart';
@@ -5,7 +7,6 @@ import 'package:uuid/uuid.dart';
 import '../../../data/models/booking.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/booking_repository.dart';
-import '../../../data/repositories/user_repository.dart';
 import '../providers/booking_session_provider.dart';
 
 /// ===========================================================================
@@ -29,7 +30,9 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
   final AuthRepository _authRepository;
 
   final Uuid _uuid = const Uuid();
-  final UserRepository _userRepository = UserRepository();
+  Booking? _retryBooking;
+  String? _retryFingerprint;
+  bool _previousCreationFailed = false;
 
   Future<BookingCreationResult> createBooking({
     required BookingSession session,
@@ -51,42 +54,91 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
         throw Exception('Destination not selected.');
       }
 
-      final profile = await _userRepository.getUser(firebaseUser.uid);
+      final fingerprint = jsonEncode({
+        'passengerId': firebaseUser.uid,
+        'pickup': [pickupLatitude, pickupLongitude],
+        'destination': [
+          session.destination!.latitude,
+          session.destination!.longitude,
+        ],
+        'pickupAddress': pickupAddress,
+        'destinationAddress': destinationAddress,
+        'distanceMeters': session.distanceMeters,
+        'estimatedFare': session.estimatedFare,
+        'additionalPassengers': session.additionalPassengers,
+        'baggageCount': session.baggageCount,
+        'isOutsideToda': session.isOutsideToda,
+        'routePolicy': session.routePolicy.toMap(),
+      });
 
-      final booking = Booking(
-        bookingId: _uuid.v4(),
-        passengerId: firebaseUser.uid,
-        passengerName: profile?.fullName.trim().isNotEmpty == true
-            ? profile!.fullName
-            : (firebaseUser.displayName ?? firebaseUser.email ?? 'Passenger'),
-        passengerPhone: profile?.phoneNumber,
-        passengerPhotoUrl: profile?.profileImage,
-        driverId: null,
-        pickup: LatLng(pickupLatitude, pickupLongitude),
-        destination: session.destination!,
-        pickupAddress: pickupAddress,
-        destinationAddress: destinationAddress,
-        distanceMeters: session.distanceMeters,
-        estimatedFare: session.estimatedFare,
-        additionalPassengers: session.additionalPassengers,
-        baggageCount: session.baggageCount,
-        isOutsideToda: session.isOutsideToda,
-        routePolicy: session.routePolicy,
-        status: BookingStatus.pending,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
+      if (_previousCreationFailed && _retryBooking != null) {
+        try {
+          final active = await _bookingRepository.getActiveBookingForPassenger(
+            firebaseUser.uid,
+          );
+          if (active != null) {
+            _clearCreationRetry();
+            state = const AsyncData(null);
+            return BookingCreationResult.fromBooking(active);
+          }
+          if (_retryFingerprint != fingerprint) {
+            _clearCreationRetry();
+          }
+        } catch (_) {
+          if (_retryFingerprint != fingerprint) {
+            throw StateError(
+              'The previous booking result could not be verified. '
+              'Check your connection and retry before changing the trip.',
+            );
+          }
+        }
+      }
+
+      final booking =
+          _retryBooking ??
+          Booking(
+            bookingId: _uuid.v4(),
+            passengerId: firebaseUser.uid,
+            passengerName:
+                firebaseUser.displayName ?? firebaseUser.email ?? 'Passenger',
+            passengerPhone: firebaseUser.phoneNumber,
+            passengerPhotoUrl: firebaseUser.photoURL,
+            driverId: null,
+            pickup: LatLng(pickupLatitude, pickupLongitude),
+            destination: session.destination!,
+            pickupAddress: pickupAddress,
+            destinationAddress: destinationAddress,
+            distanceMeters: session.distanceMeters,
+            estimatedFare: session.estimatedFare,
+            additionalPassengers: session.additionalPassengers,
+            baggageCount: session.baggageCount,
+            isOutsideToda: session.isOutsideToda,
+            routePolicy: session.routePolicy,
+            status: BookingStatus.pending,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
+      _retryBooking = booking;
+      _retryFingerprint = fingerprint;
 
       final creationResult = await _bookingRepository.createBooking(booking);
 
+      _clearCreationRetry();
       state = const AsyncData(null);
 
       return creationResult;
     } catch (e, stackTrace) {
+      _previousCreationFailed = _retryBooking != null;
       state = AsyncError(e, stackTrace);
 
       rethrow;
     }
+  }
+
+  void _clearCreationRetry() {
+    _retryBooking = null;
+    _retryFingerprint = null;
+    _previousCreationFailed = false;
   }
 
   //==========================================================================

@@ -11,6 +11,7 @@ import 'dart:math';
 /// ===========================================================================
 class FareConfiguration {
   const FareConfiguration({
+    this.version = 1,
     required this.baseFare,
     required this.includedMeters,
     required this.distanceStepMeters,
@@ -19,6 +20,8 @@ class FareConfiguration {
     required this.baggageFee,
     required this.outsideTodaSurcharge,
   });
+
+  final int version;
 
   /// Base fare.
   final double baseFare;
@@ -54,8 +57,7 @@ class FareConfiguration {
 /// Placeholder values until Firestore Admin Settings
 /// are implemented.
 /// ===========================================================================
-const FareConfiguration devFareConfiguration =
-    FareConfiguration(
+const FareConfiguration devFareConfiguration = FareConfiguration(
   baseFare: 20,
 
   // First kilometer included.
@@ -144,65 +146,97 @@ class FareService {
     // Distance Charge
     //----------------------------------------------------------------------
 
-    final chargeableMeters =
-        max(0, distanceMeters - config.includedMeters);
+    final chargeableMeters = max(0, distanceMeters - config.includedMeters);
 
-    final distanceSteps =
-        (chargeableMeters / config.distanceStepMeters)
-            .ceil();
+    final distanceSteps = (chargeableMeters / max(1, config.distanceStepMeters))
+        .ceil();
 
-    final distanceFare =
-        distanceSteps * config.distanceStepPrice;
+    final distanceFareCentavos =
+        distanceSteps * _toCentavos(config.distanceStepPrice);
 
     //----------------------------------------------------------------------
     // Additional Passenger
     //----------------------------------------------------------------------
 
-    final additionalPassengers =
-        max(0, passengerCount - 1);
+    final additionalPassengers = max(0, passengerCount - 1);
 
-    final passengerFee =
-        additionalPassengers *
-            config.additionalPassengerFee;
+    final passengerFeeCentavos =
+        additionalPassengers * _toCentavos(config.additionalPassengerFee);
 
     //----------------------------------------------------------------------
     // Baggage
     //----------------------------------------------------------------------
 
-    final baggageFee =
-        baggageCount * config.baggageFee;
+    final normalizedBaggageCount = max(0, baggageCount);
+    final baggageFeeCentavos =
+        normalizedBaggageCount * _toCentavos(config.baggageFee);
 
     //----------------------------------------------------------------------
     // Outside TODA
     //----------------------------------------------------------------------
 
-    final boundaryFee =
-        isOutsideToda
-            ? config.outsideTodaSurcharge
-            : 0.0;
+    final boundaryFeeCentavos = isOutsideToda
+        ? _toCentavos(config.outsideTodaSurcharge)
+        : 0;
 
     //----------------------------------------------------------------------
     // Total
     //----------------------------------------------------------------------
 
-    final total =
-        config.baseFare +
-        distanceFare +
-        passengerFee +
-        baggageFee +
-        boundaryFee;
+    final baseFareCentavos = _toCentavos(config.baseFare);
+    final totalCentavos =
+        baseFareCentavos +
+        distanceFareCentavos +
+        passengerFeeCentavos +
+        baggageFeeCentavos +
+        boundaryFeeCentavos;
 
     return FareResult(
-      baseFare: config.baseFare,
-      distanceFare: distanceFare,
-      additionalPassengerFee: passengerFee,
-      baggageFee: baggageFee,
-      boundarySurcharge: boundaryFee,
-      totalFare: total,
+      baseFare: _fromCentavos(baseFareCentavos),
+      distanceFare: _fromCentavos(distanceFareCentavos),
+      additionalPassengerFee: _fromCentavos(passengerFeeCentavos),
+      baggageFee: _fromCentavos(baggageFeeCentavos),
+      boundarySurcharge: _fromCentavos(boundaryFeeCentavos),
+      totalFare: _fromCentavos(totalCentavos),
       distanceMeters: distanceMeters,
-      additionalPassengers:
-          additionalPassengers,
-      baggageCount: baggageCount,
+      additionalPassengers: additionalPassengers,
+      baggageCount: normalizedBaggageCount,
     );
+  }
+
+  static double roundCurrency(double value) =>
+      _fromCentavos(_toCentavos(value));
+
+  static double _fromCentavos(int value) => value / 100;
+
+  /// Converts the decimal text representation instead of multiplying a binary
+  /// floating-point value. This keeps Dart aligned with the Node authority at
+  /// half-cent boundaries such as 10.075 -> 10.08.
+  static int _toCentavos(num value) {
+    final number = value.toDouble();
+    if (!number.isFinite) return 0;
+
+    final negative = number.isNegative;
+    final parts = number.abs().toString().toLowerCase().split('e');
+    final coefficient = parts.first;
+    final exponent = parts.length == 2 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final decimalParts = coefficient.split('.');
+    final fraction = decimalParts.length == 2 ? decimalParts[1] : '';
+    final digits = BigInt.parse('${decimalParts.first}$fraction');
+    final shift = 2 + exponent - fraction.length;
+
+    BigInt centavos;
+    if (shift >= 0) {
+      centavos = digits * BigInt.from(10).pow(shift);
+    } else {
+      final divisor = BigInt.from(10).pow(-shift);
+      centavos = digits ~/ divisor;
+      final remainder = digits.remainder(divisor);
+      if (remainder * BigInt.two >= divisor) {
+        centavos += BigInt.one;
+      }
+    }
+    final result = centavos.toInt();
+    return negative ? -result : result;
   }
 }

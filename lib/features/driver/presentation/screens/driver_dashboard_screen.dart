@@ -94,7 +94,7 @@ class DriverDashboardScreen extends ConsumerWidget {
               final currentBooking = _activeBooking(bookings);
               final totalEarnings = bookings.fold<double>(0, (total, booking) {
                 return booking.status == BookingStatus.completed
-                    ? total + booking.amountDue
+                    ? total + booking.driverNetEarnings
                     : total;
               });
 

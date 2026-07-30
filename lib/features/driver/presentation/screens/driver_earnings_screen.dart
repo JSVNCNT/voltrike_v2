@@ -4,34 +4,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../controllers/driver_earnings_controller.dart';
 
 class DriverEarningsScreen extends ConsumerWidget {
-  const DriverEarningsScreen({
-    super.key,
-    required this.driverId,
-  });
+  const DriverEarningsScreen({super.key, required this.driverId});
 
   final String driverId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final earnings =
-        ref.watch(driverEarningsProvider(driverId));
+    final earnings = ref.watch(driverEarningsProvider(driverId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Driver Earnings'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Driver Earnings'), centerTitle: true),
       body: earnings.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              error.toString(),
-              textAlign: TextAlign.center,
-            ),
+            child: Text(error.toString(), textAlign: TextAlign.center),
           ),
         ),
         data: (data) {
@@ -69,7 +57,7 @@ class DriverEarningsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               _buildCard(
-                title: "Average Fare",
+                title: "Average Net Earnings",
                 value: "₱${data.averageFare.toStringAsFixed(2)}",
                 icon: Icons.attach_money,
               ),
@@ -88,16 +76,11 @@ class DriverEarningsScreen extends ConsumerWidget {
     return Card(
       elevation: 3,
       child: ListTile(
-        leading: CircleAvatar(
-          child: Icon(icon),
-        ),
+        leading: CircleAvatar(child: Icon(icon)),
         title: Text(title),
         subtitle: Text(
           value,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
       ),
     );

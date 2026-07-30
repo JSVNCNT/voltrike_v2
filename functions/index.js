@@ -7,6 +7,7 @@ const { logger } = require('firebase-functions');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const {
+  AggregateField,
   FieldPath,
   FieldValue,
   Timestamp,
@@ -25,10 +26,12 @@ const {
   CALL_DURATION_MS,
   CALL_INVITATION_MS,
   CALL_STATUS,
+  acceptedCallNeedsScheduledEnd,
   callAllowedForBookingStatus,
   effectiveCallStatus,
   participantRole,
   recipientFor,
+  remainingCallSeconds,
   terminalCallStatus,
   timestampMillis: callTimestampMillis,
 } = require('./booking-call-policy');
@@ -40,6 +43,18 @@ const {
   calculateFareBreakdown,
   fareSnapshot,
 } = require('./fare-policy');
+const {
+  calculateSettlementBreakdown,
+  normalizedCommissionPercent,
+} = require('./settlement-policy');
+const {
+  commissionReportDateRange,
+  commissionReportItem,
+  commissionReportPageSize,
+  commissionReportSummary,
+  commissionReportSummaryOnly,
+  cursorBelongsToReport,
+} = require('./toda-commission-report');
 const {
   classifyTripCoverage,
   decodePolyline,
@@ -1915,6 +1930,134 @@ exports.adminGetTodaCommission = onCall(
       recommendedPercent: 10,
       maximumPercent: 30,
       updatedAt: adminDate(toda.data().commissionUpdatedAt),
+    };
+  },
+);
+
+exports.adminGetTodaCommissionReport = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    const actor = await requireAdmin(request);
+    const claimedTodaId = request.auth?.token?.todaId;
+    if (actor.role !== 'toda_admin' ||
+        typeof claimedTodaId !== 'string' ||
+        claimedTodaId.length === 0 ||
+        claimedTodaId !== actor.todaId) {
+      throw new HttpsError(
+        'permission-denied',
+        'TODA administrator access is required.',
+      );
+    }
+
+    let range;
+    let pageSize;
+    let summaryOnly;
+    try {
+      range = commissionReportDateRange(
+        request.data?.startDate,
+        request.data?.endDate,
+      );
+      summaryOnly = commissionReportSummaryOnly(
+        request.data?.summaryOnly,
+      );
+      pageSize = summaryOnly
+        ? null
+        : commissionReportPageSize(request.data?.pageSize);
+    } catch (error) {
+      throw new HttpsError(
+        'invalid-argument',
+        error instanceof Error
+          ? error.message
+          : 'Invalid commission report options.',
+      );
+    }
+
+    const settlements = db.collection('settlements');
+    const start = Timestamp.fromDate(range.start);
+    const endExclusive = Timestamp.fromDate(range.endExclusive);
+    const scopedRange = settlements
+      .where('todaId', '==', claimedTodaId)
+      .where('settlementTimestamp', '>=', start)
+      .where('settlementTimestamp', '<', endExclusive);
+    const loadSummary = () => Promise.all([
+      scopedRange.aggregate({
+        grossFare: AggregateField.sum('grossFare'),
+        commissionAmount: AggregateField.sum('commissionAmount'),
+        driverNetEarnings: AggregateField.sum('driverNetEarnings'),
+        completedRides: AggregateField.count(),
+      }).get(),
+      scopedRange
+        .where('status', '==', 'settled')
+        .count()
+        .get(),
+      scopedRange
+        .where('adjustmentStatus', '==', 'disputed')
+        .count()
+        .get(),
+    ]);
+    const toSummary = (snapshots) => commissionReportSummary({
+      aggregate: snapshots[0].data(),
+      settledSettlements: snapshots[1].data().count,
+      disputedSettlements: snapshots[2].data().count,
+    });
+
+    if (summaryOnly) {
+      return {
+        summary: toSummary(await loadSummary()),
+        items: [],
+        nextCursor: null,
+      };
+    }
+
+    let pageQuery = scopedRange.orderBy(
+      'settlementTimestamp',
+      'desc',
+    );
+    const cursor = request.data?.cursor;
+    if (cursor != null && cursor !== '') {
+      if (typeof cursor !== 'string' ||
+          cursor.length > 128 ||
+          !validBookingId(cursor)) {
+        throw new HttpsError(
+          'invalid-argument',
+          'The commission report cursor is invalid.',
+        );
+      }
+      const cursorDocument = await settlements.doc(cursor).get();
+      if (!cursorDocument.exists ||
+          !cursorBelongsToReport(
+            cursorDocument.data(),
+            claimedTodaId,
+            range,
+          )) {
+        throw new HttpsError(
+          'invalid-argument',
+          'The commission report cursor is invalid.',
+        );
+      }
+      pageQuery = pageQuery.startAfter(cursorDocument);
+    }
+
+    const [pageSnapshot, summarySnapshots] = await Promise.all([
+      pageQuery.limit(pageSize + 1).get(),
+      loadSummary(),
+    ]);
+
+    const page = pageSnapshot.docs.slice(0, pageSize);
+    const bookings = page.length
+      ? await db.getAll(...page.map((entry) =>
+        db.collection('bookings').doc(entry.id)))
+      : [];
+    return {
+      summary: toSummary(summarySnapshots),
+      items: page.map((entry, index) => commissionReportItem(
+        entry.id,
+        entry.data(),
+        bookings[index]?.data() || {},
+      )),
+      nextCursor: pageSnapshot.docs.length > pageSize
+        ? page.at(-1)?.id || null
+        : null,
     };
   },
 );
@@ -4470,6 +4613,13 @@ exports.createBookingLifecycle = onCall(
         idempotent: true,
         distanceMeters: existingBooking.data()?.distanceMeters ?? null,
         estimatedFare: existingBooking.data()?.estimatedFare ?? null,
+        authoritativeRoutePolyline:
+          existingBooking.data()?.authoritativeRoutePolyline ?? null,
+        fareSnapshot: existingBooking.data()?.fareSnapshot ?? null,
+        fareVersion:
+          existingBooking.data()?.fareVersion ??
+          existingBooking.data()?.fareSnapshot?.version ??
+          null,
         fareBreakdown: existingBooking.data()?.fareBreakdown ?? null,
         isOutsideToda: existingBooking.data()?.isOutsideToda ?? null,
         coverageClass:
@@ -4492,6 +4642,13 @@ exports.createBookingLifecycle = onCall(
           existingBooking.data()?.avoidedRouteRestrictionNames ?? [],
         highwayRouteAdvisory:
           existingBooking.data()?.highwayRouteAdvisory ?? null,
+        searchExpiresAt: snapshotDateMillis(
+          existingBooking.data()?.searchExpiresAt,
+        ) == null
+          ? null
+          : new Date(snapshotDateMillis(
+            existingBooking.data()?.searchExpiresAt,
+          )).toISOString(),
       };
     }
 
@@ -4683,6 +4840,8 @@ exports.createBookingLifecycle = onCall(
       bookingId,
       distanceMeters,
       estimatedFare,
+      authoritativeRoutePolyline: route.encodedPolyline,
+      fareSnapshot: pricing,
       fareVersion: pricing.version,
       fareBreakdown,
       isOutsideToda: coverage.isOutsideToda,
@@ -5080,15 +5239,9 @@ exports.acceptBookingLifecycle = onCall(
           profile.lastName,
         ].filter((value) =>
           typeof value === 'string' && value.trim()).join(' ');
-        const configuredCommission = Number(
-          winner.toda.driverCommissionPercent || 0,
+        const commissionPercent = normalizedCommissionPercent(
+          winner.toda.driverCommissionPercent,
         );
-        const commissionPercent =
-          Number.isFinite(configuredCommission) &&
-          configuredCommission >= 0 &&
-          configuredCommission <= 30
-            ? configuredCommission
-            : 0;
         const winnerId = winner.claim.driverId;
         const winningDispatchScore =
           dispatchScoreSnapshot(winner.claim);
@@ -5572,23 +5725,22 @@ exports.transitionBookingLifecycle = onCall(
       if (action === 'start') lifecycleUpdate.startedAt = timestamp();
       if (action === 'dropOff') lifecycleUpdate.droppedOffAt = timestamp();
       if (action === 'complete') {
-        const grossFare = Number(
-          data.amountDue ?? data.estimatedFare ?? 0,
-        );
-        const configuredCommission = Number(data.commissionPercent || 0);
-        const commissionPercent =
-          Number.isFinite(configuredCommission) &&
-          configuredCommission >= 0 &&
-          configuredCommission <= 30
-            ? configuredCommission
-            : 0;
-        const commissionAmount = Math.round(
-          grossFare * commissionPercent,
-        ) / 100;
-        const driverNetEarnings = Math.max(
-          0,
-          Math.round((grossFare - commissionAmount) * 100) / 100,
-        );
+        let settlementBreakdown;
+        try {
+          settlementBreakdown = calculateSettlementBreakdown({
+            grossFare: data.amountDue ?? data.estimatedFare,
+            commissionPercent: data.commissionPercent,
+          });
+        } catch (error) {
+          logger.error('Refusing an invalid booking settlement.', {
+            bookingId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw new HttpsError(
+            'failed-precondition',
+            'This booking has invalid settlement amounts.',
+          );
+        }
         const receiptNumber = data.receiptNumber ||
           `VT-${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()}`;
         lifecycleUpdate.completedAt = timestamp();
@@ -5597,10 +5749,13 @@ exports.transitionBookingLifecycle = onCall(
         lifecycleUpdate.settlementStatus = 'settled';
         lifecycleUpdate.settlementTimestamp = timestamp();
         lifecycleUpdate.receiptNumber = receiptNumber;
-        lifecycleUpdate.grossFare = grossFare;
-        lifecycleUpdate.commissionPercent = commissionPercent;
-        lifecycleUpdate.commissionAmount = commissionAmount;
-        lifecycleUpdate.driverNetEarnings = driverNetEarnings;
+        lifecycleUpdate.grossFare = settlementBreakdown.grossFare;
+        lifecycleUpdate.commissionPercent =
+          settlementBreakdown.commissionPercent;
+        lifecycleUpdate.commissionAmount =
+          settlementBreakdown.commissionAmount;
+        lifecycleUpdate.driverNetEarnings =
+          settlementBreakdown.driverNetEarnings;
       }
       if (nextStatus === BOOKING_STATUS.cancelled) {
         lifecycleUpdate.cancelledAt = timestamp();
@@ -5718,7 +5873,7 @@ exports.transitionBookingLifecycle = onCall(
         cancellationCode,
         paymentMethod: action === 'complete' ? 'cash' : null,
         amountDue: action === 'complete'
-          ? Number(data.amountDue ?? data.estimatedFare ?? 0)
+          ? lifecycleUpdate.grossFare
           : null,
         createdAt: timestamp(),
       });
@@ -6489,6 +6644,26 @@ exports.enrichReportToda = onDocumentCreated('reports/{reportId}', async (event)
   }, { merge: true });
 });
 
+const liveKitRoomCleanupTimeoutMs = 1_200;
+
+function configuredLiveKitServerUrl() {
+  const value = liveKitUrl.value();
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function requireLiveKitServerUrl() {
+  const serverUrl = configuredLiveKitServerUrl();
+  if (serverUrl == null) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Voice calling is not configured.',
+    );
+  }
+  return serverUrl;
+}
+
 function callResult(data, { idempotent = false } = {}) {
   return {
     bookingId: data.bookingId,
@@ -6498,8 +6673,21 @@ function callResult(data, { idempotent = false } = {}) {
     recipientId: data.recipientId,
     expiresAtMillis: callTimestampMillis(data.expiresAt),
     endsAtMillis: callTimestampMillis(data.endsAt),
+    serverUrl: typeof data.serverUrl === 'string' &&
+      data.serverUrl.trim().length > 0
+      ? data.serverUrl.trim()
+      : configuredLiveKitServerUrl(),
     idempotent,
   };
+}
+
+function logBookingCallLatency(operation, startedAt, context, stages = {}) {
+  logger.info('Booking call stage latency', {
+    operation,
+    ...context,
+    ...stages,
+    totalMs: Date.now() - startedAt,
+  });
 }
 
 function requireCallIdentity(data) {
@@ -6527,26 +6715,20 @@ function requireCallParticipant(booking, uid) {
 
 async function deleteLiveKitRoom(roomName, context = {}) {
   if (typeof roomName !== 'string' || roomName.length === 0) return;
-  const url = liveKitUrl.value();
-  if (!url) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Voice calling is not configured.',
-    );
-  }
-  const { RoomServiceClient } = require('livekit-server-sdk');
-  const serviceUrl = url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-  const rooms = new RoomServiceClient(
-    serviceUrl,
-    liveKitApiKey.value(),
-    liveKitApiSecret.value(),
-  );
   try {
+    const url = requireLiveKitServerUrl();
+    const { RoomServiceClient } = require('livekit-server-sdk');
+    const serviceUrl = url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+    const rooms = new RoomServiceClient(
+      serviceUrl,
+      liveKitApiKey.value(),
+      liveKitApiSecret.value(),
+    );
     await rooms.deleteRoom(roomName);
   } catch (error) {
     // LiveKit removes empty rooms automatically. Clients still receive the
-    // terminal Firestore state when a room is already absent.
-    logger.info('LiveKit room was already absent while closing a call', {
+    // terminal Firestore state when cleanup is slow or the room is absent.
+    logger.info('LiveKit room cleanup did not delete the room', {
       ...context,
       roomName,
       error: String(error),
@@ -6554,11 +6736,84 @@ async function deleteLiveKitRoom(roomName, context = {}) {
   }
 }
 
-// Creates a durable invitation. Token issuance is deliberately separate so
-// neither participant can enter LiveKit until the recipient accepts.
+async function deleteLiveKitRoomBounded(roomName, context = {}) {
+  const startedAt = Date.now();
+  let timeout;
+  const cleanup = deleteLiveKitRoom(roomName, context).then(() => true);
+  const completed = await Promise.race([
+    cleanup,
+    new Promise((resolve) => {
+      timeout = setTimeout(
+        () => resolve(false),
+        liveKitRoomCleanupTimeoutMs,
+      );
+    }),
+  ]);
+  if (timeout != null) clearTimeout(timeout);
+  if (!completed) {
+    logger.warn('LiveKit room cleanup exceeded the response budget', {
+      ...context,
+      roomName,
+      cleanupBudgetMs: liveKitRoomCleanupTimeoutMs,
+    });
+  }
+  return {
+    completed,
+    durationMs: Date.now() - startedAt,
+  };
+}
+
+async function createLiveKitParticipantCredentials({
+  call,
+  participantId,
+  nowMillis = Date.now(),
+}) {
+  const remainingSeconds = remainingCallSeconds(call, nowMillis);
+  if (remainingSeconds == null) {
+    throw new HttpsError(
+      'failed-precondition',
+      'The call must be accepted and active before joining.',
+    );
+  }
+  if (typeof call.roomName !== 'string' || call.roomName.length === 0) {
+    throw new HttpsError(
+      'failed-precondition',
+      'The active call room is unavailable.',
+    );
+  }
+  const serverUrl = requireLiveKitServerUrl();
+  const endsAtMillis = callTimestampMillis(call.endsAt);
+  const { AccessToken } = require('livekit-server-sdk');
+  const accessToken = new AccessToken(
+    liveKitApiKey.value(),
+    liveKitApiSecret.value(),
+    {
+      identity: participantId,
+      ttl: `${remainingSeconds}s`,
+    },
+  );
+  accessToken.addGrant({
+    roomJoin: true,
+    room: call.roomName,
+    canPublish: true,
+    canSubscribe: true,
+  });
+  return {
+    serverUrl,
+    token: await accessToken.toJwt(),
+    roomName: call.roomName,
+    callId: call.callId,
+    endsAtMillis,
+  };
+}
+
+// Creates a durable invitation without credentials. The accepted response can
+// issue the recipient token directly; the separate token callable remains the
+// caller and reconnect path.
 exports.startBookingCall = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
+    const operationStartedAt = Date.now();
     if (!request.auth) {
       throw new HttpsError(
         'unauthenticated',
@@ -6569,12 +6824,7 @@ exports.startBookingCall = onCall(
     if (!validBookingId(bookingId)) {
       throw new HttpsError('invalid-argument', 'A valid booking ID is required.');
     }
-    if (!liveKitUrl.value()) {
-      throw new HttpsError(
-        'failed-precondition',
-        'Voice calling is not configured.',
-      );
-    }
+    const serverUrl = requireLiveKitServerUrl();
 
     const uid = request.auth.uid;
     const bookingRef = db.collection('bookings').doc(bookingId);
@@ -6616,8 +6866,16 @@ exports.startBookingCall = onCall(
             effectiveStatus === CALL_STATUS.ringing &&
             existing.callerId === uid &&
             existing.recipientId === recipientId) {
+          transaction.set(callRef, {
+            schemaVersion: 3,
+            serverUrl,
+          }, { merge: true });
           return {
-            data: existing,
+            data: {
+              ...existing,
+              schemaVersion: 3,
+              serverUrl,
+            },
             idempotent: true,
             notify: false,
           };
@@ -6633,10 +6891,11 @@ exports.startBookingCall = onCall(
       }
 
       const data = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         bookingId,
         callId: proposedCallId,
         roomName: `voltrike_${proposedCallId}`,
+        serverUrl,
         callerId: uid,
         recipientId,
         status: CALL_STATUS.ringing,
@@ -6654,7 +6913,9 @@ exports.startBookingCall = onCall(
       transaction.set(callRef, data);
       return { data, idempotent: false, notify: true };
     });
+    const transactionMs = Date.now() - operationStartedAt;
 
+    const notificationStartedAt = Date.now();
     if (result.notify) {
       try {
         await sendToUser(
@@ -6666,6 +6927,7 @@ exports.startBookingCall = onCall(
             callId: result.data.callId,
             type: 'incoming_call',
             expiresAtMillis: result.data.expiresAt.toMillis(),
+            serverUrl,
           },
         );
       } catch (error) {
@@ -6679,6 +6941,17 @@ exports.startBookingCall = onCall(
         });
       }
     }
+    const notificationMs = Date.now() - notificationStartedAt;
+    logBookingCallLatency(
+      'start',
+      operationStartedAt,
+      {
+        bookingId,
+        callId: result.data.callId,
+        idempotent: result.idempotent,
+      },
+      { transactionMs, notificationMs },
+    );
     return callResult(result.data, { idempotent: result.idempotent });
   },
 );
@@ -6687,8 +6960,12 @@ exports.startBookingCall = onCall(
 // mark a genuinely elapsed invitation expired, which gives clients an exact
 // timeout while the scheduled cleanup remains a backend fallback.
 exports.respondBookingCall = onCall(
-  { region: 'asia-southeast1' },
+  {
+    region: 'asia-southeast1',
+    secrets: [liveKitApiKey, liveKitApiSecret],
+  },
   async (request) => {
+    const operationStartedAt = Date.now();
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in before responding.');
     }
@@ -6701,6 +6978,9 @@ exports.respondBookingCall = onCall(
     ].includes(response)) {
       throw new HttpsError('invalid-argument', 'Unsupported call response.');
     }
+    const acceptanceServerUrl = response === CALL_STATUS.accepted
+      ? configuredLiveKitServerUrl()
+      : null;
 
     const uid = request.auth.uid;
     const bookingRef = db.collection('bookings').doc(bookingId);
@@ -6749,7 +7029,24 @@ exports.respondBookingCall = onCall(
       if (call.status === CALL_STATUS.accepted) {
         if (response === CALL_STATUS.accepted &&
             call.acceptedBy === uid) {
-          return { data: call, idempotent: true };
+          if (acceptanceServerUrl == null) {
+            throw new HttpsError(
+              'failed-precondition',
+              'Voice calling is not configured.',
+            );
+          }
+          transaction.set(callRef, {
+            schemaVersion: 3,
+            serverUrl: acceptanceServerUrl,
+          }, { merge: true });
+          return {
+            data: {
+              ...call,
+              schemaVersion: 3,
+              serverUrl: acceptanceServerUrl,
+            },
+            idempotent: true,
+          };
         }
         throw new HttpsError(
           'failed-precondition',
@@ -6814,8 +7111,16 @@ exports.respondBookingCall = onCall(
           'Voice calls are unavailable at this ride stage.',
         );
       }
+      if (acceptanceServerUrl == null) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Voice calling is not configured.',
+        );
+      }
       const accepted = {
         ...call,
+        schemaVersion: 3,
+        serverUrl: acceptanceServerUrl,
         status: CALL_STATUS.accepted,
         acceptedBy: uid,
         acceptedAt: now,
@@ -6823,6 +7128,8 @@ exports.respondBookingCall = onCall(
         updatedAt: now,
       };
       transaction.set(callRef, {
+        schemaVersion: 3,
+        serverUrl: acceptanceServerUrl,
         status: CALL_STATUS.accepted,
         acceptedBy: uid,
         acceptedAt: accepted.acceptedAt,
@@ -6831,7 +7138,34 @@ exports.respondBookingCall = onCall(
       }, { merge: true });
       return { data: accepted, idempotent: false };
     });
-    return callResult(result.data, { idempotent: result.idempotent });
+    const transactionMs = Date.now() - operationStartedAt;
+    const responseData = callResult(result.data, {
+      idempotent: result.idempotent,
+    });
+    let credentialMs = 0;
+    if (result.data.status === CALL_STATUS.accepted &&
+        result.data.acceptedBy === uid) {
+      const credentialStartedAt = Date.now();
+      const credentials = await createLiveKitParticipantCredentials({
+        call: result.data,
+        participantId: uid,
+      });
+      credentialMs = Date.now() - credentialStartedAt;
+      Object.assign(responseData, credentials);
+    }
+    logBookingCallLatency(
+      'respond',
+      operationStartedAt,
+      {
+        bookingId,
+        callId,
+        response,
+        resultingStatus: result.data.status,
+        idempotent: result.idempotent,
+      },
+      { transactionMs, credentialMs },
+    );
+    return responseData;
   },
 );
 
@@ -6842,6 +7176,7 @@ exports.createBookingCallToken = onCall(
     secrets: [liveKitApiKey, liveKitApiSecret],
   },
   async (request) => {
+    const operationStartedAt = Date.now();
     if (!request.auth) {
       throw new HttpsError(
         'unauthenticated',
@@ -6853,6 +7188,7 @@ exports.createBookingCallToken = onCall(
       db.collection('bookings').doc(bookingId).get(),
       db.collection('bookingCalls').doc(bookingId).get(),
     ]);
+    const readMs = Date.now() - operationStartedAt;
     if (!bookingSnapshot.exists || !callSnapshot.exists) {
       throw new HttpsError('not-found', 'The active call is unavailable.');
     }
@@ -6867,44 +7203,22 @@ exports.createBookingCallToken = onCall(
         'The call must be accepted before joining.',
       );
     }
-    const endsAtMillis = callTimestampMillis(call.endsAt);
-    if (endsAtMillis == null || endsAtMillis <= nowMillis) {
-      throw new HttpsError('failed-precondition', 'This call has ended.');
-    }
-    const url = liveKitUrl.value();
-    if (!url) {
-      throw new HttpsError(
-        'failed-precondition',
-        'Voice calling is not configured.',
-      );
-    }
-
-    const { AccessToken } = require('livekit-server-sdk');
-    const remainingSeconds = Math.max(
-      1,
-      Math.ceil((endsAtMillis - nowMillis) / 1000),
-    );
-    const token = new AccessToken(
-      liveKitApiKey.value(),
-      liveKitApiSecret.value(),
+    const credentialStartedAt = Date.now();
+    const credentials = await createLiveKitParticipantCredentials({
+      call,
+      participantId: request.auth.uid,
+      nowMillis,
+    });
+    logBookingCallLatency(
+      'create-token',
+      operationStartedAt,
+      { bookingId, callId },
       {
-        identity: request.auth.uid,
-        ttl: `${remainingSeconds}s`,
+        readMs,
+        credentialMs: Date.now() - credentialStartedAt,
       },
     );
-    token.addGrant({
-      roomJoin: true,
-      room: call.roomName,
-      canPublish: true,
-      canSubscribe: true,
-    });
-    return {
-      serverUrl: url,
-      token: await token.toJwt(),
-      roomName: call.roomName,
-      callId,
-      endsAtMillis,
-    };
+    return credentials;
   },
 );
 
@@ -6915,6 +7229,7 @@ exports.endBookingCall = onCall(
     secrets: [liveKitApiKey, liveKitApiSecret],
   },
   async (request) => {
+    const operationStartedAt = Date.now();
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Sign in before ending a call.');
     }
@@ -6923,6 +7238,7 @@ exports.endBookingCall = onCall(
       db.collection('bookings').doc(bookingId).get(),
       db.collection('bookingCalls').doc(bookingId).get(),
     ]);
+    const readMs = Date.now() - operationStartedAt;
     if (!bookingSnapshot.exists || !callSnapshot.exists) {
       throw new HttpsError('not-found', 'The active call is unavailable.');
     }
@@ -6936,11 +7252,17 @@ exports.endBookingCall = onCall(
       );
     }
     if (terminalCallStatus(call.status)) {
+      logBookingCallLatency(
+        'end',
+        operationStartedAt,
+        { bookingId, callId, idempotent: true },
+        { readMs, transactionMs: 0, cleanupMs: 0 },
+      );
       return callResult(call, { idempotent: true });
     }
 
-    await deleteLiveKitRoom(call.roomName, { bookingId, callId });
     const now = Timestamp.now();
+    const transactionStartedAt = Date.now();
     const result = await db.runTransaction(async (transaction) => {
       const currentSnapshot = await transaction.get(
         db.collection('bookingCalls').doc(bookingId),
@@ -6971,6 +7293,28 @@ exports.endBookingCall = onCall(
       }, { merge: true });
       return { data: ended, idempotent: false };
     });
+    const transactionMs = Date.now() - transactionStartedAt;
+    let cleanupMs = 0;
+    let cleanupCompleted = true;
+    if (!result.idempotent) {
+      const cleanup = await deleteLiveKitRoomBounded(
+        result.data.roomName,
+        { bookingId, callId, source: 'participant-end' },
+      );
+      cleanupMs = cleanup.durationMs;
+      cleanupCompleted = cleanup.completed;
+    }
+    logBookingCallLatency(
+      'end',
+      operationStartedAt,
+      {
+        bookingId,
+        callId,
+        idempotent: result.idempotent,
+        cleanupCompleted,
+      },
+      { readMs, transactionMs, cleanupMs },
+    );
     return callResult(result.data, { idempotent: result.idempotent });
   },
 );
@@ -7014,32 +7358,68 @@ exports.expireBookingCalls = onSchedule(
         }, { merge: true });
       }),
     ));
-    await Promise.all(accepted.docs.map(async (entry) => {
-      const call = entry.data();
-      await deleteLiveKitRoom(call.roomName, {
-        bookingId: call.bookingId,
-        callId: call.callId,
-        source: 'scheduled-expiry',
-      });
-      await db.runTransaction(async (transaction) => {
-        const current = await transaction.get(entry.ref);
-        if (!current.exists ||
-            current.data().callId !== call.callId ||
-            effectiveCallStatus(current.data(), now.toMillis()) !==
-              CALL_STATUS.ended) {
-          return;
-        }
-        transaction.set(entry.ref, {
-          status: CALL_STATUS.ended,
-          endedBy: 'system',
-          endedAt: now,
-          updatedAt: now,
-        }, { merge: true });
-      });
-    }));
+    const acceptedResults = await Promise.all(accepted.docs.map(
+      async (entry) => {
+        const queriedCallId = entry.data().callId;
+        const transition = await db.runTransaction(async (transaction) => {
+          const current = await transaction.get(entry.ref);
+          const currentCall = current.exists ? current.data() : null;
+          if (!current.exists ||
+              !acceptedCallNeedsScheduledEnd(
+                currentCall,
+                queriedCallId,
+                now.toMillis(),
+              )) {
+            return { transitioned: false };
+          }
+          const ended = {
+            ...currentCall,
+            status: CALL_STATUS.ended,
+            endedBy: 'system',
+            endedAt: now,
+            updatedAt: now,
+          };
+          transaction.set(entry.ref, {
+            status: CALL_STATUS.ended,
+            endedBy: 'system',
+            endedAt: now,
+            updatedAt: now,
+          }, { merge: true });
+          return {
+            transitioned: true,
+            data: ended,
+          };
+        });
+        if (!transition.transitioned) return transition;
+
+        // The durable terminal state is committed before the optional room
+        // cleanup. A slow LiveKit API can no longer leave Firestore accepted.
+        const cleanup = await deleteLiveKitRoomBounded(
+          transition.data.roomName,
+          {
+            bookingId: transition.data.bookingId,
+            callId: transition.data.callId,
+            source: 'scheduled-expiry',
+          },
+        );
+        return {
+          ...transition,
+          cleanupCompleted: cleanup.completed,
+          cleanupMs: cleanup.durationMs,
+        };
+      },
+    ));
+    const acceptedTransitioned = acceptedResults.filter(
+      (result) => result.transitioned,
+    );
+    const acceptedCleanupTimedOut = acceptedTransitioned.filter(
+      (result) => result.cleanupCompleted === false,
+    );
     logger.info('Expired booking calls cleaned up', {
       ringing: ringing.size,
       accepted: accepted.size,
+      acceptedTransitioned: acceptedTransitioned.length,
+      acceptedCleanupTimedOut: acceptedCleanupTimedOut.length,
     });
   },
 );

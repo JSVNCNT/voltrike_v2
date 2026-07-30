@@ -5,6 +5,7 @@
 
 import 'api/geometry.dart';
 import 'api/health.dart';
+import 'api/navigation.dart';
 import 'api/psgc.dart';
 import 'api/registration_image.dart';
 import 'dart:async';
@@ -62,6 +63,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  List<NavigationGpsSample> dco_decode_list_navigation_gps_sample(dynamic raw);
+
+  @protected
+  List<NavigationSampleResult> dco_decode_list_navigation_sample_result(
+    dynamic raw,
+  );
+
+  @protected
   List<double> dco_decode_list_prim_f_64_loose(dynamic raw);
 
   @protected
@@ -81,6 +93,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<PsgcEntry> dco_decode_list_psgc_entry(dynamic raw);
+
+  @protected
+  NavigationBatchResult dco_decode_navigation_batch_result(dynamic raw);
+
+  @protected
+  NavigationGpsSample dco_decode_navigation_gps_sample(dynamic raw);
+
+  @protected
+  NavigationRouteClearResult dco_decode_navigation_route_clear_result(
+    dynamic raw,
+  );
+
+  @protected
+  NavigationRouteInstallResult dco_decode_navigation_route_install_result(
+    dynamic raw,
+  );
+
+  @protected
+  NavigationRouteStatus dco_decode_navigation_route_status(dynamic raw);
+
+  @protected
+  NavigationSampleDisposition dco_decode_navigation_sample_disposition(
+    dynamic raw,
+  );
+
+  @protected
+  NavigationSampleResult dco_decode_navigation_sample_result(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -190,6 +229,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  List<NavigationGpsSample> sse_decode_list_navigation_gps_sample(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NavigationSampleResult> sse_decode_list_navigation_sample_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<double> sse_decode_list_prim_f_64_loose(SseDeserializer deserializer);
 
   @protected
@@ -209,6 +261,41 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<PsgcEntry> sse_decode_list_psgc_entry(SseDeserializer deserializer);
+
+  @protected
+  NavigationBatchResult sse_decode_navigation_batch_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NavigationGpsSample sse_decode_navigation_gps_sample(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NavigationRouteClearResult sse_decode_navigation_route_clear_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NavigationRouteInstallResult sse_decode_navigation_route_install_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NavigationRouteStatus sse_decode_navigation_route_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NavigationSampleDisposition sse_decode_navigation_sample_disposition(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NavigationSampleResult sse_decode_navigation_sample_result(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -337,6 +424,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_navigation_gps_sample(
+    List<NavigationGpsSample> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_navigation_sample_result(
+    List<NavigationSampleResult> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_f_64_loose(
     List<double> self,
     SseSerializer serializer,
@@ -372,6 +474,48 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_psgc_entry(
     List<PsgcEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigation_batch_result(
+    NavigationBatchResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigation_gps_sample(
+    NavigationGpsSample self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigation_route_clear_result(
+    NavigationRouteClearResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigation_route_install_result(
+    NavigationRouteInstallResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigation_route_status(
+    NavigationRouteStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigation_sample_disposition(
+    NavigationSampleDisposition self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_navigation_sample_result(
+    NavigationSampleResult self,
     SseSerializer serializer,
   );
 

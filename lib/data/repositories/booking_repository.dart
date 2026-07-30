@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/booking.dart';
 import '../models/driver_booking_offer.dart';
+import '../models/model_date_parser.dart';
 import '../models/route_policy_advisory.dart';
 
 class BookingCreationResult {
@@ -13,6 +16,10 @@ class BookingCreationResult {
     required this.estimatedFare,
     required this.isOutsideToda,
     required this.fareBreakdown,
+    this.fareVersion = 0,
+    this.fareSnapshot = const <String, dynamic>{},
+    this.authoritativeRoutePolyline = '',
+    this.searchExpiresAt,
     this.avoidedRouteRestrictionNames = const [],
     this.routePolicyVersion = 0,
     this.routePolicy = const RoutePolicyAdvisory(),
@@ -23,6 +30,10 @@ class BookingCreationResult {
   final double estimatedFare;
   final bool isOutsideToda;
   final Map<String, dynamic> fareBreakdown;
+  final int fareVersion;
+  final Map<String, dynamic> fareSnapshot;
+  final String authoritativeRoutePolyline;
+  final DateTime? searchExpiresAt;
   final List<String> avoidedRouteRestrictionNames;
   final int routePolicyVersion;
   final RoutePolicyAdvisory routePolicy;
@@ -42,6 +53,13 @@ class BookingCreationResult {
           ? data['isOutsideToda'] as bool
           : fallback.isOutsideToda,
       fareBreakdown: _stringKeyedMap(data['fareBreakdown']),
+      fareVersion: _intValue(data['fareVersion']) ?? fallback.fareVersion,
+      fareSnapshot: _stringKeyedMap(data['fareSnapshot']),
+      authoritativeRoutePolyline:
+          _stringValue(data['authoritativeRoutePolyline']) ??
+          fallback.authoritativeRoutePolyline,
+      searchExpiresAt:
+          parseModelDate(data['searchExpiresAt']) ?? fallback.searchExpiresAt,
       avoidedRouteRestrictionNames: _stringList(
         data['avoidedRouteRestrictionNames'],
       ),
@@ -54,6 +72,23 @@ class BookingCreationResult {
               data['avoidedRouteRestrictionNames'],
             ),
           ),
+    );
+  }
+
+  factory BookingCreationResult.fromBooking(Booking booking) {
+    return BookingCreationResult(
+      bookingId: booking.bookingId,
+      distanceMeters: booking.distanceMeters,
+      estimatedFare: booking.estimatedFare,
+      isOutsideToda: booking.isOutsideToda,
+      fareBreakdown: booking.fareBreakdown,
+      fareVersion: booking.fareVersion,
+      fareSnapshot: booking.fareSnapshot,
+      authoritativeRoutePolyline: booking.authoritativeRoutePolyline,
+      searchExpiresAt: booking.searchExpiresAt,
+      avoidedRouteRestrictionNames: booking.routePolicy.avoidedRestrictionNames,
+      routePolicyVersion: booking.routePolicyVersion,
+      routePolicy: booking.routePolicy,
     );
   }
 }
@@ -86,6 +121,14 @@ class BookingRepository {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
   final Uuid _uuid = const Uuid();
+  static const int _maximumRetainedOperationIds = 32;
+  static const Duration _operationIdRetention = Duration(minutes: 10);
+  final Map<String, _RetainedOperationId> _operationIds =
+      <String, _RetainedOperationId>{};
+  final Map<String, Future<void>> _inFlightVoidOperations =
+      <String, Future<void>>{};
+  final Map<String, Future<BookingCreationResult>> _inFlightCreations =
+      <String, Future<BookingCreationResult>>{};
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('bookings');
@@ -95,11 +138,33 @@ class BookingRepository {
   //==========================================================================
 
   Future<BookingCreationResult> createBooking(Booking booking) async {
+    final key = 'create:${booking.bookingId}';
+    final existing = _inFlightCreations[key];
+    if (existing != null) return existing;
+
+    final operationId = _operationIdFor(key);
+    final future = _createBooking(booking, operationId);
+    _inFlightCreations[key] = future;
+    try {
+      final result = await future;
+      _operationIds.remove(key);
+      return result;
+    } finally {
+      if (identical(_inFlightCreations[key], future)) {
+        _inFlightCreations.remove(key);
+      }
+    }
+  }
+
+  Future<BookingCreationResult> _createBooking(
+    Booking booking,
+    String operationId,
+  ) async {
     final response = await _functions
         .httpsCallable('createBookingLifecycle')
         .call({
           'bookingId': booking.bookingId,
-          'operationId': _uuid.v4(),
+          'operationId': operationId,
           'pickup': {
             'latitude': booking.pickup.latitude,
             'longitude': booking.pickup.longitude,
@@ -227,17 +292,62 @@ class BookingRepository {
 
   /// Watches the passenger's single active booking, if one exists.
   ///
-  /// Status filtering is performed in memory to avoid requiring a compound
-  /// Firestore index during the current migration. The result is deterministic
-  /// when legacy data contains more than one active record.
+  /// The lifecycle backend maintains one lightweight pointer per passenger.
+  /// Following it avoids downloading and sorting the passenger's entire
+  /// booking history whenever the active ride changes.
   Stream<Booking?> activeBookingForPassenger(String passengerId) {
-    return watchPassengerBookings(passengerId).map((bookings) {
-      final active = bookings.where((booking) {
-        return booking.status != BookingStatus.completed &&
-            booking.status != BookingStatus.cancelled;
-      }).toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final pointer = _firestore
+        .collection('activePassengerBookings')
+        .doc(passengerId);
+    return Stream<Booking?>.multi((controller) {
+      StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      bookingSubscription;
+      var generation = 0;
 
-      return active.isEmpty ? null : active.first;
+      Future<void> followPointer(
+        DocumentSnapshot<Map<String, dynamic>> snapshot,
+      ) async {
+        final localGeneration = ++generation;
+        await bookingSubscription?.cancel();
+        bookingSubscription = null;
+        if (localGeneration != generation) return;
+
+        final bookingId = _stringValue(snapshot.data()?['bookingId']);
+        if (bookingId == null) {
+          controller.add(null);
+          return;
+        }
+        bookingSubscription = _collection.doc(bookingId).snapshots().listen((
+          bookingSnapshot,
+        ) {
+          if (!bookingSnapshot.exists) {
+            controller.add(null);
+            return;
+          }
+          try {
+            final booking = Booking.fromFirestore(bookingSnapshot);
+            final isTerminal =
+                booking.status == BookingStatus.completed ||
+                booking.status == BookingStatus.cancelled;
+            controller.add(isTerminal ? null : booking);
+          } catch (error, stackTrace) {
+            controller.addError(error, stackTrace);
+          }
+        }, onError: controller.addError);
+      }
+
+      final pointerSubscription = pointer.snapshots().listen((snapshot) async {
+        try {
+          await followPointer(snapshot);
+        } catch (error, stackTrace) {
+          controller.addError(error, stackTrace);
+        }
+      }, onError: controller.addError);
+      controller.onCancel = () async {
+        generation++;
+        await pointerSubscription.cancel();
+        await bookingSubscription?.cancel();
+      };
     });
   }
 
@@ -246,7 +356,21 @@ class BookingRepository {
   /// This deliberately reuses the same selection rule as the live listener so
   /// a cold start and a running session cannot restore different rides.
   Future<Booking?> getActiveBookingForPassenger(String passengerId) {
-    return activeBookingForPassenger(passengerId).first;
+    return _firestore
+        .collection('activePassengerBookings')
+        .doc(passengerId)
+        .get()
+        .then((pointer) async {
+          final bookingId = _stringValue(pointer.data()?['bookingId']);
+          if (bookingId == null) return null;
+          final booking = await getBooking(bookingId);
+          if (booking == null ||
+              booking.status == BookingStatus.completed ||
+              booking.status == BookingStatus.cancelled) {
+            return null;
+          }
+          return booking;
+        });
   }
 
   //==========================================================================
@@ -288,24 +412,7 @@ class BookingRepository {
   // Assign Driver
   //==========================================================================
 
-  Future<void> assignDriver({
-    required String bookingId,
-
-    //======================================================================
-    // Driver
-    //======================================================================
-    required String driverId,
-
-    //======================================================================
-    // Driver Snapshot
-    //======================================================================
-    required String driverName,
-    required String driverPhotoUrl,
-    required double driverRating,
-    required String vehicleNumber,
-    required String plateNumber,
-    required String todaName,
-  }) async {
+  Future<void> assignDriver({required String bookingId}) async {
     await _accept(bookingId);
   }
 
@@ -355,16 +462,7 @@ class BookingRepository {
   ///
   /// Both booking assignment and driver availability are updated in the same
   /// transaction, preventing two drivers from accepting the same request.
-  Future<void> acceptBookingTransaction({
-    required String bookingId,
-    required String driverId,
-    required String driverName,
-    required String driverPhotoUrl,
-    required double driverRating,
-    required String vehicleNumber,
-    required String plateNumber,
-    required String todaName,
-  }) {
+  Future<void> acceptBookingTransaction({required String bookingId}) {
     return _accept(bookingId);
   }
 
@@ -383,9 +481,10 @@ class BookingRepository {
   }
 
   Future<void> declineBookingOffer({required String bookingId}) async {
-    await _functions.httpsCallable('declineBookingOfferLifecycle').call<void>({
-      'bookingId': bookingId,
-      'operationId': _uuid.v4(),
+    await _runVoidOperation('decline:$bookingId', (operationId) async {
+      await _functions.httpsCallable('declineBookingOfferLifecycle').call<void>(
+        {'bookingId': bookingId, 'operationId': operationId},
+      );
     });
   }
 
@@ -393,10 +492,15 @@ class BookingRepository {
     required String bookingId,
     required bool received,
   }) async {
-    await _functions.httpsCallable('confirmCashPayment').call<void>({
-      'bookingId': bookingId,
-      'operationId': _uuid.v4(),
-      'confirmation': received ? 'received' : 'paid',
+    final confirmation = received ? 'received' : 'paid';
+    await _runVoidOperation('cash:$bookingId:$confirmation', (
+      operationId,
+    ) async {
+      await _functions.httpsCallable('confirmCashPayment').call<void>({
+        'bookingId': bookingId,
+        'operationId': operationId,
+        'confirmation': confirmation,
+      });
     });
   }
 
@@ -417,9 +521,11 @@ class BookingRepository {
   }
 
   Future<void> _accept(String bookingId) async {
-    await _functions.httpsCallable('acceptBookingLifecycle').call({
-      'bookingId': bookingId,
-      'operationId': _uuid.v4(),
+    await _runVoidOperation('accept:$bookingId', (operationId) async {
+      await _functions.httpsCallable('acceptBookingLifecycle').call({
+        'bookingId': bookingId,
+        'operationId': operationId,
+      });
     });
   }
 
@@ -429,13 +535,51 @@ class BookingRepository {
     String? reasonCode,
     String? reasonDetail,
   }) async {
-    await _functions.httpsCallable('transitionBookingLifecycle').call({
-      'bookingId': bookingId,
-      'operationId': _uuid.v4(),
-      'action': action,
-      'reasonCode': ?reasonCode,
-      'reasonDetail': ?reasonDetail,
+    await _runVoidOperation('$action:$bookingId', (operationId) async {
+      await _functions.httpsCallable('transitionBookingLifecycle').call({
+        'bookingId': bookingId,
+        'operationId': operationId,
+        'action': action,
+        'reasonCode': ?reasonCode,
+        'reasonDetail': ?reasonDetail,
+      });
     });
+  }
+
+  Future<void> _runVoidOperation(
+    String key,
+    Future<void> Function(String operationId) operation,
+  ) async {
+    final existing = _inFlightVoidOperations[key];
+    if (existing != null) return existing;
+
+    final operationId = _operationIdFor(key);
+    final future = operation(operationId);
+    _inFlightVoidOperations[key] = future;
+    try {
+      await future;
+      _operationIds.remove(key);
+    } finally {
+      if (identical(_inFlightVoidOperations[key], future)) {
+        _inFlightVoidOperations.remove(key);
+      }
+    }
+  }
+
+  String _operationIdFor(String key) {
+    final now = DateTime.now();
+    _operationIds.removeWhere(
+      (_, operation) =>
+          now.difference(operation.retainedAt) > _operationIdRetention,
+    );
+    while (_operationIds.length >= _maximumRetainedOperationIds &&
+        !_operationIds.containsKey(key)) {
+      _operationIds.remove(_operationIds.keys.first);
+    }
+    return (_operationIds[key] ??= _RetainedOperationId(
+      value: _uuid.v4(),
+      retainedAt: now,
+    )).value;
   }
 
   String _actionForStatus(BookingStatus status) {
@@ -457,6 +601,13 @@ class BookingRepository {
         );
     }
   }
+}
+
+class _RetainedOperationId {
+  const _RetainedOperationId({required this.value, required this.retainedAt});
+
+  final String value;
+  final DateTime retainedAt;
 }
 
 Map<String, dynamic> _stringKeyedMap(Object? value) {

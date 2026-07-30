@@ -5,7 +5,7 @@ import { auth, db } from './firebase';
 import { adminApi } from './admin-api';
 import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
 import { bacolodBarangays } from './data/bacolodBarangays';
-import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaRegistration, ZoneRequest } from './types';
+import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaCommissionReportItem, TodaCommissionReportSummary, TodaRegistration, ZoneRequest } from './types';
 import {
   enableAdminWebPush,
   listenForAdminPush,
@@ -51,6 +51,27 @@ const todaEvidenceFields = [
 
 function peso(value: number) { return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value || 0); }
 function label(text: string) { return text.replace(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()); }
+function dateInputValue(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+function currentMonthRange() {
+  const now = new Date();
+  return {
+    startDate: dateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)),
+    endDate: dateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+  };
+}
+const overviewMetricsRefreshMs = 15 * 1000;
+const overviewCommissionRefreshMs = 5 * 60 * 1000;
+function percentLabel(value: number) {
+  return `${new Intl.NumberFormat('en-PH', { maximumFractionDigits: 2 }).format(value || 0)}%`;
+}
+function statusLabel(value: string | null | undefined) {
+  return value?.trim() ? value.split('_').join(' ') : 'not recorded';
+}
 
 function geometrySummary(areas: Point[][]): string {
   const points = areas.flat().filter(([longitude, latitude]) =>
@@ -313,43 +334,211 @@ function Overview({ session }: { session: AdminSession }) {
     safetyIncidents: 0,
     scope: session.role === 'toda_admin' ? session.todaId || '' : 'platform',
   });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [commission, setCommission] = useState<{
+    percent: number;
+    summary: TodaCommissionReportSummary;
+  } | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [commissionLoading, setCommissionLoading] = useState(
+    session.role === 'toda_admin',
+  );
+  const [metricsError, setMetricsError] = useState('');
+  const [commissionError, setCommissionError] = useState('');
   useEffect(() => {
-    const refresh = async () => {
-      if (document.visibilityState !== 'visible') return;
+    let active = true;
+    let inFlight = false;
+    let lastAttemptedAt = 0;
+    setMetricsLoading(true);
+    const refreshMetrics = async () => {
+      const now = Date.now();
+      if (!active ||
+          inFlight ||
+          now - lastAttemptedAt < overviewMetricsRefreshMs ||
+          document.visibilityState !== 'visible') {
+        return;
+      }
+      inFlight = true;
+      lastAttemptedAt = now;
       try {
-        const next = await adminApi.metrics();
-        setStats(next);
-        setError('');
+        const value = await adminApi.metrics();
+        if (!active) return;
+        setStats(value);
+        setMetricsError('');
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'Unable to load Firebase overview metrics.');
+        if (!active) return;
+        setMetricsError(reason instanceof Error
+          ? reason.message
+          : 'Unable to load Firebase overview metrics.');
       } finally {
-        setLoading(false);
+        inFlight = false;
+        if (active) setMetricsLoading(false);
       }
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 15000);
-    return () => window.clearInterval(timer);
-  }, [session]);
-  return <>{loading && <p className="muted">Loading Firebase overview…</p>}{error && <div className="notice">{error}</div>}<div className="cards"><Metric label="Registered drivers" value={String(stats.drivers)} /><Metric label="All bookings" value={String(stats.bookings)} /><Metric label="Completed rides" value={String(stats.trips)} /><Metric label="Open reports" value={String(stats.reports)} warning /><Metric label="Open safety incidents" value={String(stats.safetyIncidents)} warning /><Metric label="Pending zones" value={String(stats.zones)} /></div><section className="panel"><h2>Operational boundaries</h2><p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures are restricted by Firebase to bookings, drivers, reports, SOS incidents, and zones assigned to your authenticated TODA. City fares remain controlled by the developer administrator; commission is managed on its own audited page.'}</p></section></>;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshMetrics();
+      }
+    };
+    void refreshMetrics();
+    const timer = window.setInterval(
+      () => void refreshMetrics(),
+      overviewMetricsRefreshMs,
+    );
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener(
+        'visibilitychange',
+        refreshWhenVisible,
+      );
+    };
+  }, [session.role, session.todaId]);
+  useEffect(() => {
+    if (session.role !== 'toda_admin') {
+      setCommissionLoading(false);
+      setCommissionError('');
+      return;
+    }
+    let active = true;
+    let inFlight = false;
+    let lastAttemptedAt = 0;
+    setCommissionLoading(true);
+    const refreshCommission = async () => {
+      const now = Date.now();
+      if (!active ||
+          inFlight ||
+          now - lastAttemptedAt < overviewCommissionRefreshMs ||
+          document.visibilityState !== 'visible') {
+        return;
+      }
+      inFlight = true;
+      lastAttemptedAt = now;
+      const range = currentMonthRange();
+      try {
+        const [configuration, report] = await Promise.all([
+          adminApi.todaCommission(),
+          adminApi.todaCommissionReport(
+            range.startDate,
+            range.endDate,
+            { summaryOnly: true },
+          ),
+        ]);
+        if (!active) return;
+        setCommission({
+          percent: configuration.percent,
+          summary: report.summary,
+        });
+        setCommissionError('');
+      } catch (reason) {
+        if (!active) return;
+        setCommissionError(reason instanceof Error
+          ? reason.message
+          : 'Unable to load this month\'s TODA commission totals.');
+      } finally {
+        inFlight = false;
+        if (active) setCommissionLoading(false);
+      }
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshCommission();
+      }
+    };
+    void refreshCommission();
+    const timer = window.setInterval(
+      () => void refreshCommission(),
+      overviewCommissionRefreshMs,
+    );
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener(
+        'visibilitychange',
+        refreshWhenVisible,
+      );
+    };
+  }, [session.role, session.todaId]);
+  const loading = metricsLoading || commissionLoading;
+  const error = [metricsError, commissionError].filter(Boolean).join(' ');
+  return <>{loading && <p className="muted">Loading Firebase overview…</p>}{error && <div className="notice">{error}</div>}<div className="cards"><Metric label="Registered drivers" value={String(stats.drivers)} /><Metric label="All bookings" value={String(stats.bookings)} /><Metric label="Completed rides" value={String(stats.trips)} /><Metric label="Open reports" value={String(stats.reports)} warning /><Metric label="Open safety incidents" value={String(stats.safetyIncidents)} warning /><Metric label="Pending zones" value={String(stats.zones)} />{session.role === 'toda_admin' && <><Metric label="Current commission rate" value={commission ? percentLabel(commission.percent) : '—'} /><Metric label="Commission this month" value={commission ? peso(commission.summary.commissionAmount) : '—'} /><Metric label="Gross completed fares this month" value={commission ? peso(commission.summary.grossFare) : '—'} /><Metric label="Driver net this month" value={commission ? peso(commission.summary.driverNetEarnings) : '—'} /><Metric label="Completed rides this month" value={commission ? String(commission.summary.completedRides) : '—'} /><Metric label="Disputed settlements this month" value={commission ? String(commission.summary.disputedSettlements) : '—'} warning={Boolean(commission?.summary.disputedSettlements)} /></>}</div><section className="panel"><h2>Operational boundaries</h2><p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures and commission totals are restricted by Firebase to your authenticated TODA. Monthly earnings use each completed ride’s snapshotted commission rate; changing today’s rate never recalculates older rides.'}</p></section></>;
 }
 function Metric({ label: title, value, warning }: { label: string; value: string; warning?: boolean }) { return <div className="metric"><p>{title}</p><strong className={warning ? 'warning' : ''}>{value}</strong></div>; }
 
 function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
+  const initialRange = useMemo(currentMonthRange, []);
   const [percent, setPercent] = useState(0);
   const [recommended, setRecommended] = useState(10);
   const [maximum, setMaximum] = useState(30);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [startDate, setStartDate] = useState(initialRange.startDate);
+  const [endDate, setEndDate] = useState(initialRange.endDate);
+  const [appliedRange, setAppliedRange] = useState(initialRange);
+  const [summary, setSummary] = useState<TodaCommissionReportSummary | null>(null);
+  const [items, setItems] = useState<TodaCommissionReportItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [reportError, setReportError] = useState('');
   useEffect(() => {
-    void adminApi.todaCommission().then((value) => {
-      setPercent(value.percent);
-      setRecommended(value.recommendedPercent);
-      setMaximum(value.maximumPercent);
-      setUpdatedAt(value.updatedAt || null);
-    });
-  }, []);
+    void adminApi.todaCommission()
+      .then((value) => {
+        setPercent(value.percent);
+        setRecommended(value.recommendedPercent);
+        setMaximum(value.maximumPercent);
+        setUpdatedAt(value.updatedAt || null);
+      })
+      .catch((error: unknown) => {
+        onMessage(error instanceof Error ? error.message : 'Unable to load the current commission setting.');
+      });
+  }, [onMessage]);
+  const loadReport = useCallback(async (cursor?: string | null, append = false) => {
+    setReportLoading(true);
+    try {
+      const report = await adminApi.todaCommissionReport(
+        appliedRange.startDate,
+        appliedRange.endDate,
+        { cursor },
+      );
+      setSummary(report.summary);
+      setItems((current) => append
+        ? [
+          ...current,
+          ...report.items.filter((item) =>
+            !current.some((existing) => existing.bookingId === item.bookingId)),
+        ]
+        : report.items);
+      setNextCursor(report.nextCursor);
+      setReportError('');
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : 'Unable to load the TODA commission report.');
+    } finally {
+      setReportLoading(false);
+    }
+  }, [appliedRange]);
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport]);
+  function applyReportRange(event: FormEvent) {
+    event.preventDefault();
+    if (!startDate || !endDate) {
+      setReportError('Choose both a start and end date.');
+      return;
+    }
+    if (endDate < startDate) {
+      setReportError('The end date must be on or after the start date.');
+      return;
+    }
+    setItems([]);
+    setNextCursor(null);
+    const nextRange = { startDate, endDate };
+    if (nextRange.startDate === appliedRange.startDate && nextRange.endDate === appliedRange.endDate) {
+      void loadReport();
+    } else {
+      setAppliedRange(nextRange);
+    }
+  }
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!window.confirm(`Set the TODA commission to ${percent}% for future ride assignments? Existing and completed rides will not be changed.`)) return;
@@ -365,18 +554,60 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
       setBusy(false);
     }
   }
-  return <section className="panel wide">
-    <h2>Driver commission</h2>
-    <p className="muted">Set the percentage retained by your TODA from future completed rides. The percentage is snapshotted when a driver accepts a booking, so later changes cannot rewrite existing ride earnings.</p>
-    <form className="commission-form" onSubmit={save}>
-      <label>Commission percentage<input type="range" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /></label>
-      <label className="commission-number"><input type="number" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /><span>%</span></label>
-      <button type="button" onClick={() => setPercent(recommended)}>Use recommended {recommended}%</button>
-      <button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save commission'}</button>
-    </form>
-    <div className="fare-summary">Guardrails: 0–{maximum}% only, explicit confirmation, an audit record for every change, and no retroactive recalculation. Example on a ₱100 fare: driver receives {peso(100 - percent)} and TODA commission is {peso(percent)}.</div>
-    {updatedAt && <p className="muted">Last changed {new Date(updatedAt).toLocaleString('en-PH')}.</p>}
-  </section>;
+  return <>
+    <section className="panel wide">
+      <h2>Driver commission</h2>
+      <p className="muted">Set the percentage retained by your TODA from future completed rides. The percentage is snapshotted when a driver accepts a booking, so later changes cannot rewrite existing ride earnings.</p>
+      <form className="commission-form" onSubmit={save}>
+        <label>Commission percentage<input type="range" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /></label>
+        <label className="commission-number"><input type="number" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /><span>%</span></label>
+        <button type="button" onClick={() => setPercent(recommended)}>Use recommended {recommended}%</button>
+        <button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save commission'}</button>
+      </form>
+      <div className="fare-summary">Guardrails: 0–{maximum}% only, explicit confirmation, an audit record for every change, and no retroactive recalculation. Example on a ₱100 fare: driver receives {peso(100 - percent)} and TODA commission is {peso(percent)}.</div>
+      {updatedAt && <p className="muted">Last changed {new Date(updatedAt).toLocaleString('en-PH')}.</p>}
+    </section>
+    <section className="panel wide">
+      <div className="section-heading">
+        <div>
+          <h2>Completed-ride commission report</h2>
+          <p className="muted">Totals use the immutable rate captured for each ride. A ride appears only after completion; pending and already-assigned rides are not recalculated when the setting above changes.</p>
+        </div>
+        <button type="button" onClick={() => void loadReport()} disabled={reportLoading}>Refresh report</button>
+      </div>
+      <form className="commission-filters" onSubmit={applyReportRange}>
+        <label>Start date<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
+        <label>End date<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} required /></label>
+        <button className="primary" disabled={reportLoading}>Apply dates</button>
+      </form>
+      {reportError && <div className="notice">{reportError}</div>}
+      <div className="cards commission-cards">
+        <Metric label="Completed rides" value={summary ? String(summary.completedRides) : '—'} />
+        <Metric label="Gross passenger fares" value={summary ? peso(summary.grossFare) : '—'} />
+        <Metric label="TODA commission" value={summary ? peso(summary.commissionAmount) : '—'} />
+        <Metric label="Driver net earnings" value={summary ? peso(summary.driverNetEarnings) : '—'} />
+        <Metric label="Pending settlements" value={summary ? String(summary.pendingSettlements) : '—'} warning={Boolean(summary?.pendingSettlements)} />
+        <Metric label="Settled rides" value={summary ? String(summary.settledSettlements) : '—'} />
+        <Metric label="Disputed settlements" value={summary ? String(summary.disputedSettlements) : '—'} warning={Boolean(summary?.disputedSettlements)} />
+      </div>
+      <div className="table commission-table">
+        {items.map((item) => {
+          const disputed = item.adjustmentStatus === 'disputed'
+            || item.settlementStatus === 'disputed';
+          return <div className="row commission-row" key={item.bookingId}>
+            <span><b>{item.completedAt ? new Date(item.completedAt).toLocaleString('en-PH') : 'Completion time unavailable'}</b><small className="technical-id">Booking: {item.bookingId}</small>{item.receiptNumber && <small>Receipt: {item.receiptNumber}</small>}</span>
+            <span><b>{item.driverName || 'Driver name unavailable'}</b><small className="technical-id">Driver: {item.driverId}</small></span>
+            <span><b>{peso(item.grossFare)} gross</b><small>{percentLabel(item.commissionPercent)} captured rate</small></span>
+            <span><b>{peso(item.commissionAmount)} TODA</b><small>{peso(item.driverNetEarnings)} driver net</small></span>
+            <span className={disputed ? 'warning' : item.settlementStatus === 'settled' ? 'ok' : ''}><b>{statusLabel(item.settlementStatus)}</b>{item.adjustmentStatus && <small>Adjustment: {statusLabel(item.adjustmentStatus)}</small>}{item.disputeReason && <small>{item.disputeReason}</small>}</span>
+          </div>;
+        })}
+        {reportLoading && items.length === 0 && <p className="muted">Loading completed-ride commissions…</p>}
+        {!reportLoading && !reportError && items.length === 0 && <p className="muted">No completed rides were recorded in this date range.</p>}
+      </div>
+      <button type="button" onClick={() => void loadReport(nextCursor, true)} disabled={reportLoading || !nextCursor}>{reportLoading && items.length > 0 ? 'Loading…' : nextCursor ? 'Load older completed rides' : 'End of results'}</button>
+    </section>
+  </>;
 }
 
 function LiveDriversPage() {

@@ -101,6 +101,32 @@
       ]
     },
     {
+      "collectionGroup": "settlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "settlementTimestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "settlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "settlementTimestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "settlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "adjustmentStatus", "order": "ASCENDING" },
+        { "fieldPath": "settlementTimestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "bookingCalls",
       "queryScope": "COLLECTION",
       "fields": [

@@ -1,0 +1,44 @@
+{
+  "encodedPolyline": "o~b`AotlmV?gEgEgE",
+  "samples": [
+    {
+      "latitude": 10.67,
+      "longitude": 122.95,
+      "accuracyMeters": 5.0,
+      "timestampMillis": 10000
+    },
+    {
+      "latitude": 10.67,
+      "longitude": 122.95,
+      "accuracyMeters": 101.0,
+      "timestampMillis": 11000
+    },
+    {
+      "latitude": 10.67,
+      "longitude": 122.95,
+      "accuracyMeters": 5.0,
+      "timestampMillis": 9000
+    },
+    {
+      "latitude": 10.69,
+      "longitude": 122.99,
+      "accuracyMeters": 5.0,
+      "timestampMillis": 12000
+    },
+    {
+      "latitude": 10.672,
+      "longitude": 122.951,
+      "accuracyMeters": 5.0,
+      "timestampMillis": 25000
+    }
+  ],
+  "expectedDispositions": [
+    "accepted",
+    "invalidAccuracy",
+    "stale",
+    "implausibleMotion",
+    "accepted"
+  ],
+  "expectedAcceptedCount": 2,
+  "expectedRejectedCount": 3
+}

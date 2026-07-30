@@ -861,3 +861,126 @@ entries remain preserved as historical context and are not used as R2 inputs.
   integration constructors explicitly opt into native proximity so future
   results cannot accidentally measure Dart twice. Their targeted analysis
   passes, and the retained fixture semantically matches the device report.
+
+## R3 performance, correctness, calls, commissions, and navigation - 2026-07-30
+
+This bottom section is the sole active completion log for R3. All preceding
+entries remain preserved as historical context and are not inputs to this
+phase.
+
+- Received the explicit `GO R3` authorization for the consolidated Flutter
+  networking/listener/state/fare work, TODA commission reporting, bounded
+  LiveKit optimization, and cached Rust navigation/GPS session.
+- Appended the R3 checklist and completion log before making any R3 code,
+  dependency, generated-binding, or product-behavior changes.
+- Verification may use the connected Android 17/API-37 x86_64 emulator.
+  Physical ARM performance, real cellular/GPS behavior, and true two-party
+  audio still require later manual device coverage.
+- Implementation and verification results will be appended below this line.
+
+### Retained R3 implementation
+
+- Removed the four driver-acceptance profile reads and the passenger profile
+  read before booking creation. Active passenger recovery now follows
+  `activePassengerBookings/{uid}`, and the affected Riverpod/Firestore/RTDB
+  listeners auto-dispose.
+- Consolidated local ride flow around authoritative `BookingStatus`, removed
+  the duplicate driver/passenger trip-state providers and service, rejects
+  unknown persisted lifecycle values, and uses the backend search deadline.
+- Booking creation and lifecycle calls now coalesce in flight and retain
+  bounded stable operation IDs. Ambiguous booking failures reuse the same
+  booking identity and first recover the authoritative active-booking pointer.
+- Reused the backend route polyline instead of calling Google Routes again.
+  Routes and Places now have bounded timeouts, request coalescing, TTL/LRU
+  caches, and bounded Places-detail concurrency.
+- Driver locations now separate device observation order from server
+  publication freshness, reject invalid/stale samples, suppress insignificant
+  movement against the last emitted point, remove stale markers, and reduce
+  camera/marker churn.
+- Aligned Dart and Node fare versions, defaults, component rounding, and
+  centavo settlement invariants with shared fixtures. Driver earnings and
+  receipts now distinguish gross fare, TODA commission, and driver net.
+- Added TODA-scoped commission aggregates to the Admin overview and a dated,
+  paginated completed-ride report to the commission page. Overview commission
+  data uses aggregate-only reads every five minutes; existing ride snapshots
+  are never retroactively recalculated.
+- Added microphone permission preflight, caller connection preparation, fast
+  microphone publication, bounded callable/connect/cleanup work, one safe
+  retry, exact media-ready state, reconnect/quality handling, and stale-connect
+  cancellation to LiveKit calls. Scheduled expiry commits terminal Firestore
+  state before bounded room cleanup.
+- Added the cached active-route session to the existing root `rust` crate:
+  one-time polyline decode/indexing, batched validation, smoothing, plausible
+  motion checks, nearest segment, progress, remaining distance, heading, and
+  off-route confidence. Strict input limits and typed/panic-safe failures are
+  preserved.
+- Navigation keeps independent `off`, `shadow`, and `on` modes. `on` now does
+  no duplicate Dart scan while Rust succeeds; it retains only a bounded sample
+  replay and lazily initializes Dart if the native path later fails.
+- Node remains authoritative for Firebase access, driver award arbitration,
+  ride transitions, fare quotes, and settlements. Rust does not perform
+  networking, Firebase, LiveKit/WebRTC, permissions, or Admin work.
+- A second read-only audit of retry identity, stale locations, Rust rollout,
+  Admin polling, LiveKit expiry, and the downstream marker behavior found no
+  remaining actionable issue.
+
+### Final automated and emulator verification
+
+- Full Flutter analysis completed with no issues. The exact final Flutter
+  suite passed 200 tests.
+- Firebase Functions passed 84 Node tests and syntax checks for all changed
+  JavaScript files. Verification used local Node 24.15.0; deployment remains
+  configured for the declared Node 22 runtime.
+- Both Admin TypeScript projects passed with no diagnostics. The production
+  build transformed 52 modules and regenerated `admin/dist`; Vite retained its
+  existing warning for the large application and Mapbox chunks.
+- Rust 1.97.1 passed Rustfmt, Clippy with warnings denied, 22 unit tests, and 3
+  integration tests. `flutter_rust_bridge_codegen generate` completed, and a
+  post-generation format/diff check passed.
+- The Android native bridge integration test passed on
+  `emulator-5554`: the x86_64 Rust library installed a cached route, processed
+  GPS, and cleared the route through the real bridge.
+- The final emulator artifact is a debug x86_64 APK at
+  `build/app/outputs/flutter-apk/app-debug.apk`, 224,891,826 bytes, SHA-256
+  `EBEDB83F734EB5D70CA4E79D873250A519F823FDA8B7DAC65715ACC7C9D4B3EC`.
+  It contains `lib/x86_64/libvoltrike_core.so`.
+- The APK installed successfully on `emulator-5554` with
+  `VOLTRIKE_NAVIGATION_MODE=on`. After granting the emulator notification
+  prompt, `MainActivity` was resumed, the VolTrike welcome/sign-in/passenger/
+  driver UI rendered, and logs contained no fatal exception,
+  `MissingPluginException`, or `UnsatisfiedLinkError`.
+
+### Rollout and remaining manual validation
+
+- Nothing was deployed. The new commission report, authoritative booking
+  response, settlement corrections, and LiveKit backend path require Functions
+  deployment. The report also requires the new Firestore indexes to finish
+  building, and the rebuilt Admin requires Hosting deployment:
+
+```powershell
+firebase deploy --only firestore:indexes
+firebase deploy --only functions
+firebase deploy --only hosting
+```
+
+- Wait until the Firebase console reports the new settlement indexes as ready
+  before judging the Admin report. It lists completed rides in the selected
+  Manila-date range; pending or cancelled bookings are intentionally absent.
+- Navigation defaults to the safe Dart path unless a build enables it. Manual
+  rollout commands are:
+
+```powershell
+flutter run -d emulator-5554 --dart-define=VOLTRIKE_NAVIGATION_MODE=shadow
+flutter run -d emulator-5554 --dart-define=VOLTRIKE_NAVIGATION_MODE=on
+```
+
+- Still manual: an authenticated passenger/driver end-to-end ride, ambiguous
+  network retry, real GPS/off-route behavior, commission visibility after a
+  completed ride, and a true two-party LiveKit call including reconnect,
+  cellular delay, audio subscription, and terminal cleanup.
+- Emulator x86_64 coverage is not low-end ARM/ARMv7 proof. No physical-device
+  benchmark, real cellular/TURN test, production Firebase deployment, or
+  production signing was performed in R3.
+- This APK is a debug test artifact, not a release or production-distribution
+  build. The existing `com.example.voltrike_v2` application ID and Android
+  debug certificate remain outside R3. Changes are local and uncommitted.

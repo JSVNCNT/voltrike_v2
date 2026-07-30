@@ -675,6 +675,11 @@ async function main() {
   );
   assert.equal(startedCall.status, 'ringing');
   assert.ok(startedCall.callId.startsWith('call_'));
+  assert.match(startedCall.serverUrl, /^wss?:\/\//);
+  const persistedRingingCall =
+    (await db.doc(`bookingCalls/${bookingId}`).get()).data();
+  assert.equal(persistedRingingCall.serverUrl, startedCall.serverUrl);
+  assert.equal(Object.hasOwn(persistedRingingCall, 'token'), false);
   await Promise.all([
     expectHttpStatus(
       'passenger may read the booking call before acceptance',
@@ -768,6 +773,11 @@ async function main() {
   );
   assert.equal(acceptedCall.status, 'accepted');
   assert.ok(acceptedCall.endsAtMillis > Date.now());
+  assert.equal(acceptedCall.serverUrl, startedCall.serverUrl);
+  assert.ok(acceptedCall.token.length > 20);
+  const persistedAcceptedCall =
+    (await db.doc(`bookingCalls/${bookingId}`).get()).data();
+  assert.equal(Object.hasOwn(persistedAcceptedCall, 'token'), false);
   const callCredentials = await callable(
     'createBookingCallToken',
     passengerToken,
@@ -785,6 +795,10 @@ async function main() {
       bookingId,
       callId: startedCall.callId,
     },
+  );
+  assert.equal(
+    (await db.doc(`bookingCalls/${bookingId}`).get()).data().status,
+    'ended',
   );
   await expectHttpStatus(
     'passenger cannot overwrite driver tracking location',

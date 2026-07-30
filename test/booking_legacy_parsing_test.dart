@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/data/models/booking.dart';
 
 void main() {
-  test('legacy booking fields parse without throwing', () {
+  test('legacy booking fields parse when lifecycle status is supported', () {
     final booking = Booking.fromMap(
       bookingId: 'legacy-booking',
       data: {
@@ -15,7 +15,7 @@ void main() {
         'dropoffAddress': 'Legacy Destination',
         'distanceMeters': '1250',
         'estimatedFare': 45,
-        'status': 'unknown-legacy-status',
+        'status': 'pending',
       },
     );
 
@@ -29,10 +29,68 @@ void main() {
     expect(booking.baggageCount, 0);
   });
 
+  test(
+    'unsupported lifecycle status is rejected instead of becoming pending',
+    () {
+      expect(
+        () => Booking.fromMap(
+          bookingId: 'corrupt-booking',
+          data: const <String, dynamic>{
+            'passengerId': 'passenger-1',
+            'status': 'unknown-legacy-status',
+          },
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test('legacy completed rides preserve gross as driver net earnings', () {
+    final booking = Booking.fromMap(
+      bookingId: 'legacy-completed',
+      data: const <String, dynamic>{
+        'passengerId': 'passenger-1',
+        'estimatedFare': 75,
+        'amountDue': 80,
+        'status': 'completed',
+      },
+    );
+
+    expect(booking.grossFare, 80);
+    expect(booking.commissionAmount, 0);
+    expect(booking.driverNetEarnings, 80);
+  });
+
+  test('current settlement and quote snapshots parse without drift', () {
+    final booking = Booking.fromMap(
+      bookingId: 'current-booking',
+      data: {
+        'passengerId': 'passenger-1',
+        'estimatedFare': 100,
+        'amountDue': 100,
+        'grossFare': 100,
+        'commissionPercent': 7.5,
+        'commissionAmount': 7.5,
+        'driverNetEarnings': 92.5,
+        'fareSnapshot': {'version': 4},
+        'fareBreakdown': {'total': 100},
+        'authoritativeRoutePolyline': 'abc',
+        'searchExpiresAt': '2026-07-30T01:00:00.000Z',
+        'status': 'completed',
+      },
+    );
+
+    expect(booking.fareVersion, 4);
+    expect(booking.fareBreakdown['total'], 100);
+    expect(booking.authoritativeRoutePolyline, 'abc');
+    expect(booking.searchExpiresAt, DateTime.utc(2026, 7, 30, 1));
+    expect(booking.driverNetEarnings, 92.5);
+  });
+
   test('current serialization always writes the current schema version', () {
     final booking = Booking.fromMap(
       bookingId: 'booking-1',
-      data: const <String, dynamic>{},
+      data: const <String, dynamic>{'status': 'pending'},
     );
 
     expect(

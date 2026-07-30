@@ -13,6 +13,7 @@ import '../../../data/repositories/booking_repository.dart';
 import '../../../data/repositories/booking_voice_call_repository.dart';
 import '../../common/services/ringtone_service.dart';
 import 'call_participant_identity.dart';
+import 'microphone_permission.dart';
 
 class IncomingCallScreen extends StatefulWidget {
   const IncomingCallScreen({
@@ -157,7 +158,11 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
     setState(() => _responding = true);
     await RingtoneService.instance.stopIncomingCall();
     try {
-      final accepted = await _repository.respondCall(
+      // Keep the server-authoritative call in ringing state when this device
+      // cannot actually provide microphone audio.
+      await ensureVoiceCallMicrophonePermission();
+      if (!mounted) return;
+      final result = await _repository.respondCallWithResult(
         bookingId: widget.bookingId,
         callId: session.callId,
         response: BookingCallStatus.accepted,
@@ -167,15 +172,19 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
         AppRoutes.bookingVoiceCall,
         extra: {
           'bookingId': widget.bookingId,
-          'callId': accepted.callId,
+          'callId': result.session.callId,
           'outgoing': false,
+          'serverUrl': result.serverUrl,
+          'credentials': result.credentials,
         },
       );
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _responding = false;
-        _error = DomainErrorMapper.message(error);
+        _error = error is StateError
+            ? error.message.toString()
+            : DomainErrorMapper.message(error);
       });
     }
   }

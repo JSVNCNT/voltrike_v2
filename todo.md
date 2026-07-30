@@ -951,3 +951,37 @@ remain preserved as historical context and are not inputs to this phase.
   integration/benchmark coverage.
 - [x] Record retained and rejected R2 work, measurements, limitations, and
   rollback behavior in the matching bottom section of `done.md`.
+
+## R3 performance, correctness, calls, commissions, and navigation - 2026-07-30
+
+This bottom section is the sole active checklist for R3. All preceding entries
+remain preserved as historical context and are not inputs to this phase.
+
+- [x] Remove redundant pre-acceptance reads, use the authoritative active
+  passenger booking pointer, bound route/place requests and caches, dispose
+  inactive listeners, and reduce stale location/map update churn.
+- [x] Consolidate client ride state around `BookingStatus`, make retries and
+  booking creation idempotent, honor authoritative deadlines, and reject
+  unsupported lifecycle values.
+- [x] Reuse the authoritative route and fare snapshot from Firebase Functions;
+  align Dart/Node centavo rounding, defaults, fare versions, settlement
+  invariants, and gross/commission/net earnings presentation.
+- [x] Add TODA-scoped commission summaries and paginated completed-ride
+  reporting to Firebase Functions, the Admin overview, and the Driver
+  commission page without retroactively recalculating ride snapshots.
+- [x] Reduce LiveKit join latency with permission preflight, connection
+  preparation, fast microphone publication, bounded retries/timeouts, exact
+  media-ready state, reconnect quality handling, safe cancellation, and
+  reliable terminal cleanup.
+- [x] Add a cached active-route navigation/GPS session to the existing Rust
+  crate with batch filtering, smoothing, projection, progress, remaining
+  distance, heading, off-route confidence, strict limits, Dart fallback, and
+  off/shadow/on rollout.
+- [x] Add and update Dart, Node, Admin, Rust, bridge, boundary, malformed-input,
+  parity, idempotency, scoping, lifecycle, and presentation tests.
+- [x] Run formatting, analysis, Flutter/Node/Admin/Rust tests, bridge generation
+  checks, Android x86_64 packaging, and functional smoke coverage on
+  `emulator-5554`.
+- [x] Record exact retained work, automated results, emulator limitations,
+  manual two-party/physical-device checks, rollback controls, and manual
+  Firebase deployment commands in the matching bottom section of `done.md`.

@@ -26,8 +26,7 @@ class DriverEarningsSummary {
 /// ===========================================================================
 /// Repository Provider
 /// ===========================================================================
-final driverEarningsRepositoryProvider =
-    Provider<DriverEarningsRepository>(
+final driverEarningsRepositoryProvider = Provider<DriverEarningsRepository>(
   (ref) => DriverEarningsRepository(),
 );
 
@@ -39,34 +38,16 @@ class DriverEarningsController {
 
   final DriverEarningsRepository _repository;
 
-  Future<DriverEarningsSummary> loadEarnings(
-    String driverId,
-  ) async {
-    final today =
-        await _repository.todayEarnings(driverId);
-
-    final week =
-        await _repository.weeklyEarnings(driverId);
-
-    final month =
-        await _repository.monthlyEarnings(driverId);
-
-    final total =
-        await _repository.totalEarnings(driverId);
-
-    final trips =
-        await _repository.completedTrips(driverId);
-
-    final average =
-        await _repository.averageFare(driverId);
+  Future<DriverEarningsSummary> loadEarnings(String driverId) async {
+    final aggregate = await _repository.loadAggregate(driverId);
 
     return DriverEarningsSummary(
-      today: today,
-      week: week,
-      month: month,
-      total: total,
-      completedTrips: trips,
-      averageFare: average,
+      today: aggregate.today,
+      week: aggregate.week,
+      month: aggregate.month,
+      total: aggregate.total,
+      completedTrips: aggregate.completedTrips,
+      averageFare: aggregate.averageNetEarnings,
     );
   }
 }
@@ -74,25 +55,16 @@ class DriverEarningsController {
 /// ===========================================================================
 /// Controller Provider
 /// ===========================================================================
-final driverEarningsControllerProvider =
-    Provider<DriverEarningsController>(
-  (ref) {
-    return DriverEarningsController(
-      ref.read(driverEarningsRepositoryProvider),
-    );
-  },
-);
+final driverEarningsControllerProvider = Provider<DriverEarningsController>((
+  ref,
+) {
+  return DriverEarningsController(ref.read(driverEarningsRepositoryProvider));
+});
 
 /// ===========================================================================
 /// Earnings Future Provider
 /// ===========================================================================
 final driverEarningsProvider =
-    FutureProvider.family<
-        DriverEarningsSummary,
-        String>(
-  (ref, driverId) {
-    return ref
-        .read(driverEarningsControllerProvider)
-        .loadEarnings(driverId);
-  },
-);
+    FutureProvider.family<DriverEarningsSummary, String>((ref, driverId) {
+      return ref.read(driverEarningsControllerProvider).loadEarnings(driverId);
+    });

@@ -5,6 +5,7 @@
 
 import 'api/geometry.dart';
 import 'api/health.dart';
+import 'api/navigation.dart';
 import 'api/psgc.dart';
 import 'api/registration_image.dart';
 import 'dart:async';
@@ -69,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -42409012;
+  int get rustContentHash => 476095052;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -96,6 +97,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<BridgeHealth> crateApiHealthBridgeHealth();
 
+  Future<NavigationRouteClearResult> crateApiNavigationClearActiveRoute({
+    required int expectedRouteGeneration,
+  });
+
   PsgcLookupResult crateApiPsgcFindPsgcByName({
     required PsgcLevel level,
     String? parentCode,
@@ -108,12 +113,21 @@ abstract class RustLibApi extends BaseApi {
     required List<int> artifact,
   });
 
+  Future<NavigationRouteInstallResult> crateApiNavigationInstallActiveRoute({
+    required String encodedPolyline,
+  });
+
   Future<RegistrationImagePreparationResult>
   crateApiRegistrationImagePrepareRegistrationImageFile({
     required String sourcePath,
     required String outputPath,
     required double targetAspectRatio,
     required int targetWidth,
+  });
+
+  Future<NavigationBatchResult> crateApiNavigationProcessActiveRouteSamples({
+    required List<NavigationGpsSample> samples,
+    required int expectedRouteGeneration,
   });
 
   Future<PsgcCounts> crateApiPsgcPsgcCountsDefault();
@@ -264,6 +278,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "bridge_health", argNames: []);
 
   @override
+  Future<NavigationRouteClearResult> crateApiNavigationClearActiveRoute({
+    required int expectedRouteGeneration,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_32(expectedRouteGeneration, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 4,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_navigation_route_clear_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiNavigationClearActiveRouteConstMeta,
+        argValues: [expectedRouteGeneration],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiNavigationClearActiveRouteConstMeta =>
+      const TaskConstMeta(
+        debugName: "clear_active_route",
+        argNames: ["expectedRouteGeneration"],
+      );
+
+  @override
   PsgcLookupResult crateApiPsgcFindPsgcByName({
     required PsgcLevel level,
     String? parentCode,
@@ -276,7 +323,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_psgc_level(level, serializer);
           sse_encode_opt_String(parentCode, serializer);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_psgc_lookup_result,
@@ -303,7 +350,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -333,7 +380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -355,6 +402,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<NavigationRouteInstallResult> crateApiNavigationInstallActiveRoute({
+    required String encodedPolyline,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(encodedPolyline, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_navigation_route_install_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiNavigationInstallActiveRouteConstMeta,
+        argValues: [encodedPolyline],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiNavigationInstallActiveRouteConstMeta =>
+      const TaskConstMeta(
+        debugName: "install_active_route",
+        argNames: ["encodedPolyline"],
+      );
+
+  @override
   Future<RegistrationImagePreparationResult>
   crateApiRegistrationImagePrepareRegistrationImageFile({
     required String sourcePath,
@@ -373,7 +453,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 9,
             port: port_,
           );
         },
@@ -402,6 +482,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<NavigationBatchResult> crateApiNavigationProcessActiveRouteSamples({
+    required List<NavigationGpsSample> samples,
+    required int expectedRouteGeneration,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_navigation_gps_sample(samples, serializer);
+          sse_encode_u_32(expectedRouteGeneration, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_navigation_batch_result,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiNavigationProcessActiveRouteSamplesConstMeta,
+        argValues: [samples, expectedRouteGeneration],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiNavigationProcessActiveRouteSamplesConstMeta =>
+      const TaskConstMeta(
+        debugName: "process_active_route_samples",
+        argNames: ["samples", "expectedRouteGeneration"],
+      );
+
+  @override
   Future<PsgcCounts> crateApiPsgcPsgcCountsDefault() {
     return handler.executeNormal(
       NormalTask(
@@ -410,7 +525,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 11,
             port: port_,
           );
         },
@@ -439,7 +554,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_psgc_level(level, serializer);
           sse_encode_String(code, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_psgc_name_result,
@@ -479,7 +594,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 13,
             port: port_,
           );
         },
@@ -521,7 +636,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_psgc_level(level, serializer);
           sse_encode_opt_String(parentCode, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_psgc_query_result,
@@ -555,7 +670,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 15,
             port: port_,
           );
         },
@@ -678,6 +793,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeI64(raw);
+  }
+
+  @protected
+  List<NavigationGpsSample> dco_decode_list_navigation_gps_sample(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_navigation_gps_sample)
+        .toList();
+  }
+
+  @protected
+  List<NavigationSampleResult> dco_decode_list_navigation_sample_result(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_navigation_sample_result)
+        .toList();
+  }
+
+  @protected
   List<double> dco_decode_list_prim_f_64_loose(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as List<double>;
@@ -717,6 +856,103 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<PsgcEntry> dco_decode_list_psgc_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_psgc_entry).toList();
+  }
+
+  @protected
+  NavigationBatchResult dco_decode_navigation_batch_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return NavigationBatchResult(
+      status: dco_decode_navigation_route_status(arr[0]),
+      routeGeneration: dco_decode_u_32(arr[1]),
+      acceptedCount: dco_decode_u_32(arr[2]),
+      rejectedCount: dco_decode_u_32(arr[3]),
+      samples: dco_decode_list_navigation_sample_result(arr[4]),
+      errorMessage: dco_decode_opt_String(arr[5]),
+    );
+  }
+
+  @protected
+  NavigationGpsSample dco_decode_navigation_gps_sample(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return NavigationGpsSample(
+      latitude: dco_decode_f_64(arr[0]),
+      longitude: dco_decode_f_64(arr[1]),
+      accuracyMeters: dco_decode_f_64(arr[2]),
+      timestampMillis: dco_decode_i_64(arr[3]),
+    );
+  }
+
+  @protected
+  NavigationRouteClearResult dco_decode_navigation_route_clear_result(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return NavigationRouteClearResult(
+      status: dco_decode_navigation_route_status(arr[0]),
+      routeGeneration: dco_decode_u_32(arr[1]),
+      errorMessage: dco_decode_opt_String(arr[2]),
+    );
+  }
+
+  @protected
+  NavigationRouteInstallResult dco_decode_navigation_route_install_result(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return NavigationRouteInstallResult(
+      status: dco_decode_navigation_route_status(arr[0]),
+      routeGeneration: dco_decode_u_32(arr[1]),
+      pointCount: dco_decode_u_32(arr[2]),
+      segmentCount: dco_decode_u_32(arr[3]),
+      totalDistanceMeters: dco_decode_f_64(arr[4]),
+      errorMessage: dco_decode_opt_String(arr[5]),
+    );
+  }
+
+  @protected
+  NavigationRouteStatus dco_decode_navigation_route_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return NavigationRouteStatus.values[raw as int];
+  }
+
+  @protected
+  NavigationSampleDisposition dco_decode_navigation_sample_disposition(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return NavigationSampleDisposition.values[raw as int];
+  }
+
+  @protected
+  NavigationSampleResult dco_decode_navigation_sample_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return NavigationSampleResult(
+      inputIndex: dco_decode_u_32(arr[0]),
+      disposition: dco_decode_navigation_sample_disposition(arr[1]),
+      filteredLatitude: dco_decode_opt_box_autoadd_f_64(arr[2]),
+      filteredLongitude: dco_decode_opt_box_autoadd_f_64(arr[3]),
+      nearestSegmentIndex: dco_decode_opt_box_autoadd_u_32(arr[4]),
+      distanceFromRouteMeters: dco_decode_opt_box_autoadd_f_64(arr[5]),
+      routeProgressMeters: dco_decode_opt_box_autoadd_f_64(arr[6]),
+      remainingDistanceMeters: dco_decode_opt_box_autoadd_f_64(arr[7]),
+      routeHeadingDegrees: dco_decode_opt_box_autoadd_f_64(arr[8]),
+      offRouteConfidence: dco_decode_opt_box_autoadd_f_64(arr[9]),
+    );
   }
 
   @protected
@@ -1059,6 +1295,40 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  List<NavigationGpsSample> sse_decode_list_navigation_gps_sample(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NavigationGpsSample>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_navigation_gps_sample(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<NavigationSampleResult> sse_decode_list_navigation_sample_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NavigationSampleResult>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_navigation_sample_result(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<double> sse_decode_list_prim_f_64_loose(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -1110,6 +1380,133 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ans_.add(sse_decode_psgc_entry(deserializer));
     }
     return ans_;
+  }
+
+  @protected
+  NavigationBatchResult sse_decode_navigation_batch_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_status = sse_decode_navigation_route_status(deserializer);
+    var var_routeGeneration = sse_decode_u_32(deserializer);
+    var var_acceptedCount = sse_decode_u_32(deserializer);
+    var var_rejectedCount = sse_decode_u_32(deserializer);
+    var var_samples = sse_decode_list_navigation_sample_result(deserializer);
+    var var_errorMessage = sse_decode_opt_String(deserializer);
+    return NavigationBatchResult(
+      status: var_status,
+      routeGeneration: var_routeGeneration,
+      acceptedCount: var_acceptedCount,
+      rejectedCount: var_rejectedCount,
+      samples: var_samples,
+      errorMessage: var_errorMessage,
+    );
+  }
+
+  @protected
+  NavigationGpsSample sse_decode_navigation_gps_sample(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_latitude = sse_decode_f_64(deserializer);
+    var var_longitude = sse_decode_f_64(deserializer);
+    var var_accuracyMeters = sse_decode_f_64(deserializer);
+    var var_timestampMillis = sse_decode_i_64(deserializer);
+    return NavigationGpsSample(
+      latitude: var_latitude,
+      longitude: var_longitude,
+      accuracyMeters: var_accuracyMeters,
+      timestampMillis: var_timestampMillis,
+    );
+  }
+
+  @protected
+  NavigationRouteClearResult sse_decode_navigation_route_clear_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_status = sse_decode_navigation_route_status(deserializer);
+    var var_routeGeneration = sse_decode_u_32(deserializer);
+    var var_errorMessage = sse_decode_opt_String(deserializer);
+    return NavigationRouteClearResult(
+      status: var_status,
+      routeGeneration: var_routeGeneration,
+      errorMessage: var_errorMessage,
+    );
+  }
+
+  @protected
+  NavigationRouteInstallResult sse_decode_navigation_route_install_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_status = sse_decode_navigation_route_status(deserializer);
+    var var_routeGeneration = sse_decode_u_32(deserializer);
+    var var_pointCount = sse_decode_u_32(deserializer);
+    var var_segmentCount = sse_decode_u_32(deserializer);
+    var var_totalDistanceMeters = sse_decode_f_64(deserializer);
+    var var_errorMessage = sse_decode_opt_String(deserializer);
+    return NavigationRouteInstallResult(
+      status: var_status,
+      routeGeneration: var_routeGeneration,
+      pointCount: var_pointCount,
+      segmentCount: var_segmentCount,
+      totalDistanceMeters: var_totalDistanceMeters,
+      errorMessage: var_errorMessage,
+    );
+  }
+
+  @protected
+  NavigationRouteStatus sse_decode_navigation_route_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return NavigationRouteStatus.values[inner];
+  }
+
+  @protected
+  NavigationSampleDisposition sse_decode_navigation_sample_disposition(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return NavigationSampleDisposition.values[inner];
+  }
+
+  @protected
+  NavigationSampleResult sse_decode_navigation_sample_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_inputIndex = sse_decode_u_32(deserializer);
+    var var_disposition = sse_decode_navigation_sample_disposition(
+      deserializer,
+    );
+    var var_filteredLatitude = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_filteredLongitude = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_nearestSegmentIndex = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_distanceFromRouteMeters = sse_decode_opt_box_autoadd_f_64(
+      deserializer,
+    );
+    var var_routeProgressMeters = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_remainingDistanceMeters = sse_decode_opt_box_autoadd_f_64(
+      deserializer,
+    );
+    var var_routeHeadingDegrees = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_offRouteConfidence = sse_decode_opt_box_autoadd_f_64(deserializer);
+    return NavigationSampleResult(
+      inputIndex: var_inputIndex,
+      disposition: var_disposition,
+      filteredLatitude: var_filteredLatitude,
+      filteredLongitude: var_filteredLongitude,
+      nearestSegmentIndex: var_nearestSegmentIndex,
+      distanceFromRouteMeters: var_distanceFromRouteMeters,
+      routeProgressMeters: var_routeProgressMeters,
+      remainingDistanceMeters: var_remainingDistanceMeters,
+      routeHeadingDegrees: var_routeHeadingDegrees,
+      offRouteConfidence: var_offRouteConfidence,
+    );
   }
 
   @protected
@@ -1497,6 +1894,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_list_navigation_gps_sample(
+    List<NavigationGpsSample> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_navigation_gps_sample(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_navigation_sample_result(
+    List<NavigationSampleResult> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_navigation_sample_result(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_f_64_loose(
     List<double> self,
     SseSerializer serializer,
@@ -1572,6 +1999,93 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     for (final item in self) {
       sse_encode_psgc_entry(item, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_navigation_batch_result(
+    NavigationBatchResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_navigation_route_status(self.status, serializer);
+    sse_encode_u_32(self.routeGeneration, serializer);
+    sse_encode_u_32(self.acceptedCount, serializer);
+    sse_encode_u_32(self.rejectedCount, serializer);
+    sse_encode_list_navigation_sample_result(self.samples, serializer);
+    sse_encode_opt_String(self.errorMessage, serializer);
+  }
+
+  @protected
+  void sse_encode_navigation_gps_sample(
+    NavigationGpsSample self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.latitude, serializer);
+    sse_encode_f_64(self.longitude, serializer);
+    sse_encode_f_64(self.accuracyMeters, serializer);
+    sse_encode_i_64(self.timestampMillis, serializer);
+  }
+
+  @protected
+  void sse_encode_navigation_route_clear_result(
+    NavigationRouteClearResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_navigation_route_status(self.status, serializer);
+    sse_encode_u_32(self.routeGeneration, serializer);
+    sse_encode_opt_String(self.errorMessage, serializer);
+  }
+
+  @protected
+  void sse_encode_navigation_route_install_result(
+    NavigationRouteInstallResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_navigation_route_status(self.status, serializer);
+    sse_encode_u_32(self.routeGeneration, serializer);
+    sse_encode_u_32(self.pointCount, serializer);
+    sse_encode_u_32(self.segmentCount, serializer);
+    sse_encode_f_64(self.totalDistanceMeters, serializer);
+    sse_encode_opt_String(self.errorMessage, serializer);
+  }
+
+  @protected
+  void sse_encode_navigation_route_status(
+    NavigationRouteStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_navigation_sample_disposition(
+    NavigationSampleDisposition self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_navigation_sample_result(
+    NavigationSampleResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.inputIndex, serializer);
+    sse_encode_navigation_sample_disposition(self.disposition, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.filteredLatitude, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.filteredLongitude, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.nearestSegmentIndex, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.distanceFromRouteMeters, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.routeProgressMeters, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.remainingDistanceMeters, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.routeHeadingDegrees, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.offRouteConfidence, serializer);
   }
 
   @protected

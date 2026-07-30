@@ -13,13 +13,7 @@ import '../services/booking_listener_service.dart';
 /// • DriverAssignedScreen
 /// • PassengerTripScreen
 /// ===========================================================================
-final bookingListenerProvider =
-    StreamProvider.family<
-        Booking?,
-        String>(
-  (ref, bookingId) {
-    return BookingListenerService.listen(
-      bookingId,
-    );
-  },
-);
+final bookingListenerProvider = StreamProvider.autoDispose
+    .family<Booking?, String>((ref, bookingId) {
+      return BookingListenerService.listen(bookingId);
+    });

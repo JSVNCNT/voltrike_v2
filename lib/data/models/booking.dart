@@ -70,8 +70,17 @@ class Booking {
     required this.destinationAddress,
     required this.distanceMeters,
     required this.estimatedFare,
+    this.authoritativeRoutePolyline = '',
+    this.fareVersion = 0,
+    this.fareSnapshot = const <String, dynamic>{},
+    this.fareBreakdown = const <String, dynamic>{},
+    this.searchExpiresAt,
     this.paymentMethod = 'cash',
     double? amountDue,
+    double? grossFare,
+    this.commissionPercent = 0,
+    this.commissionAmount = 0,
+    double? driverNetEarnings,
     this.passengerPaidAt,
     this.driverReceivedAt,
     this.settlementStatus = 'awaiting_confirmation',
@@ -92,7 +101,10 @@ class Booking {
     this.cancelledBy,
     this.cancellationCode,
     this.completedAt,
-  }) : amountDue = amountDue ?? estimatedFare;
+  }) : amountDue = amountDue ?? estimatedFare,
+       grossFare = grossFare ?? amountDue ?? estimatedFare,
+       driverNetEarnings =
+           driverNetEarnings ?? grossFare ?? amountDue ?? estimatedFare;
 
   //==========================================================================
   // Identity
@@ -146,8 +158,17 @@ class Booking {
   final int distanceMeters;
 
   final double estimatedFare;
+  final String authoritativeRoutePolyline;
+  final int fareVersion;
+  final Map<String, dynamic> fareSnapshot;
+  final Map<String, dynamic> fareBreakdown;
+  final DateTime? searchExpiresAt;
   final String paymentMethod;
   final double amountDue;
+  final double grossFare;
+  final double commissionPercent;
+  final double commissionAmount;
+  final double driverNetEarnings;
   final DateTime? passengerPaidAt;
   final DateTime? driverReceivedAt;
   final String settlementStatus;
@@ -257,10 +278,37 @@ class Booking {
       ], fallback: 'Destination'),
       distanceMeters: _asInt(data['distanceMeters']),
       estimatedFare: _asDouble(data['estimatedFare']),
+      authoritativeRoutePolyline: _asString(data['authoritativeRoutePolyline']),
+      fareVersion: _asInt(
+        data['fareVersion'],
+        fallback: _asInt(_stringKeyedMap(data['fareSnapshot'])['version']),
+      ),
+      fareSnapshot: _stringKeyedMap(data['fareSnapshot']),
+      fareBreakdown: _stringKeyedMap(data['fareBreakdown']),
+      searchExpiresAt: parseModelDate(data['searchExpiresAt']),
       paymentMethod: _asString(data['paymentMethod'], fallback: 'cash'),
       amountDue: _asDouble(
         data['amountDue'],
         fallback: _asDouble(data['estimatedFare']),
+      ),
+      grossFare: _asDouble(
+        data['grossFare'],
+        fallback: _asDouble(
+          data['amountDue'],
+          fallback: _asDouble(data['estimatedFare']),
+        ),
+      ),
+      commissionPercent: _asDouble(data['commissionPercent']),
+      commissionAmount: _asDouble(data['commissionAmount']),
+      driverNetEarnings: _asDouble(
+        data['driverNetEarnings'],
+        fallback: _asDouble(
+          data['grossFare'],
+          fallback: _asDouble(
+            data['amountDue'],
+            fallback: _asDouble(data['estimatedFare']),
+          ),
+        ),
       ),
       passengerPaidAt: parseModelDate(data['passengerPaidAt']),
       driverReceivedAt: parseModelDate(data['driverReceivedAt']),
@@ -331,8 +379,19 @@ class Booking {
       'destinationAddress': destinationAddress,
       'distanceMeters': distanceMeters,
       'estimatedFare': estimatedFare,
+      'authoritativeRoutePolyline': authoritativeRoutePolyline,
+      'fareVersion': fareVersion,
+      'fareSnapshot': fareSnapshot,
+      'fareBreakdown': fareBreakdown,
+      'searchExpiresAt': searchExpiresAt == null
+          ? null
+          : Timestamp.fromDate(searchExpiresAt!),
       'paymentMethod': paymentMethod,
       'amountDue': amountDue,
+      'grossFare': grossFare,
+      'commissionPercent': commissionPercent,
+      'commissionAmount': commissionAmount,
+      'driverNetEarnings': driverNetEarnings,
       'passengerPaidAt': passengerPaidAt == null
           ? null
           : Timestamp.fromDate(passengerPaidAt!),
@@ -407,8 +466,17 @@ class Booking {
     String? destinationAddress,
     int? distanceMeters,
     double? estimatedFare,
+    String? authoritativeRoutePolyline,
+    int? fareVersion,
+    Map<String, dynamic>? fareSnapshot,
+    Map<String, dynamic>? fareBreakdown,
+    DateTime? searchExpiresAt,
     String? paymentMethod,
     double? amountDue,
+    double? grossFare,
+    double? commissionPercent,
+    double? commissionAmount,
+    double? driverNetEarnings,
     DateTime? passengerPaidAt,
     DateTime? driverReceivedAt,
     String? settlementStatus,
@@ -467,8 +535,18 @@ class Booking {
       destinationAddress: destinationAddress ?? this.destinationAddress,
       distanceMeters: distanceMeters ?? this.distanceMeters,
       estimatedFare: estimatedFare ?? this.estimatedFare,
+      authoritativeRoutePolyline:
+          authoritativeRoutePolyline ?? this.authoritativeRoutePolyline,
+      fareVersion: fareVersion ?? this.fareVersion,
+      fareSnapshot: fareSnapshot ?? this.fareSnapshot,
+      fareBreakdown: fareBreakdown ?? this.fareBreakdown,
+      searchExpiresAt: searchExpiresAt ?? this.searchExpiresAt,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       amountDue: amountDue ?? this.amountDue,
+      grossFare: grossFare ?? this.grossFare,
+      commissionPercent: commissionPercent ?? this.commissionPercent,
+      commissionAmount: commissionAmount ?? this.commissionAmount,
+      driverNetEarnings: driverNetEarnings ?? this.driverNetEarnings,
       passengerPaidAt: passengerPaidAt ?? this.passengerPaidAt,
       driverReceivedAt: driverReceivedAt ?? this.driverReceivedAt,
       settlementStatus: settlementStatus ?? this.settlementStatus,
@@ -540,7 +618,17 @@ BookingStatus _parseStatus(Object? value) {
   for (final status in BookingStatus.values) {
     if (status.name == name) return status;
   }
-  return BookingStatus.pending;
+  throw FormatException(
+    'Unsupported booking status: ${name.isEmpty ? '<empty>' : name}',
+  );
+}
+
+Map<String, dynamic> _stringKeyedMap(Object? value) {
+  if (value is! Map) return const <String, dynamic>{};
+  return Map<String, dynamic>.unmodifiable({
+    for (final entry in value.entries)
+      if (entry.key is String) entry.key as String: entry.value,
+  });
 }
 
 LatLng _parseLatLng(Object? value, {Object? latitude, Object? longitude}) {

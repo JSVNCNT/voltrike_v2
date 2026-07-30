@@ -557,6 +557,36 @@ textarea {
   padding-right: 34px;
 }
 
+.commission-filters {
+  max-width: 640px;
+  margin: 20px 0;
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.commission-filters label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.commission-cards {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.row.commission-row {
+  grid-template-columns:
+    minmax(220px, 1.2fr)
+    minmax(170px, 0.9fr)
+    minmax(145px, 0.7fr)
+    minmax(155px, 0.75fr)
+    minmax(150px, 0.75fr);
+}
+
 .live-layout {
   align-items: start;
 }
@@ -1139,7 +1169,8 @@ summary {
   .row,
   .row.driver,
   .row.report,
-  .row.operation {
+  .row.operation,
+  .row.commission-row {
     grid-template-columns: minmax(220px, 1.3fr) minmax(130px, 0.8fr);
   }
 
@@ -1237,6 +1268,10 @@ summary {
     grid-template-columns: 1fr;
   }
 
+  .commission-filters {
+    grid-template-columns: 1fr;
+  }
+
   .safety-actions {
     align-items: stretch;
     flex-direction: column;
@@ -1249,7 +1284,8 @@ summary {
   .row,
   .row.driver,
   .row.report,
-  .row.operation {
+  .row.operation,
+  .row.commission-row {
     grid-template-columns: 1fr;
     gap: 8px;
     padding: 18px 2px;

@@ -8,9 +8,7 @@ import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/booking_repository.dart';
 import '../../../driver/providers/driver_current_booking_provider.dart';
 import '../../../driver/providers/driver_incoming_booking_provider.dart';
-import '../../../driver/providers/driver_trip_provider.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
-import '../../controllers/passenger_booking_flow_controller.dart';
 import '../../providers/booking_listener_provider.dart';
 import '../../providers/booking_provider.dart';
 import '../../providers/booking_session_provider.dart';
@@ -175,7 +173,7 @@ class _ReceiptBody extends ConsumerWidget {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      '\u20B1${booking.amountDue.toStringAsFixed(2)}',
+                      '\u20B1${(driverView ? booking.driverNetEarnings : booking.amountDue).toStringAsFixed(2)}',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineMedium
                           ?.copyWith(
@@ -184,7 +182,7 @@ class _ReceiptBody extends ConsumerWidget {
                           ),
                     ),
                     Text(
-                      driverView ? 'Trip earnings' : 'Amount paid',
+                      driverView ? 'Net trip earnings' : 'Amount paid',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
@@ -192,6 +190,50 @@ class _ReceiptBody extends ConsumerWidget {
                   ],
                 ),
               ),
+              if (driverView) ...[
+                const SizedBox(height: 24),
+                Text(
+                  'Earnings breakdown',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 6,
+                    ),
+                    child: Column(
+                      children: [
+                        _ReceiptRow(
+                          icon: Icons.payments_outlined,
+                          label: 'Gross passenger fare',
+                          value:
+                              '\u20B1${booking.grossFare.toStringAsFixed(2)}',
+                        ),
+                        const Divider(),
+                        _ReceiptRow(
+                          icon: Icons.account_balance_outlined,
+                          label:
+                              'TODA commission (${booking.commissionPercent.toStringAsFixed(2)}%)',
+                          value:
+                              '-\u20B1${booking.commissionAmount.toStringAsFixed(2)}',
+                        ),
+                        const Divider(),
+                        _ReceiptRow(
+                          icon: Icons.account_balance_wallet_outlined,
+                          label: 'Driver net earnings',
+                          value:
+                              '\u20B1${booking.driverNetEarnings.toStringAsFixed(2)}',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               Text(
                 'Trip details',
@@ -333,11 +375,9 @@ class _ReceiptHomeButtonState extends ConsumerState<_ReceiptHomeButton> {
       if (widget.driverView) {
         ref.read(driverCurrentBookingProvider.notifier).clearBooking();
         ref.read(driverIncomingBookingProvider.notifier).clearBooking();
-        ref.read(driverTripProvider.notifier).reset();
       } else if (widget.completionFlow) {
         ref.read(bookingSessionProvider.notifier).reset();
         ref.read(bookingProvider.notifier).reset();
-        ref.read(passengerBookingFlowProvider.notifier).clear();
       }
       context.go(
         widget.driverView ? AppRoutes.driverHome : AppRoutes.passengerHome,

@@ -70,15 +70,36 @@ function effectiveCallStatus(call, nowMillis = Date.now()) {
   return call.status || null;
 }
 
+function remainingCallSeconds(call, nowMillis = Date.now()) {
+  if (effectiveCallStatus(call, nowMillis) !== CALL_STATUS.accepted) {
+    return null;
+  }
+  const endsAt = timestampMillis(call?.endsAt);
+  if (endsAt == null || endsAt <= nowMillis) return null;
+  return Math.max(1, Math.ceil((endsAt - nowMillis) / 1000));
+}
+
+function acceptedCallNeedsScheduledEnd(
+  call,
+  expectedCallId,
+  nowMillis = Date.now(),
+) {
+  return call?.callId === expectedCallId &&
+    call.status === CALL_STATUS.accepted &&
+    effectiveCallStatus(call, nowMillis) === CALL_STATUS.ended;
+}
+
 module.exports = {
   CALL_DURATION_MS,
   CALL_INVITATION_MS,
   CALL_STATUS,
   CALLABLE_BOOKING_STATUSES,
+  acceptedCallNeedsScheduledEnd,
   callAllowedForBookingStatus,
   effectiveCallStatus,
   participantRole,
   recipientFor,
+  remainingCallSeconds,
   terminalCallStatus,
   timestampMillis,
 };

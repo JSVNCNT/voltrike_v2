@@ -4,9 +4,6 @@ import '../../../data/models/booking.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/booking_repository.dart';
 import '../../../data/repositories/driver_repository.dart';
-import '../../../data/repositories/toda_repository.dart';
-import '../../../data/repositories/user_repository.dart';
-import '../../../data/repositories/vehicle_repository.dart';
 
 import '../providers/driver_current_booking_provider.dart';
 import '../providers/driver_incoming_booking_provider.dart';
@@ -25,17 +22,11 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
   DriverBookingController({
     required BookingRepository bookingRepository,
     required DriverRepository driverRepository,
-    required UserRepository userRepository,
-    required VehicleRepository vehicleRepository,
-    required TodaRepository todaRepository,
     required AuthRepository authRepository,
     required DriverCurrentBookingListener currentBookingListener,
     required Ref ref,
   }) : _bookingRepository = bookingRepository,
        _driverRepository = driverRepository,
-       _userRepository = userRepository,
-       _vehicleRepository = vehicleRepository,
-       _todaRepository = todaRepository,
        _authRepository = authRepository,
        _currentBookingListener = currentBookingListener,
        _ref = ref,
@@ -47,9 +38,6 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
 
   final BookingRepository _bookingRepository;
   final DriverRepository _driverRepository;
-  final UserRepository _userRepository;
-  final VehicleRepository _vehicleRepository;
-  final TodaRepository _todaRepository;
   final AuthRepository _authRepository;
 
   /// Keeps the active booking synchronized with Firestore.
@@ -129,39 +117,8 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
         throw Exception('No authenticated driver.');
       }
 
-      final driver = await _driverRepository.getDriver(firebaseUser.uid);
-
-      if (driver == null) {
-        throw Exception('Driver record not found.');
-      }
-
-      final appUser = await _userRepository.getUser(firebaseUser.uid);
-
-      if (appUser == null) {
-        throw Exception('User record not found.');
-      }
-
-      final vehicle = await _vehicleRepository.getVehicle(driver.vehicleId);
-
-      if (vehicle == null) {
-        throw Exception('Vehicle not found.');
-      }
-
-      final toda = await _todaRepository.getToda(driver.todaId);
-
-      if (toda == null) {
-        throw Exception('TODA not found.');
-      }
-
       await _bookingRepository.acceptBookingTransaction(
         bookingId: booking.bookingId,
-        driverId: firebaseUser.uid,
-        driverName: appUser.fullName,
-        driverPhotoUrl: appUser.profileImage,
-        driverRating: driver.rating,
-        vehicleNumber: vehicle.vehicleNumber,
-        plateNumber: vehicle.plateNumber,
-        todaName: toda.name,
       );
 
       // Start listening to the active booking.

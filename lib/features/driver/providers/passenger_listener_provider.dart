@@ -15,18 +15,7 @@ import '../services/passenger_listener_service.dart';
 /// Used by:
 /// • DriverBookingTrackingScreen
 /// ===========================================================================
-final passengerListenerProvider =
-    StreamProvider.family<
-        AppUser?,
-        String>(
-  (
-    ref,
-    passengerId,
-  ) {
-    return PassengerListenerService
-        .instance
-        .listen(
-          passengerId,
-        );
-  },
-);
+final passengerListenerProvider = StreamProvider.autoDispose
+    .family<AppUser?, String>((ref, passengerId) {
+      return PassengerListenerService.instance.listen(passengerId);
+    });

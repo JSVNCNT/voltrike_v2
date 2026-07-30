@@ -8,9 +8,12 @@ class DriverSearchPresentation {
   static int remainingSeconds({
     required DateTime bookingCreatedAt,
     required DateTime now,
+    DateTime? searchExpiresAt,
     int timeoutSeconds = BookingConfig.bookingTimeoutSeconds,
   }) {
-    final deadline = bookingCreatedAt.add(Duration(seconds: timeoutSeconds));
+    final deadline =
+        searchExpiresAt ??
+        bookingCreatedAt.add(Duration(seconds: timeoutSeconds));
     final remainingMilliseconds = deadline.difference(now).inMilliseconds;
     if (remainingMilliseconds <= 0) return 0;
 

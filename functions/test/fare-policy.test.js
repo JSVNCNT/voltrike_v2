@@ -2,11 +2,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   DEFAULT_FARE,
   calculateFare,
   calculateFareBreakdown,
   fareSnapshot,
+  roundCurrency,
 } = require('../fare-policy');
 
 test('fare snapshots are versioned and legacy-safe', () => {
@@ -58,3 +61,34 @@ test('fare breakdown exposes every admin-controlled component', () => {
     total: 115,
   });
 });
+
+test('currency values are rounded to centavos before totals are added', () => {
+  assert.equal(roundCurrency(10.075), 10.08);
+  assert.equal(roundCurrency(1.005), 1.01);
+  assert.equal(fareSnapshot({
+    baseFare: 10.075,
+    distanceStepPrice: -1,
+  }).baseFare, 10.08);
+  assert.equal(fareSnapshot({
+    baseFare: 10.075,
+    distanceStepPrice: -1,
+  }).distanceStepPrice, DEFAULT_FARE.distanceStepPrice);
+});
+
+const parityFixture = JSON.parse(fs.readFileSync(path.join(
+  __dirname,
+  '..',
+  '..',
+  'test',
+  'fixtures',
+  'fare_parity_v1.json',
+), 'utf8'));
+
+for (const fixture of parityFixture.cases) {
+  test(`shared fare parity: ${fixture.name}`, () => {
+    assert.deepEqual(calculateFareBreakdown({
+      config: fixture.config,
+      ...fixture.input,
+    }), fixture.expected);
+  });
+}

@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -42409012;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 476095052;
 
 // Section: executor
 
@@ -159,6 +159,41 @@ fn wire__crate__api__health__bridge_health_impl(
         },
     )
 }
+fn wire__crate__api__navigation__clear_active_route_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "clear_active_route",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_expected_route_generation = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(
+                        crate::api::navigation::clear_active_route(api_expected_route_generation),
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__psgc__find_psgc_by_name_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -263,6 +298,41 @@ fn wire__crate__api__psgc__initialize_psgc_index_impl(
         },
     )
 }
+fn wire__crate__api__navigation__install_active_route_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "install_active_route",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_encoded_polyline = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(
+                        crate::api::navigation::install_active_route(api_encoded_polyline),
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__registration_image__prepare_registration_image_file_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -300,6 +370,45 @@ fn wire__crate__api__registration_image__prepare_registration_image_file_impl(
                             api_target_width,
                         ),
                     )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__navigation__process_active_route_samples_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "process_active_route_samples",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_samples =
+                <Vec<crate::api::navigation::NavigationGpsSample>>::sse_decode(&mut deserializer);
+            let api_expected_route_generation = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Result::<_, ()>::Ok(crate::api::navigation::process_active_route_samples(
+                            api_samples,
+                            api_expected_route_generation,
+                        ))?;
                     Ok(output_ok)
                 })())
             }
@@ -595,6 +704,39 @@ impl SseDecode for i32 {
     }
 }
 
+impl SseDecode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for Vec<crate::api::navigation::NavigationGpsSample> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::navigation::NavigationGpsSample>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::navigation::NavigationSampleResult> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::navigation::NavigationSampleResult>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<f64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -640,6 +782,140 @@ impl SseDecode for Vec<crate::api::psgc::PsgcEntry> {
             ans_.push(<crate::api::psgc::PsgcEntry>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::api::navigation::NavigationBatchResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_status =
+            <crate::api::navigation::NavigationRouteStatus>::sse_decode(deserializer);
+        let mut var_routeGeneration = <u32>::sse_decode(deserializer);
+        let mut var_acceptedCount = <u32>::sse_decode(deserializer);
+        let mut var_rejectedCount = <u32>::sse_decode(deserializer);
+        let mut var_samples =
+            <Vec<crate::api::navigation::NavigationSampleResult>>::sse_decode(deserializer);
+        let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
+        return crate::api::navigation::NavigationBatchResult {
+            status: var_status,
+            route_generation: var_routeGeneration,
+            accepted_count: var_acceptedCount,
+            rejected_count: var_rejectedCount,
+            samples: var_samples,
+            error_message: var_errorMessage,
+        };
+    }
+}
+
+impl SseDecode for crate::api::navigation::NavigationGpsSample {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_latitude = <f64>::sse_decode(deserializer);
+        let mut var_longitude = <f64>::sse_decode(deserializer);
+        let mut var_accuracyMeters = <f64>::sse_decode(deserializer);
+        let mut var_timestampMillis = <i64>::sse_decode(deserializer);
+        return crate::api::navigation::NavigationGpsSample {
+            latitude: var_latitude,
+            longitude: var_longitude,
+            accuracy_meters: var_accuracyMeters,
+            timestamp_millis: var_timestampMillis,
+        };
+    }
+}
+
+impl SseDecode for crate::api::navigation::NavigationRouteClearResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_status =
+            <crate::api::navigation::NavigationRouteStatus>::sse_decode(deserializer);
+        let mut var_routeGeneration = <u32>::sse_decode(deserializer);
+        let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
+        return crate::api::navigation::NavigationRouteClearResult {
+            status: var_status,
+            route_generation: var_routeGeneration,
+            error_message: var_errorMessage,
+        };
+    }
+}
+
+impl SseDecode for crate::api::navigation::NavigationRouteInstallResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_status =
+            <crate::api::navigation::NavigationRouteStatus>::sse_decode(deserializer);
+        let mut var_routeGeneration = <u32>::sse_decode(deserializer);
+        let mut var_pointCount = <u32>::sse_decode(deserializer);
+        let mut var_segmentCount = <u32>::sse_decode(deserializer);
+        let mut var_totalDistanceMeters = <f64>::sse_decode(deserializer);
+        let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
+        return crate::api::navigation::NavigationRouteInstallResult {
+            status: var_status,
+            route_generation: var_routeGeneration,
+            point_count: var_pointCount,
+            segment_count: var_segmentCount,
+            total_distance_meters: var_totalDistanceMeters,
+            error_message: var_errorMessage,
+        };
+    }
+}
+
+impl SseDecode for crate::api::navigation::NavigationRouteStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::navigation::NavigationRouteStatus::Ok,
+            1 => crate::api::navigation::NavigationRouteStatus::InvalidInput,
+            2 => crate::api::navigation::NavigationRouteStatus::RouteUnavailable,
+            3 => crate::api::navigation::NavigationRouteStatus::GenerationMismatch,
+            4 => crate::api::navigation::NavigationRouteStatus::InternalError,
+            _ => unreachable!("Invalid variant for NavigationRouteStatus: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::navigation::NavigationSampleDisposition {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::navigation::NavigationSampleDisposition::Accepted,
+            1 => crate::api::navigation::NavigationSampleDisposition::InvalidCoordinates,
+            2 => crate::api::navigation::NavigationSampleDisposition::InvalidAccuracy,
+            3 => crate::api::navigation::NavigationSampleDisposition::InvalidTimestamp,
+            4 => crate::api::navigation::NavigationSampleDisposition::Stale,
+            5 => crate::api::navigation::NavigationSampleDisposition::ImplausibleMotion,
+            _ => unreachable!("Invalid variant for NavigationSampleDisposition: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::navigation::NavigationSampleResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_inputIndex = <u32>::sse_decode(deserializer);
+        let mut var_disposition =
+            <crate::api::navigation::NavigationSampleDisposition>::sse_decode(deserializer);
+        let mut var_filteredLatitude = <Option<f64>>::sse_decode(deserializer);
+        let mut var_filteredLongitude = <Option<f64>>::sse_decode(deserializer);
+        let mut var_nearestSegmentIndex = <Option<u32>>::sse_decode(deserializer);
+        let mut var_distanceFromRouteMeters = <Option<f64>>::sse_decode(deserializer);
+        let mut var_routeProgressMeters = <Option<f64>>::sse_decode(deserializer);
+        let mut var_remainingDistanceMeters = <Option<f64>>::sse_decode(deserializer);
+        let mut var_routeHeadingDegrees = <Option<f64>>::sse_decode(deserializer);
+        let mut var_offRouteConfidence = <Option<f64>>::sse_decode(deserializer);
+        return crate::api::navigation::NavigationSampleResult {
+            input_index: var_inputIndex,
+            disposition: var_disposition,
+            filtered_latitude: var_filteredLatitude,
+            filtered_longitude: var_filteredLongitude,
+            nearest_segment_index: var_nearestSegmentIndex,
+            distance_from_route_meters: var_distanceFromRouteMeters,
+            route_progress_meters: var_routeProgressMeters,
+            remaining_distance_meters: var_remainingDistanceMeters,
+            route_heading_degrees: var_routeHeadingDegrees,
+            off_route_confidence: var_offRouteConfidence,
+        };
     }
 }
 
@@ -973,22 +1249,37 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         3 => wire__crate__api__health__bridge_health_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__health__init_app_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__psgc__initialize_psgc_index_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__registration_image__prepare_registration_image_file_impl(
+        4 => {
+            wire__crate__api__navigation__clear_active_route_impl(port, ptr, rust_vec_len, data_len)
+        }
+        6 => wire__crate__api__health__init_app_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__psgc__initialize_psgc_index_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__navigation__install_active_route_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        8 => wire__crate__api__psgc__psgc_counts_default_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__geometry__query_cached_point_proximity_impl(
+        9 => wire__crate__api__registration_image__prepare_registration_image_file_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        12 => wire__crate__api__geometry__replace_restriction_cache_impl(
+        10 => wire__crate__api__navigation__process_active_route_samples_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        11 => wire__crate__api__psgc__psgc_counts_default_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__geometry__query_cached_point_proximity_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        15 => wire__crate__api__geometry__replace_restriction_cache_impl(
             port,
             ptr,
             rust_vec_len,
@@ -1006,9 +1297,9 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        4 => wire__crate__api__psgc__find_psgc_by_name_impl(ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__psgc__psgc_name_for_code_impl(ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__psgc__query_psgc_index_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__psgc__find_psgc_by_name_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__psgc__psgc_name_for_code_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__psgc__query_psgc_index_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1129,6 +1420,179 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::geometry::GeometryCacheStatus
     for crate::api::geometry::GeometryCacheStatus
 {
     fn into_into_dart(self) -> crate::api::geometry::GeometryCacheStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::navigation::NavigationBatchResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.status.into_into_dart().into_dart(),
+            self.route_generation.into_into_dart().into_dart(),
+            self.accepted_count.into_into_dart().into_dart(),
+            self.rejected_count.into_into_dart().into_dart(),
+            self.samples.into_into_dart().into_dart(),
+            self.error_message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::navigation::NavigationBatchResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::navigation::NavigationBatchResult>
+    for crate::api::navigation::NavigationBatchResult
+{
+    fn into_into_dart(self) -> crate::api::navigation::NavigationBatchResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::navigation::NavigationGpsSample {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.latitude.into_into_dart().into_dart(),
+            self.longitude.into_into_dart().into_dart(),
+            self.accuracy_meters.into_into_dart().into_dart(),
+            self.timestamp_millis.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::navigation::NavigationGpsSample
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::navigation::NavigationGpsSample>
+    for crate::api::navigation::NavigationGpsSample
+{
+    fn into_into_dart(self) -> crate::api::navigation::NavigationGpsSample {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::navigation::NavigationRouteClearResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.status.into_into_dart().into_dart(),
+            self.route_generation.into_into_dart().into_dart(),
+            self.error_message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::navigation::NavigationRouteClearResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::navigation::NavigationRouteClearResult>
+    for crate::api::navigation::NavigationRouteClearResult
+{
+    fn into_into_dart(self) -> crate::api::navigation::NavigationRouteClearResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::navigation::NavigationRouteInstallResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.status.into_into_dart().into_dart(),
+            self.route_generation.into_into_dart().into_dart(),
+            self.point_count.into_into_dart().into_dart(),
+            self.segment_count.into_into_dart().into_dart(),
+            self.total_distance_meters.into_into_dart().into_dart(),
+            self.error_message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::navigation::NavigationRouteInstallResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::navigation::NavigationRouteInstallResult>
+    for crate::api::navigation::NavigationRouteInstallResult
+{
+    fn into_into_dart(self) -> crate::api::navigation::NavigationRouteInstallResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::navigation::NavigationRouteStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Ok => 0.into_dart(),
+            Self::InvalidInput => 1.into_dart(),
+            Self::RouteUnavailable => 2.into_dart(),
+            Self::GenerationMismatch => 3.into_dart(),
+            Self::InternalError => 4.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::navigation::NavigationRouteStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::navigation::NavigationRouteStatus>
+    for crate::api::navigation::NavigationRouteStatus
+{
+    fn into_into_dart(self) -> crate::api::navigation::NavigationRouteStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::navigation::NavigationSampleDisposition {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Accepted => 0.into_dart(),
+            Self::InvalidCoordinates => 1.into_dart(),
+            Self::InvalidAccuracy => 2.into_dart(),
+            Self::InvalidTimestamp => 3.into_dart(),
+            Self::Stale => 4.into_dart(),
+            Self::ImplausibleMotion => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::navigation::NavigationSampleDisposition
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::navigation::NavigationSampleDisposition>
+    for crate::api::navigation::NavigationSampleDisposition
+{
+    fn into_into_dart(self) -> crate::api::navigation::NavigationSampleDisposition {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::navigation::NavigationSampleResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.input_index.into_into_dart().into_dart(),
+            self.disposition.into_into_dart().into_dart(),
+            self.filtered_latitude.into_into_dart().into_dart(),
+            self.filtered_longitude.into_into_dart().into_dart(),
+            self.nearest_segment_index.into_into_dart().into_dart(),
+            self.distance_from_route_meters.into_into_dart().into_dart(),
+            self.route_progress_meters.into_into_dart().into_dart(),
+            self.remaining_distance_meters.into_into_dart().into_dart(),
+            self.route_heading_degrees.into_into_dart().into_dart(),
+            self.off_route_confidence.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::navigation::NavigationSampleResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::navigation::NavigationSampleResult>
+    for crate::api::navigation::NavigationSampleResult
+{
+    fn into_into_dart(self) -> crate::api::navigation::NavigationSampleResult {
         self
     }
 }
@@ -1529,6 +1993,33 @@ impl SseEncode for i32 {
     }
 }
 
+impl SseEncode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for Vec<crate::api::navigation::NavigationGpsSample> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::navigation::NavigationGpsSample>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::navigation::NavigationSampleResult> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::navigation::NavigationSampleResult>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<f64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1566,6 +2057,107 @@ impl SseEncode for Vec<crate::api::psgc::PsgcEntry> {
         for item in self {
             <crate::api::psgc::PsgcEntry>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::navigation::NavigationBatchResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::navigation::NavigationRouteStatus>::sse_encode(self.status, serializer);
+        <u32>::sse_encode(self.route_generation, serializer);
+        <u32>::sse_encode(self.accepted_count, serializer);
+        <u32>::sse_encode(self.rejected_count, serializer);
+        <Vec<crate::api::navigation::NavigationSampleResult>>::sse_encode(self.samples, serializer);
+        <Option<String>>::sse_encode(self.error_message, serializer);
+    }
+}
+
+impl SseEncode for crate::api::navigation::NavigationGpsSample {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.latitude, serializer);
+        <f64>::sse_encode(self.longitude, serializer);
+        <f64>::sse_encode(self.accuracy_meters, serializer);
+        <i64>::sse_encode(self.timestamp_millis, serializer);
+    }
+}
+
+impl SseEncode for crate::api::navigation::NavigationRouteClearResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::navigation::NavigationRouteStatus>::sse_encode(self.status, serializer);
+        <u32>::sse_encode(self.route_generation, serializer);
+        <Option<String>>::sse_encode(self.error_message, serializer);
+    }
+}
+
+impl SseEncode for crate::api::navigation::NavigationRouteInstallResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::navigation::NavigationRouteStatus>::sse_encode(self.status, serializer);
+        <u32>::sse_encode(self.route_generation, serializer);
+        <u32>::sse_encode(self.point_count, serializer);
+        <u32>::sse_encode(self.segment_count, serializer);
+        <f64>::sse_encode(self.total_distance_meters, serializer);
+        <Option<String>>::sse_encode(self.error_message, serializer);
+    }
+}
+
+impl SseEncode for crate::api::navigation::NavigationRouteStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::navigation::NavigationRouteStatus::Ok => 0,
+                crate::api::navigation::NavigationRouteStatus::InvalidInput => 1,
+                crate::api::navigation::NavigationRouteStatus::RouteUnavailable => 2,
+                crate::api::navigation::NavigationRouteStatus::GenerationMismatch => 3,
+                crate::api::navigation::NavigationRouteStatus::InternalError => 4,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::navigation::NavigationSampleDisposition {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::navigation::NavigationSampleDisposition::Accepted => 0,
+                crate::api::navigation::NavigationSampleDisposition::InvalidCoordinates => 1,
+                crate::api::navigation::NavigationSampleDisposition::InvalidAccuracy => 2,
+                crate::api::navigation::NavigationSampleDisposition::InvalidTimestamp => 3,
+                crate::api::navigation::NavigationSampleDisposition::Stale => 4,
+                crate::api::navigation::NavigationSampleDisposition::ImplausibleMotion => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::navigation::NavigationSampleResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.input_index, serializer);
+        <crate::api::navigation::NavigationSampleDisposition>::sse_encode(
+            self.disposition,
+            serializer,
+        );
+        <Option<f64>>::sse_encode(self.filtered_latitude, serializer);
+        <Option<f64>>::sse_encode(self.filtered_longitude, serializer);
+        <Option<u32>>::sse_encode(self.nearest_segment_index, serializer);
+        <Option<f64>>::sse_encode(self.distance_from_route_meters, serializer);
+        <Option<f64>>::sse_encode(self.route_progress_meters, serializer);
+        <Option<f64>>::sse_encode(self.remaining_distance_meters, serializer);
+        <Option<f64>>::sse_encode(self.route_heading_degrees, serializer);
+        <Option<f64>>::sse_encode(self.off_route_confidence, serializer);
     }
 }
 

@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "one_meter_below_included_boundary",
+      "config": null,
+      "input": {
+        "distanceMeters": 999,
+        "additionalPassengers": 0,
+        "baggageCount": 0,
+        "isOutsideToda": false
+      },
+      "expected": {
+        "baseFare": 20,
+        "includedMeters": 1000,
+        "chargeableMeters": 0,
+        "distanceSteps": 0,
+        "distanceStepMeters": 500,
+        "distanceStepPrice": 5,
+        "distanceFare": 0,
+        "additionalPassengers": 0,
+        "additionalPassengerFare": 0,
+        "baggageCount": 0,
+        "baggageFare": 0,
+        "isOutsideToda": false,
+        "boundarySurcharge": 0,
+        "currency": "PHP",
+        "total": 20
+      }
+    },
+    {
+      "name": "exactly_at_included_boundary",
+      "config": null,
+      "input": {
+        "distanceMeters": 1000,
+        "additionalPassengers": 0,
+        "baggageCount": 0,
+        "isOutsideToda": false
+      },
+      "expected": {
+        "baseFare": 20,
+        "includedMeters": 1000,
+        "chargeableMeters": 0,
+        "distanceSteps": 0,
+        "distanceStepMeters": 500,
+        "distanceStepPrice": 5,
+        "distanceFare": 0,
+        "additionalPassengers": 0,
+        "additionalPassengerFare": 0,
+        "baggageCount": 0,
+        "baggageFare": 0,
+        "isOutsideToda": false,
+        "boundarySurcharge": 0,
+        "currency": "PHP",
+        "total": 20
+      }
+    },
+    {
+      "name": "one_meter_above_included_boundary",
+      "config": null,
+      "input": {
+        "distanceMeters": 1001,
+        "additionalPassengers": 0,
+        "baggageCount": 0,
+        "isOutsideToda": false
+      },
+      "expected": {
+        "baseFare": 20,
+        "includedMeters": 1000,
+        "chargeableMeters": 1,
+        "distanceSteps": 1,
+        "distanceStepMeters": 500,
+        "distanceStepPrice": 5,
+        "distanceFare": 5,
+        "additionalPassengers": 0,
+        "additionalPassengerFare": 0,
+        "baggageCount": 0,
+        "baggageFare": 0,
+        "isOutsideToda": false,
+        "boundarySurcharge": 0,
+        "currency": "PHP",
+        "total": 25
+      }
+    },
+    {
+      "name": "fractional_admin_prices_round_per_component",
+      "config": {
+        "version": 7,
+        "baseFare": 20.15,
+        "includedMeters": 1000,
+        "distanceStepMeters": 500,
+        "distanceStepPrice": 5.25,
+        "additionalPassengerFee": 10.1,
+        "baggageFee": 2.35,
+        "outsideTodaSurcharge": 3.45,
+        "currency": "PHP"
+      },
+      "input": {
+        "distanceMeters": 1501,
+        "additionalPassengers": 2,
+        "baggageCount": 3,
+        "isOutsideToda": true
+      },
+      "expected": {
+        "baseFare": 20.15,
+        "includedMeters": 1000,
+        "chargeableMeters": 501,
+        "distanceSteps": 2,
+        "distanceStepMeters": 500,
+        "distanceStepPrice": 5.25,
+        "distanceFare": 10.5,
+        "additionalPassengers": 2,
+        "additionalPassengerFare": 20.2,
+        "baggageCount": 3,
+        "baggageFare": 7.05,
+        "isOutsideToda": true,
+        "boundarySurcharge": 3.45,
+        "currency": "PHP",
+        "total": 61.35
+      }
+    },
+    {
+      "name": "partial_legacy_config_uses_versioned_defaults",
+      "config": {
+        "version": 4,
+        "baseFare": 25.5,
+        "distanceStepPrice": 4.75
+      },
+      "input": {
+        "distanceMeters": 2000,
+        "additionalPassengers": 1,
+        "baggageCount": 1,
+        "isOutsideToda": true
+      },
+      "expected": {
+        "baseFare": 25.5,
+        "includedMeters": 1000,
+        "chargeableMeters": 1000,
+        "distanceSteps": 2,
+        "distanceStepMeters": 500,
+        "distanceStepPrice": 4.75,
+        "distanceFare": 9.5,
+        "additionalPassengers": 1,
+        "additionalPassengerFare": 40,
+        "baggageCount": 1,
+        "baggageFare": 20,
+        "isOutsideToda": true,
+        "boundarySurcharge": 20,
+        "currency": "PHP",
+        "total": 115
+      }
+    }
+  ]
+}
