@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/theme/app_theme.dart';
 import 'package:voltrike_v2/features/auth/presentation/screens/intro/intro_screen.dart';
+import 'package:voltrike_v2/features/auth/presentation/widgets/loading_overlay.dart';
 import 'package:voltrike_v2/features/auth/presentation/widgets/registration_step_indicator.dart';
 
 void main() {
@@ -49,5 +50,32 @@ void main() {
       find.byType(LinearProgressIndicator),
     );
     expect(progress.value, 0.8);
+  });
+
+  testWidgets('compact image preparation overlay stays small at large text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(3)),
+          child: Scaffold(
+            body: LoadingOverlay(
+              isLoading: true,
+              compact: true,
+              message: 'Preparing image',
+              child: SizedBox.expand(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final indicator = find.byKey(const Key('compact-loading-indicator'));
+    expect(indicator, findsOneWidget);
+    expect(tester.getSize(indicator), const Size.square(56));
+    expect(find.text('Preparing image'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

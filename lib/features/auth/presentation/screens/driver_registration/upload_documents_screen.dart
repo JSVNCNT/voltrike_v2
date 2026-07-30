@@ -52,6 +52,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
   File? _vehiclePhoto;
 
   String? _error;
+  bool _isPickingImage = false;
   bool _isPreparing = false;
 
   @override
@@ -80,9 +81,9 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
     required int targetWidth,
     required bool allowGallery,
   }) async {
-    if (_isPreparing) return;
+    if (_isPickingImage || _isPreparing) return;
     setState(() {
-      _isPreparing = true;
+      _isPickingImage = true;
       _error = null;
     });
     try {
@@ -119,6 +120,11 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
       );
       if (picked == null) return;
 
+      if (!mounted) return;
+      setState(() {
+        _isPickingImage = false;
+        _isPreparing = true;
+      });
       final file = await _imagePreparer.prepare(
         sourcePath: picked.path,
         targetAspectRatio: aspectRatio,
@@ -148,7 +154,10 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
       });
     } finally {
       if (mounted) {
-        setState(() => _isPreparing = false);
+        setState(() {
+          _isPickingImage = false;
+          _isPreparing = false;
+        });
       }
     }
   }
@@ -213,7 +222,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
           : AppRoutes.driverRegisterStep3,
       child: LoadingOverlay(
         isLoading: _isPreparing,
-        message: 'Preparing image\u2026',
+        message: 'Preparing image',
+        compact: true,
         child: AuthScaffold(
           child: SingleChildScrollView(
             child: Column(
