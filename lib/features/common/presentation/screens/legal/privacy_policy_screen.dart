@@ -70,7 +70,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
                   'dispatch, navigation, and restricted-area safety warnings. '
                   'A confirmed entry may create a safety case visible to the '
                   'driver, the assigned TODA administrator, and authorised '
-                  'developer administrators. Monitoring stops when the driver '
+                  'system administrators. Monitoring stops when the driver '
                   'goes Offline.',
             ),
             const _PrivacySection(
@@ -153,3 +153,4 @@ class _PrivacySection extends StatelessWidget {
     );
   }
 }
+

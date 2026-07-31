@@ -24,7 +24,7 @@ class RideSafetyService {
         title: const Text('Emergency assistance'),
         content: const Text(
           'VolTrike can record this ride and its latest available location '
-          'for authorized TODA and developer administrators. Recording an SOS '
+          'for authorized TODA and system administrators. Recording an SOS '
           'does not itself contact emergency services. If there is immediate '
           'danger, use “Call 911 and record” so the phone call is not delayed '
           'by internet or Firebase availability.',
@@ -217,3 +217,4 @@ class RideSafetyService {
     return started;
   }
 }
+

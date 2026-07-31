@@ -742,7 +742,7 @@ function ViolationChat({
       <div>
         <h2>Case chat</h2>
         <p className="muted">
-          Separate from passenger booking chat · driver, TODA, and developer administrators
+          Separate from passenger booking chat · driver, TODA, and system administrators
         </p>
       </div>
       <span className="case-status">{messages.length}</span>
@@ -791,3 +791,4 @@ function ViolationChat({
     </form>
   </>;
 }
+

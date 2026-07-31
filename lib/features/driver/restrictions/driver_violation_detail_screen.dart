@@ -156,7 +156,7 @@ class _DriverViolationDetailScreenState
                           maxLines: 4,
                           maxLength: 1000,
                           decoration: const InputDecoration(
-                            hintText: 'Message TODA and developer admins',
+                            hintText: 'Message TODA and system admins',
                             counterText: '',
                           ),
                           onSubmitted: (_) => _send(),
@@ -277,7 +277,7 @@ class _MessageBubble extends StatelessWidget {
 String _roleLabel(String role) {
   return switch (role) {
     'toda_admin' => 'TODA Admin',
-    'developer_admin' => 'Developer Admin',
+    'developer_admin' => 'System Admin',
     _ => 'Safety Admin',
   };
 }
@@ -289,3 +289,4 @@ String _contextLabel(String context) {
     _ => 'Online idle',
   };
 }
+
