@@ -12,6 +12,7 @@ interface Props {
   maxPoints?: number;
   geometryMode?: 'polygon' | 'polyline';
   completedAreas?: Point[][];
+  savedAreas?: Point[][];
 }
 
 const bacolod: Point = [122.9511, 10.6765];
@@ -23,7 +24,7 @@ interface SearchResult {
   coordinates: Point;
 }
 
-function zoneData(points: Point[], geometryMode: 'polygon' | 'polyline', completedAreas: Point[][] = []): GeoJSON.FeatureCollection {
+function zoneData(points: Point[], geometryMode: 'polygon' | 'polyline', completedAreas: Point[][] = [], savedAreas: Point[][] = []): GeoJSON.FeatureCollection {
   const polygon = [...points, points[0]];
   const completedFeatures: GeoJSON.Feature[] = [];
   for (const area of completedAreas) {
@@ -56,6 +57,18 @@ function zoneData(points: Point[], geometryMode: 'polygon' | 'polyline', complet
       });
     }
   }
+  for (const area of savedAreas) {
+    if (area.length >= 3) {
+      completedFeatures.push({
+        type: 'Feature' as const,
+        properties: { saved: true },
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [[...area, area[0]]],
+        },
+      });
+    }
+  }
   return {
     type: 'FeatureCollection',
     features: [
@@ -71,11 +84,12 @@ function zoneData(points: Point[], geometryMode: 'polygon' | 'polyline', complet
   } as GeoJSON.FeatureCollection;
 }
 
-export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints = 200, geometryMode = 'polygon', completedAreas = [] }: Props) {
+export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints = 200, geometryMode = 'polygon', completedAreas = [], savedAreas = [] }: Props) {
   const element = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const latest = useRef(points);
   const completedAreasRef = useRef(completedAreas);
+  const savedAreasRef = useRef(savedAreas);
   const searchMarker = useRef<mapboxgl.Marker | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -83,6 +97,7 @@ export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints 
   const [searchError, setSearchError] = useState('');
   latest.current = points;
   completedAreasRef.current = completedAreas;
+  savedAreasRef.current = savedAreas;
 
   useEffect(() => {
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -99,7 +114,7 @@ export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
     map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
     map.on('load', () => {
-      map.addSource('zone', { type: 'geojson', data: zoneData(latest.current, geometryMode, completedAreasRef.current) });
+      map.addSource('zone', { type: 'geojson', data: zoneData(latest.current, geometryMode, completedAreasRef.current, savedAreasRef.current) });
       map.addLayer({ id: 'zone-fill', type: 'fill', source: 'zone', paint: { 'fill-color': '#ef4444', 'fill-opacity': 0.25 } });
       map.addLayer({ id: 'zone-line', type: 'line', source: 'zone', paint: { 'line-color': '#ef4444', 'line-width': geometryMode === 'polyline' ? 6 : 3, 'line-opacity': 0.95 } });
       map.addLayer({ id: 'zone-points', type: 'circle', source: 'zone', paint: { 'circle-color': '#ffffff', 'circle-stroke-color': '#ef4444', 'circle-stroke-width': 3, 'circle-radius': 6 } });
@@ -116,8 +131,8 @@ export function PolygonEditor({ points, onChange, onFinish, disabled, maxPoints 
     const map = mapRef.current;
     const source = map?.getSource('zone') as mapboxgl.GeoJSONSource | undefined;
     if (!source) return;
-    source.setData(zoneData(points, geometryMode, completedAreas));
-  }, [completedAreas, geometryMode, points]);
+    source.setData(zoneData(points, geometryMode, completedAreas, savedAreas));
+  }, [completedAreas, geometryMode, points, savedAreas]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {

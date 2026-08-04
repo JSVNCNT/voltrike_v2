@@ -1295,6 +1295,10 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
     ...completedAreas,
     ...(points.length >= minimumPoints ? [points] : []),
   ];
+  const savedAreas = restrictions
+    .filter((item) => item.isActive && item.geometryType !== 'corridor' && (item.type === 'no_service_area' || item.type === 'restricted_crossing'))
+    .flatMap((item) => item.areas?.length ? item.areas : [item.polygon])
+    .filter((area) => area.length >= minimumPoints);
 
   function finishGeometry() {
     if (points.length >= minimumPoints && completedAreas.length < 20) {
@@ -1366,6 +1370,7 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
       <PolygonEditor
         points={points}
         completedAreas={completedAreas}
+        savedAreas={savedAreas}
         onChange={setPoints}
         onFinish={finishGeometry}
         disabled={completedAreas.length >= 20}

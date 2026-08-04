@@ -985,3 +985,193 @@ remain preserved as historical context and are not inputs to this phase.
 - [x] Record exact retained work, automated results, emulator limitations,
   manual two-party/physical-device checks, rollback controls, and manual
   Firebase deployment commands in the matching bottom section of `done.md`.
+
+## Restricted-area map overlays and yellow passenger preview - 2026-08-04
+
+This bottom section is the sole active implementation checklist for the
+restricted-area map work. Earlier sections remain preserved as historical
+context. Implementation has not started; the matching `done.md` entry records
+analysis and planning only.
+
+### Confirmed current context
+
+- The System Admin frontend is backed by the existing `developer_admin` role.
+  Keep `developer_admin` unchanged in Firebase claims, Firestore rules,
+  callable authorization, persisted records, and backend code. Continue to
+  display the user-facing label `System Admin` in the Admin frontend.
+- The current Route Restrictions page already creates active
+  `no_service_area` and `restricted_crossing` polygon records. Geometry v2
+  stores up to 20 disconnected exterior areas with up to 200 points per area
+  in `routeRestrictions/{id}.areas`, while `polygon` and `coordinates` retain
+  the first-area compatibility shape. The schema does not currently represent
+  polygon holes.
+- New legacy highway corridors are disabled. Active `prohibited_highway` and
+  `geometryType == corridor` records may remain visible for audit, but they
+  must not be drawn as enforced zones or used for booking/violation decisions.
+- Passenger endpoint checks, client route-alternative filtering, authoritative
+  booking validation, driver restriction monitoring, and backend violation
+  creation already consume active polygon restrictions. The server remains
+  authoritative even after map visualization is added.
+- `PolygonEditor` already draws the current Admin draft with `#ef4444` at 25%
+  fill opacity and a near-opaque red boundary. Persisted restrictions are not
+  shown in that editor because only the current draft/completed draft areas are
+  passed to it and those arrays are cleared after save.
+- Passenger `MapView` and the shared `voltrike_map.dart` adapter currently
+  synchronize only markers and polylines. The pinned Google Navigation Flutter
+  SDK supports native polygon overlays; the missing capability is in the
+  app-owned adapter and screen data binding.
+- The passenger pickup/destination preview currently inherits the global blue
+  `AppColors.trafficRoute` color. The map also centers only once near pickup,
+  so a later route can render outside the visible camera area.
+- Google Routes is asked for traffic-aware alternatives and soft highway
+  avoidance. Google is not given the custom VolTrike polygons; VolTrike rejects
+  returned polylines that intersect them. A legal unreturned detour can
+  therefore exist even when the app reports no permitted route.
+- An idle state means a signed-in home map is visible without a selected route
+  or active booking. Active restriction polygons must render in that state.
+  A backgrounded or terminated app has no visible map; refresh/reconcile the
+  restriction snapshot when the app resumes.
+
+### Phase 1 - shared polygon map contract
+
+- [ ] Add app-owned immutable `PolygonId` and `Polygon` specifications beside
+  Marker and Polyline in `lib/core/maps/voltrike_map.dart`.
+- [ ] Extend the declarative Google map contract with a `polygons` set and
+  stable add/update/remove synchronization through native `PolygonOptions`.
+  Include fill color, stroke color, stroke width, visibility, geodesic mode,
+  clickability if needed, and z-index.
+- [ ] Add polyline z-index support so a dark route casing can sit below the
+  yellow preview while both remain above red polygon fills.
+- [ ] Add camera-bounds support to the app map controller. Preserve user pan
+  after the initial route fit and account for the passenger bottom sheet with
+  map padding.
+- [ ] Keep all overlay identifiers stable. Use
+  `restriction:<restrictionId>:<areaIndex>` for each disconnected exterior
+  area; never pass later areas as holes in the first polygon.
+- [ ] Add map-adapter tests for polygon add/update/remove reconciliation,
+  equality, stable IDs, colors/alpha, z-order, and controller disposal.
+
+### Phase 2 - one reactive active-restriction source
+
+- [ ] Expose the existing Firestore active-restriction snapshot as a shared
+  repository stream or Riverpod `StreamProvider<List<RouteRestriction>>`.
+  Do not query Firestore from widget `build` methods or create one listener per
+  overlay.
+- [ ] Reuse `RouteRestrictionMatcher.isEnforcedPolygon` for display filtering
+  so visualization and enforcement include exactly the same active polygon
+  types and exclude inactive/legacy corridor records.
+- [ ] Validate every area before rendering and discard malformed areas with
+  fewer than three valid coordinates without weakening route enforcement.
+- [ ] Reconcile changes live when the System Admin creates, enables, or
+  disables a restriction. Refresh or verify the subscription after app resume
+  so an idle home map does not retain stale geometry.
+- [ ] Retain the latest valid overlay while Firestore reconnects, but preserve
+  the existing fail-closed route/booking behavior. Polygon visibility is
+  explanatory UI and must never become the enforcement boundary.
+- [ ] Do not expose operational `notes` in passenger UI. Show a neutral name
+  and type only, unless a separately curated public-message field is added.
+
+### Phase 3 - idle maps and passenger route preview
+
+- [ ] Show active enforced polygons on the passenger home map immediately
+  after the signed-in map loads, before pickup or destination is selected and
+  independently of `routePoints` or `hasRoute`.
+- [ ] Show the same active polygons on the idle driver home map independently
+  of online state, current offer, or active booking. Reuse the shared provider
+  and polygon conversion rather than duplicating Firestore access.
+- [ ] Reuse polygon overlays on passenger searching/tracking and driver
+  fallback/tracking maps where the shared adapter is used. Add separate
+  imperative polygon synchronization to the native turn-by-turn navigation
+  view before claiming consistent coverage across every map surface.
+- [ ] Render active restrictions with semantic error red: approximately
+  `#EF4444` at 20-25% fill opacity, a darker 85-95% red boundary at 2-3 px,
+  and a z-index below routes and markers.
+- [ ] Add a persistent non-color cue/legend such as
+  `Red area: no pickup, drop-off, or travel`. Keep polygon interaction from
+  blocking ordinary map pan/zoom; a tap detail is optional.
+- [ ] Add a dedicated passenger planning-route token such as
+  `AppColors.passengerRoutePreview` using a visible golden yellow (for example
+  `#FACC15`). Set it explicitly only on the pickup/destination quote preview;
+  keep accepted-trip and driver-navigation routes blue.
+- [ ] Draw the preview with a dark wider casing below a 5-7 px yellow stroke,
+  or use a sufficiently dark amber single stroke if native z-order validation
+  shows the two-line treatment is unreliable.
+- [ ] Fit pickup, destination, and decoded route bounds once when a new valid
+  preview arrives. Do not refit for every GPS sample, rebuild, or user pan.
+- [ ] Show a bounded `Calculating safe route` state while coverage,
+  restriction, and Google route checks run. Never draw a straight pickup-to-
+  destination fallback that can visually cross a restricted area.
+- [ ] Keep the selected endpoint and red polygon visible after an endpoint or
+  route rejection so the passenger understands where to move the pin.
+
+### Phase 4 - persisted polygons in the System Admin editor
+
+- [ ] Keep the existing draft GeoJSON source/layers and add a separate
+  read-only source for persisted restriction areas already loaded by
+  `adminApi.routeRestrictions()`; no backend role or schema rename is needed.
+- [ ] Render saved active polygons with the same transparent red vocabulary,
+  the selected record with a stronger boundary, and disabled/audit-only
+  records as gray or hidden behind an `Archived` toggle.
+- [ ] Add a list action or row selection that fits the saved polygon bounds and
+  identifies its name, canonical type, active state, geometry version, and
+  area count without treating operational notes as public data.
+- [ ] Clearly label legacy highway corridor enable/disable controls as
+  audit-only so System Admin users do not mistake an active legacy status for
+  enforced route blocking.
+- [ ] Preserve create-and-disable/recreate behavior until a separate audited
+  geometry-revision workflow is explicitly authorized; do not silently add an
+  unaudited direct polygon edit.
+- [ ] Add Admin tests for current draft versus persisted layers, MultiPolygon-
+  like disconnected areas, active/disabled styles, selection/fit behavior,
+  save/reset behavior, and the user-facing System Admin label.
+
+### Phase 5 - routing correctness and authoritative preview
+
+- [ ] Request a high-quality Google route polyline for polygon intersection
+  validation and measure payload/latency impact. Do not call simplified
+  overview geometry strict legal-boundary evidence without field validation.
+- [ ] Revalidate cached encoded routes against the current restriction
+  snapshot or include a restriction revision/digest in the route-cache key.
+  Remove the current window where a 45-second coordinate-only cache can return
+  a route accepted before a newly activated polygon.
+- [ ] Validate decoded routes before committing `hasRoute`: require at least
+  two valid points, handle malformed polylines, and keep the previous safe UI
+  state on decode failure.
+- [ ] Add a read-only server route-preview callable that reuses the same
+  trusted route, restriction, coverage, and fare policy as booking creation.
+  It must not create a booking or mutate lifecycle state. Keep the existing
+  booking-time validation as the final authority.
+- [ ] Preserve Google route tokens while Google Navigation provides driver
+  guidance. Do not mix a custom-engine passenger preview with a different
+  Google-guided driver path.
+- [ ] If guaranteed custom-polygon detours become a legal requirement, make a
+  separate provider decision: either generate and verify server-side Google
+  waypoint candidates while preserving compatible route tokens, or replace
+  routing and turn-by-turn guidance end to end with an engine supporting
+  avoid-polygons. Continue geometry-checking every returned candidate.
+
+### Phase 6 - acceptance and controlled release
+
+- [ ] Add Flutter model/provider/widget tests for idle passenger and driver
+  maps, live activation/deactivation, app resume, empty/error data, multiple
+  areas, legacy exclusion, endpoint rejection, yellow preview replacement,
+  camera fitting, and no straight-line fallback.
+- [ ] Add parity fixtures proving that every rendered blocking polygon is
+  enforced by Dart/Rust/backend matching and that every ignored legacy record
+  is styled as non-enforced or omitted.
+- [ ] Test light and dark map schemes, native traffic, small/large screens,
+  bottom-sheet padding, dense overlapping areas, accessibility text, and map
+  interaction on Android and iOS where supported.
+- [ ] Field-test real Bacolod pickup/destination pairs around each boundary,
+  including routes just outside the edge, routes crossing a thin corner,
+  newly enabled/disabled restrictions, poor connectivity, app resume, and
+  native driver rerouting.
+- [ ] Verify the active-restriction count and total rendered vertices on target
+  devices. Add bounding boxes, viewport filtering, or simplified display-only
+  geometry before scale makes all-at-once rendering unsafe; never simplify the
+  authoritative enforcement geometry silently.
+- [ ] Run Flutter analysis/tests, Admin typecheck/build/tests, Functions policy
+  tests if the preview callable is added, native map smoke tests, and a clean
+  worktree review. Record retained work, results, limitations, deployment
+  commands, and manual checks in the matching bottom section of `done.md` only
+  after implementation is genuinely complete.

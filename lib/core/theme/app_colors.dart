@@ -20,6 +20,14 @@ class AppColors {
   /// the route stroke itself.
   static const Color trafficRoute = Color(0xFF3B82F6);
 
+  /// Passenger's unconfirmed pickup-to-destination route preview.
+  static const Color passengerRoutePreview = Color(0xFFFACC15);
+  static const Color passengerRoutePreviewCasing = Color(0xFF4B3A00);
+
+  /// Enforced operating-area overlay. The alpha keeps the underlying map legible.
+  static const Color restrictedAreaFill = Color(0x40EF4444);
+  static const Color restrictedAreaBorder = Color(0xFFB91C1C);
+
   // ---------------------------------------------------------------------------
   // Background
   // ---------------------------------------------------------------------------

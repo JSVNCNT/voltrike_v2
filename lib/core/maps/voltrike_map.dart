@@ -95,6 +95,19 @@ class PolylineId {
 }
 
 @immutable
+class PolygonId {
+  const PolygonId(this.value);
+
+  final String value;
+
+  @override
+  bool operator ==(Object other) => other is PolygonId && value == other.value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+@immutable
 class InfoWindow {
   const InfoWindow({this.title, this.snippet});
 
@@ -235,6 +248,65 @@ class Polyline {
   );
 }
 
+@immutable
+class Polygon {
+  const Polygon({
+    required this.polygonId,
+    required this.points,
+    this.holes = const <List<LatLng>>[],
+    this.fillColor = const Color(0x40EF4444),
+    this.strokeColor = const Color(0xFFB91C1C),
+    this.strokeWidth = 3,
+    this.geodesic = false,
+    this.visible = true,
+    this.zIndex = 0,
+  });
+
+  final PolygonId polygonId;
+  final List<LatLng> points;
+  final List<List<LatLng>> holes;
+  final Color fillColor;
+  final Color strokeColor;
+  final int strokeWidth;
+  final bool geodesic;
+  final bool visible;
+  final double zIndex;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Polygon &&
+      polygonId == other.polygonId &&
+      listEquals(points, other.points) &&
+      _listOfListsEquals(holes, other.holes) &&
+      fillColor == other.fillColor &&
+      strokeColor == other.strokeColor &&
+      strokeWidth == other.strokeWidth &&
+      geodesic == other.geodesic &&
+      visible == other.visible &&
+      zIndex == other.zIndex;
+
+  @override
+  int get hashCode => Object.hash(
+    polygonId,
+    Object.hashAll(points),
+    Object.hashAll(holes.map(Object.hashAll)),
+    fillColor,
+    strokeColor,
+    strokeWidth,
+    geodesic,
+    visible,
+    zIndex,
+  );
+}
+
+bool _listOfListsEquals(List<List<LatLng>> left, List<List<LatLng>> right) {
+  if (left.length != right.length) return false;
+  for (var index = 0; index < left.length; index++) {
+    if (!listEquals(left[index], right[index])) return false;
+  }
+  return true;
+}
+
 class GoogleMapController {
   GoogleMapController._(navigation.GoogleMapViewController delegate)
     : _delegate = delegate;
@@ -271,6 +343,7 @@ class GoogleMap extends StatefulWidget {
     this.zoomControlsEnabled = true,
     this.padding = EdgeInsets.zero,
     this.markers = const <Marker>{},
+    this.polygons = const <Polygon>{},
     this.polylines = const <Polyline>{},
   });
 
@@ -285,6 +358,7 @@ class GoogleMap extends StatefulWidget {
   final bool zoomControlsEnabled;
   final EdgeInsets padding;
   final Set<Marker> markers;
+  final Set<Polygon> polygons;
   final Set<Polyline> polylines;
 
   @override
@@ -296,6 +370,9 @@ class _GoogleMapState extends State<GoogleMap> {
   final Map<String, Marker> _markerSpecs = <String, Marker>{};
   final Map<String, navigation.Marker> _nativeMarkers =
       <String, navigation.Marker>{};
+  final Map<String, Polygon> _polygonSpecs = <String, Polygon>{};
+  final Map<String, navigation.Polygon> _nativePolygons =
+      <String, navigation.Polygon>{};
   final Map<String, Polyline> _polylineSpecs = <String, Polyline>{};
   final Map<String, navigation.Polyline> _nativePolylines =
       <String, navigation.Polyline>{};
@@ -388,8 +465,9 @@ class _GoogleMapState extends State<GoogleMap> {
     try {
       while (_syncPending && mounted && _controller != null) {
         _syncPending = false;
-        await _syncMarkers();
+        await _syncPolygons();
         await _syncPolylines();
+        await _syncMarkers();
       }
     } catch (error, stackTrace) {
       debugPrint('Map overlay synchronization failed: $error\n$stackTrace');
@@ -474,6 +552,84 @@ class _GoogleMapState extends State<GoogleMap> {
       anchor: navigation.MarkerAnchor(u: marker.anchor.dx, v: marker.anchor.dy),
       rotation: marker.rotation,
       flat: marker.flat,
+    );
+  }
+
+  Future<void> _syncPolygons() async {
+    final controller = _controller;
+    if (controller == null) return;
+    final desired = <String, Polygon>{
+      for (final polygon in widget.polygons) polygon.polygonId.value: polygon,
+    };
+
+    final removedIds = _nativePolygons.keys
+        .where((id) => !desired.containsKey(id))
+        .toList();
+    if (removedIds.isNotEmpty) {
+      await controller.removePolygons(
+        removedIds.map((id) => _nativePolygons[id]!).toList(),
+      );
+      for (final id in removedIds) {
+        _nativePolygons.remove(id);
+        _polygonSpecs.remove(id);
+      }
+    }
+
+    final addedSpecs = desired.entries
+        .where((entry) => !_nativePolygons.containsKey(entry.key))
+        .toList();
+    if (addedSpecs.isNotEmpty) {
+      final handles = await controller.addPolygons(
+        addedSpecs.map((entry) => _polygonOptions(entry.value)).toList(),
+      );
+      for (var index = 0; index < addedSpecs.length; index++) {
+        final handle = handles[index];
+        if (handle == null) continue;
+        final entry = addedSpecs[index];
+        _nativePolygons[entry.key] = handle;
+        _polygonSpecs[entry.key] = entry.value;
+      }
+    }
+
+    final changedEntries = desired.entries
+        .where(
+          (entry) =>
+              _nativePolygons.containsKey(entry.key) &&
+              _polygonSpecs[entry.key] != entry.value,
+        )
+        .toList();
+    if (changedEntries.isNotEmpty) {
+      final handles = await controller.updatePolygons(
+        changedEntries
+            .map(
+              (entry) => _nativePolygons[entry.key]!.copyWith(
+                options: _polygonOptions(entry.value),
+              ),
+            )
+            .toList(),
+      );
+      for (var index = 0; index < changedEntries.length; index++) {
+        final handle = handles[index];
+        if (handle == null) continue;
+        final entry = changedEntries[index];
+        _nativePolygons[entry.key] = handle;
+        _polygonSpecs[entry.key] = entry.value;
+      }
+    }
+  }
+
+  navigation.PolygonOptions _polygonOptions(Polygon polygon) {
+    return navigation.PolygonOptions(
+      points: polygon.points.map((point) => point.toNavigation()).toList(),
+      holes: polygon.holes
+          .map((hole) => hole.map((point) => point.toNavigation()).toList())
+          .toList(),
+      fillColor: polygon.fillColor,
+      strokeColor: polygon.strokeColor,
+      strokeWidth: polygon.strokeWidth.toDouble(),
+      geodesic: polygon.geodesic,
+      visible: polygon.visible,
+      zIndex: polygon.zIndex,
     );
   }
 

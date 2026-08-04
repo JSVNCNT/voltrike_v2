@@ -984,3 +984,43 @@ flutter run -d emulator-5554 --dart-define=VOLTRIKE_NAVIGATION_MODE=on
 - This APK is a debug test artifact, not a release or production-distribution
   build. The existing `com.example.voltrike_v2` application ID and Android
   debug certificate remain outside R3. Changes are local and uncommitted.
+
+## Restricted-area map overlay planning - 2026-08-04
+
+This entry records completed analysis and documentation only. The product
+implementation remains pending in the matching bottom section of `todo.md`.
+
+- Traced the current System Admin polygon editor, geometry-v2 persistence,
+  Firestore access, mobile model parsing, Dart/Rust/backend restriction
+  matching, passenger route preview, authoritative booking validation, driver
+  monitoring, Google route-token navigation, and all current map surfaces.
+- Confirmed that active no-service/restricted-driving polygons already block
+  pickup, destination, and returned route alternatives locally and during
+  authoritative booking creation. Legacy highway corridors are retained for
+  audit but deliberately excluded from current route and violation policy.
+- Confirmed that the Admin draft already uses transparent red styling, while
+  saved restrictions disappear from the editor because persisted geometry is
+  not supplied as a background map source after the draft state is cleared.
+- Confirmed that the pinned Google Navigation Flutter map supports polygon
+  overlays. VolTrike's app-owned map adapter currently exposes only markers
+  and polylines, so idle passenger/driver display requires adapter support and
+  reactive restriction data binding rather than a map-provider replacement.
+- Defined the intended visual semantics: active polygons use a 20-25%
+  transparent red fill and strong red boundary; the passenger selection/quote
+  route uses a dedicated yellow/gold stroke above the polygons; accepted-trip
+  and driver-navigation routes remain blue.
+- Defined idle behavior: signed-in passenger and driver home maps show active
+  enforced polygons without a route or booking; backgrounded/terminated apps
+  render no map and must reconcile restrictions on resume.
+- Recorded the Google routing limitation: current code post-filters a bounded
+  set of Google alternatives because Google route modifiers do not consume
+  custom VolTrike polygons. Preserving Google route tokens constrains any
+  future avoid-polygon provider change to an end-to-end routing/navigation
+  decision or verified Google waypoint strategy.
+- Added a phased, acceptance-driven checklist to the bottom of `todo.md` for
+  the shared polygon contract, active restriction provider, idle maps, yellow
+  passenger preview, camera fitting, persisted Admin layers, routing/cache
+  correctness, authoritative preview, tests, field validation, and rollout.
+- Preserved `developer_admin` as the backend role and `System Admin` as the
+  frontend label. No Dart, Rust, TypeScript, JavaScript, Firebase rules,
+  dependency, generated, or deployment changes were made.

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:voltrike_v2/core/maps/restriction_polygons.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
+import 'package:voltrike_v2/core/providers/route_restrictions_provider.dart';
 
 /// ===========================================================================
 /// Driver Map View
@@ -14,7 +17,7 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 ///
 /// Route calculation is handled by NavigationService.
 /// ===========================================================================
-class DriverMapView extends StatefulWidget {
+class DriverMapView extends ConsumerStatefulWidget {
   const DriverMapView({
     super.key,
     this.driverLocation,
@@ -36,10 +39,10 @@ class DriverMapView extends StatefulWidget {
   final List<LatLng> routePoints;
 
   @override
-  State<DriverMapView> createState() => _DriverMapViewState();
+  ConsumerState<DriverMapView> createState() => _DriverMapViewState();
 }
 
-class _DriverMapViewState extends State<DriverMapView> {
+class _DriverMapViewState extends ConsumerState<DriverMapView> {
   GoogleMapController? _controller;
 
   static const CameraPosition _defaultCamera = CameraPosition(
@@ -49,6 +52,8 @@ class _DriverMapViewState extends State<DriverMapView> {
 
   @override
   Widget build(BuildContext context) {
+    final restrictions =
+        ref.watch(routeRestrictionsProvider).valueOrNull ?? const [];
     return Stack(
       children: [
         GoogleMap(
@@ -102,6 +107,8 @@ class _DriverMapViewState extends State<DriverMapView> {
                 ),
               ),
           },
+
+          polygons: restrictionPolygons(restrictions),
 
           polylines: {
             if (widget.routePoints.isNotEmpty)

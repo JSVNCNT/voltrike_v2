@@ -34,6 +34,15 @@ class RouteRestrictionService {
     return _cache!;
   }
 
+  /// Live active restrictions for maps. Callers still filter through the shared
+  /// matcher so legacy, non-enforced corridor records never become overlays.
+  Stream<List<RouteRestriction>> watchActiveRestrictions() {
+    return _activeQuery.snapshots().map((snapshot) {
+      _replaceCache(snapshot);
+      return List<RouteRestriction>.unmodifiable(_cache!);
+    });
+  }
+
   Query<Map<String, dynamic>> get _activeQuery => _firestore
       .collection('routeRestrictions')
       .where('isActive', isEqualTo: true);

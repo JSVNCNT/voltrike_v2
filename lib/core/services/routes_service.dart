@@ -46,8 +46,15 @@ class RoutesService {
     final now = DateTime.now();
     final cached = _cache.remove(key);
     if (cached != null && now.difference(cached.createdAt) <= _cacheTtl) {
-      _cache[key] = cached;
-      return cached.route;
+      // Live restrictions can change during the short route-cache lifetime.
+      // Recheck the encoded geometry before showing a cached preview.
+      final conflict = await RouteRestrictionService.instance
+          .encodedRouteConflict(cached.route.encodedPolyline);
+      if (conflict == null) {
+        _cache[key] = cached;
+        return cached.route;
+      }
+      RouteRestrictionService.instance.markConflict(conflict);
     }
 
     final existing = _inFlight[key];
@@ -157,6 +164,8 @@ class RoutesService {
       'travelMode': 'DRIVE',
       'routingPreference': 'TRAFFIC_AWARE',
       'computeAlternativeRoutes': true,
+      'polylineQuality': 'HIGH_QUALITY',
+      'polylineEncoding': 'ENCODED_POLYLINE',
       'routeModifiers': {'avoidHighways': true},
     };
   }
