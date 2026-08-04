@@ -1044,3 +1044,61 @@ implementation remains pending in the matching bottom section of `todo.md`.
 - Validation passed: Functions highway policy tests, Flutter highway matcher
   and driver-monitor tests, focused Flutter analysis, and Admin `npm.cmd run
   build`. Firebase was not deployed.
+
+## Go private compute/read-plane implementation - 2026-08-04
+
+- Added a new private Go service at `services/voltrike-go`. It owns cached
+  fare/coverage/restriction policy reads, Google route computation, coverage
+  and restriction checks, deterministic centavo fare calculation, encrypted
+  short-lived quote tokens, and bounded nearby-driver spatial lookup.
+- Added strict HTTP body/result bounds, timeouts, panic-safe JSON errors,
+  configuration validation, health metadata, cache invalidation, malformed
+  input tests, route/fare fixtures, and dispatch boundary tests. Go remains a
+  read/compute plane and performs no durable booking or financial write.
+- Added the Firebase Functions Go client using private Cloud Run service-to-
+  service ID tokens. `GO_QUOTE_MODE` and `GO_DISPATCH_MODE` default to `off` and
+  switch independently to `on`; mobile and browser clients cannot call Go
+  directly.
+- Added the authenticated `createBookingQuote` callable and integrated optional
+  quote-token consumption into `createBookingLifecycle`. Old clients remain
+  compatible, Node retains booking/idempotency/operation/audit transactions,
+  and Node verifies fare parity before accepting Go output.
+- Added RTDB dispatch-cell maintenance and client-deny rules. With Go dispatch
+  enabled, Node no longer reads the entire driver-location root; it retrieves
+  only capped nearby IDs, then retains final Firestore eligibility/ranking and
+  acceptance arbitration.
+- Added Functions policy-cache invalidation after fare, TODA coverage, and route
+  restriction Admin changes. The implemented revision-hashed in-memory cache
+  avoids the planned Cloud Storage bundle/Redis complexity.
+- Added the Flutter `GoServiceBridge` through Firebase callable Functions,
+  quote parsing and session expiry, booking token forwarding, stale-token
+  clearing after passenger/baggage changes, and a Dart legacy fallback for an
+  unavailable or not-yet-deployed callable. No `go_bridge` pub package was
+  added because Go is a server backend, while the existing Rust bridge remains
+  the native on-device acceleration layer.
+- Corrected the Flutter expected Functions protocol version to 4.
+- Reduced driver earnings downloads by adding the authoritative
+  `getDriverEarningsSummary` aggregate callable with compatibility fallback.
+  Reduced rating reads through deterministic booking/passenger document lookup
+  and a newest-three bounded driver-feedback stream.
+- Corrected the TODA commission report backend to use the authenticated actor's
+  TODA scope and an explicit descending settlement timestamp query compatible
+  with the deployed index direction. Commission, gross/net settlement, and
+  dashboard financial authority remain Node/Firestore; the Render TSX frontend
+  continues using the same Firebase callable contract.
+- Added the required Firestore earnings index and private RTDB dispatch index
+  rules. No Firebase, Cloud Run, Render, Hosting, or device deployment was
+  performed.
+- Added `services/voltrike-go/DEPLOYMENT.md` with exact private Cloud Run IAM,
+  secret setup, Firebase environment, staged off/on rollout, health proxy, and
+  manual Flutter instructions. It deliberately excludes Firebase Hosting
+  because the Admin frontend remains on Render.
+- Validation passed: `go test ./...`, `go vet ./...`, `go build .`, all 93 Node
+  tests, Node syntax checking, all 206 Flutter tests, full Flutter analysis
+  before the final read-model additions plus focused analysis afterward, and
+  the Admin production build. The five VS Code Go diagnostics were also
+  cleared by making gRPC direct and removing unused helpers.
+- Deferred intentionally: physical/emulator testing, production deployment,
+  trip-history cursor pagination, offer display snapshots, PostgreSQL/PostGIS,
+  Go-owned ride transitions or settlements, direct Admin/Flutter Cloud Run
+  calls, and Firebase Hosting deployment.

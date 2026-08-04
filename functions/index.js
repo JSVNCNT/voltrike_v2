@@ -105,6 +105,12 @@ const {
   validEmail,
   verificationEmail,
 } = require('./brevo-communications');
+const {
+  GoServiceError,
+  createGoServiceClient,
+} = require('./go-service-client');
+const { dispatchIndexUpdates } = require('./dispatch-spatial-index');
+const { driverEarningsPeriodStarts } = require('./driver-earnings-periods');
 const functionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 const runtimeProjectId =
   process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
@@ -126,6 +132,31 @@ const liveKitApiSecret = defineSecret('LIVEKIT_API_SECRET');
 const liveKitUrl = defineString('LIVEKIT_URL');
 const adminBootstrapCode = defineSecret('ADMIN_BOOTSTRAP_CODE');
 const googleRoutesApiKey = defineSecret('GOOGLE_ROUTES_API_KEY');
+const goServiceUrl = defineString('GO_SERVICE_URL', { default: '' });
+const goQuoteMode = defineString('GO_QUOTE_MODE', { default: 'off' });
+const goDispatchMode = defineString('GO_DISPATCH_MODE', { default: 'off' });
+const goLocalInternalKey = defineString('GO_LOCAL_INTERNAL_KEY', {
+  default: '',
+});
+const goService = createGoServiceClient({
+  baseUrl: () => goServiceUrl.value(),
+  quoteMode: () => goQuoteMode.value(),
+  dispatchMode: () => goDispatchMode.value(),
+  localInternalKey: () => goLocalInternalKey.value(),
+  emulator: functionsEmulator,
+});
+
+async function invalidateGoPolicyCache(reason) {
+  if (!goService.quotesEnabled()) return;
+  try {
+    await goService.invalidatePolicy();
+  } catch (error) {
+    logger.warn('Go policy cache invalidation failed.', {
+      reason,
+      error: error?.message || String(error),
+    });
+  }
+}
 const brevoSmtpKey = defineSecret('BREVO_SMTP_KEY');
 const brevoSmtpLogin = defineString('BREVO_SMTP_LOGIN', {
   default: 'a5cd23001@smtp-brevo.com',
@@ -518,7 +549,97 @@ function vehicleCanServeBooking(vehicle, booking) {
   return requiredSeats <= 2 || electricTuktuk;
 }
 
-async function rankedDispatchDrivers(booking) {
+async function rankedDispatchDriversFromGo(booking) {
+  const pickup = normalizeCoordinate(booking.pickup, 'Pickup');
+  const response = await goService.dispatchCandidates({
+    pickup,
+    primaryTodaIds: Array.isArray(booking.primaryTodaIds)
+      ? booking.primaryTodaIds
+      : [],
+    secondaryTodaIds: Array.isArray(booking.secondaryTodaIds)
+      ? booking.secondaryTodaIds
+      : [],
+    allowAnyActiveToda: booking.allowAnyActiveToda === true,
+    maximumResults: 100,
+  });
+  const excluded = new Set(
+    Array.isArray(booking.offeredDriverIds) ? booking.offeredDriverIds : [],
+  );
+  const rawCandidates = Array.isArray(response?.candidates)
+    ? response.candidates.filter((candidate) =>
+      typeof candidate?.driverId === 'string' &&
+      candidate.driverId.length > 0 &&
+      Number.isInteger(candidate.distanceMeters) &&
+      candidate.distanceMeters >= 0 &&
+      candidate.distanceMeters <= dispatchRadiusMeters &&
+      !excluded.has(candidate.driverId))
+    : [];
+  if (rawCandidates.length === 0) return [];
+  const unique = [...new Map(
+    rawCandidates.map((candidate) => [candidate.driverId, candidate]),
+  ).values()];
+  const driverSnapshots = await db.getAll(...unique.map((candidate) =>
+    db.collection('drivers').doc(candidate.driverId)));
+  const now = Date.now();
+  const nearby = driverSnapshots.map((driver, index) => {
+    if (!driver.exists) return null;
+    const data = driver.data();
+    if (data.driverStatus !== 'approved' || data.isOnline !== true ||
+        data.isAvailable !== true || data.currentBookingId != null ||
+        typeof data.todaId !== 'string' || data.todaId.trim().length === 0 ||
+        typeof data.vehicleId !== 'string' ||
+        data.vehicleId.trim().length === 0) {
+      return null;
+    }
+    const servicePriority = bookingDriverServicePriority(booking, data.todaId);
+    if (servicePriority == null) return null;
+    const stats = driverDispatchStats(data, now);
+    const dispatchScore = dispatchScoreSnapshot({
+      driverId: driver.id,
+      servicePriority,
+      distanceMeters: unique[index].distanceMeters,
+      dailyAwards: stats.dailyAwardCount,
+      completedAssignments: stats.completedAssignments,
+      driverFaultCancellations: stats.driverFaultCancellations,
+      rating: data.rating,
+      ratingCount: data.ratingCount,
+    });
+    return {
+      driver,
+      driverId: driver.id,
+      distanceMeters: unique[index].distanceMeters,
+      servicePriority,
+      dailyAwards: dispatchScore.dailyAwards,
+      reliabilityScore: dispatchScore.reliabilityScore,
+      qualityScore: dispatchScore.qualityScore,
+      dispatchScore,
+    };
+  }).filter(Boolean);
+  if (nearby.length === 0) return [];
+  const eligibility = await db.getAll(...nearby.flatMap(({ driver }) => [
+    db.collection('users').doc(driver.id),
+    db.collection('todas').doc(driver.data().todaId),
+    db.collection('vehicles').doc(driver.data().vehicleId),
+  ]));
+  const eligible = nearby.filter(({ driver }, index) => {
+    const user = eligibility[index * 3];
+    const toda = eligibility[index * 3 + 1];
+    const vehicle = eligibility[index * 3 + 2];
+    const licenseExpiry = snapshotDateMillis(driver.data().licenseExpiry);
+    return user.exists && user.data().isActive !== false &&
+      user.data().role === 'driver' &&
+      toda.exists && toda.data().isActive === true &&
+      vehicle.exists && vehicle.data().isVerified === true &&
+      vehicleCanServeBooking(vehicle.data(), booking) &&
+      typeof driver.data().licenseNumber === 'string' &&
+      driver.data().licenseNumber.trim().length > 0 &&
+      licenseExpiry != null && licenseExpiry >= now;
+  });
+  eligible.sort(compareDispatchClaims);
+  return eligible;
+}
+
+async function rankedDispatchDriversLegacy(booking) {
   const pickup = normalizeCoordinate(booking.pickup, 'Pickup');
   const [drivers, locations] = await Promise.all([
     db.collection('drivers')
@@ -613,6 +734,21 @@ async function rankedDispatchDrivers(booking) {
   });
   eligible.sort(compareDispatchClaims);
   return eligible;
+}
+
+async function rankedDispatchDrivers(booking) {
+  if (!goService.dispatchEnabled()) {
+    return rankedDispatchDriversLegacy(booking);
+  }
+  try {
+    return await rankedDispatchDriversFromGo(booking);
+  } catch (error) {
+    logger.warn('Go dispatch lookup failed; using the legacy safety path.', {
+      bookingId: booking.bookingId || null,
+      error: error?.message || String(error),
+    });
+    return rankedDispatchDriversLegacy(booking);
+  }
 }
 
 async function dispatchNextOfferBatch(bookingId) {
@@ -1843,6 +1979,7 @@ exports.adminSetTodaStatus = onCall({ region: 'asia-southeast1' }, async (reques
     targetType: 'toda',
     targetId: todaId,
   });
+  await invalidateGoPolicyCache('toda_status_changed');
   return { updated: true };
 });
 
@@ -1915,6 +2052,7 @@ exports.adminUpdateFare = onCall({ region: 'asia-southeast1' }, async (request) 
       currency: normalized.currency,
     },
   });
+  await invalidateGoPolicyCache('fare_updated');
   return { updated: true };
 });
 
@@ -1943,16 +2081,15 @@ exports.adminGetTodaCommissionReport = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
     const actor = await requireAdmin(request);
-    const claimedTodaId = request.auth?.token?.todaId;
     if (actor.role !== 'toda_admin' ||
-        typeof claimedTodaId !== 'string' ||
-        claimedTodaId.length === 0 ||
-        claimedTodaId !== actor.todaId) {
+        typeof actor.todaId !== 'string' ||
+        actor.todaId.length === 0) {
       throw new HttpsError(
         'permission-denied',
         'TODA administrator access is required.',
       );
     }
+    const scopedTodaId = actor.todaId;
 
     let range;
     let pageSize;
@@ -1981,9 +2118,10 @@ exports.adminGetTodaCommissionReport = onCall(
     const start = Timestamp.fromDate(range.start);
     const endExclusive = Timestamp.fromDate(range.endExclusive);
     const scopedRange = settlements
-      .where('todaId', '==', claimedTodaId)
+      .where('todaId', '==', scopedTodaId)
       .where('settlementTimestamp', '>=', start)
-      .where('settlementTimestamp', '<', endExclusive);
+      .where('settlementTimestamp', '<', endExclusive)
+      .orderBy('settlementTimestamp', 'desc');
     const loadSummary = () => Promise.all([
       scopedRange.aggregate({
         grossFare: AggregateField.sum('grossFare'),
@@ -2014,10 +2152,7 @@ exports.adminGetTodaCommissionReport = onCall(
       };
     }
 
-    let pageQuery = scopedRange.orderBy(
-      'settlementTimestamp',
-      'desc',
-    );
+    let pageQuery = scopedRange;
     const cursor = request.data?.cursor;
     if (cursor != null && cursor !== '') {
       if (typeof cursor !== 'string' ||
@@ -2032,7 +2167,7 @@ exports.adminGetTodaCommissionReport = onCall(
       if (!cursorDocument.exists ||
           !cursorBelongsToReport(
             cursorDocument.data(),
-            claimedTodaId,
+            scopedTodaId,
             range,
           )) {
         throw new HttpsError(
@@ -2527,6 +2662,9 @@ exports.adminReviewZoneRequest = onCall({ region: 'asia-southeast1' }, async (re
       coverageRevision,
     };
   });
+  if (status === 'approved' && result.updated) {
+    await invalidateGoPolicyCache('coverage_approved');
+  }
   return result;
 });
 
@@ -2651,6 +2789,7 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
       minimumAlignedTravelMeters,
     },
   });
+  await invalidateGoPolicyCache('restriction_created');
   return { restrictionId: ref.id };
 });
 
@@ -2669,6 +2808,7 @@ exports.adminSetRouteRestrictionStatus = onCall({ region: 'asia-southeast1' }, a
     targetType: 'routeRestriction',
     targetId: restrictionId,
   });
+  await invalidateGoPolicyCache('restriction_status_changed');
   return { updated: true };
 });
 
@@ -3309,6 +3449,28 @@ exports.monitorDriverRestrictionPosition = onValueWritten(
   },
 );
 
+// Maintains a compact RTDB spatial read model without reading Firestore on
+// every GPS heartbeat. Node performs final driver/TODA/vehicle validation.
+exports.indexDriverDispatchLocation = onValueWritten(
+  {
+    ref: '/driver_locations/{driverId}',
+    region: functionsEmulator ? 'us-central1' : 'asia-southeast1',
+    retry: false,
+  },
+  async (event) => {
+    // Warm the index while dispatch cutover remains off. This permits a safe
+    // deploy/warm/enable sequence without sending bookings to an empty index.
+    if (!goService.configured()) return;
+    const driverId = event.params.driverId;
+    const before = event.data.before.exists() ? event.data.before.val() : null;
+    const after = event.data.after.exists() ? event.data.after.val() : null;
+    const updates = dispatchIndexUpdates({ driverId, before, after });
+    if (Object.keys(updates).length > 0) {
+      await realtime.ref().update(updates);
+    }
+  },
+);
+
 exports.adminListDriverViolations = onCall(
   { region: 'asia-southeast1' },
   async (request) => {
@@ -3740,6 +3902,66 @@ exports.getSystemDiagnostics = onCall(
       region: 'asia-southeast1',
       projectId: process.env.GCLOUD_PROJECT || null,
       checkedAt: new Date().toISOString(),
+    };
+  },
+);
+
+exports.getDriverEarningsSummary = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in to view earnings.');
+    }
+    const driverId = request.auth.uid;
+    const driver = await db.collection('drivers').doc(driverId).get();
+    if (!driver.exists || driver.data().driverStatus !== 'approved') {
+      throw new HttpsError(
+        'failed-precondition',
+        'An approved driver profile is required.',
+      );
+    }
+    const periods = driverEarningsPeriodStarts();
+    const completed = db.collection('bookings')
+      .where('driverId', '==', driverId)
+      .where('status', '==', BOOKING_STATUS.completed);
+    const aggregate = (query) => query.aggregate({
+      total: AggregateField.sum('driverNetEarnings'),
+      count: AggregateField.count(),
+    }).get();
+    const [all, today, week, month] = await Promise.all([
+      aggregate(completed),
+      aggregate(completed.where(
+        'completedAt',
+        '>=',
+        Timestamp.fromDate(periods.day),
+      )),
+      aggregate(completed.where(
+        'completedAt',
+        '>=',
+        Timestamp.fromDate(periods.week),
+      )),
+      aggregate(completed.where(
+        'completedAt',
+        '>=',
+        Timestamp.fromDate(periods.month),
+      )),
+    ]);
+    const money = (snapshot) => {
+      const value = Number(snapshot.data().total || 0);
+      return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+    };
+    const completedTrips = Number(all.data().count || 0);
+    const total = money(all);
+    return {
+      today: money(today),
+      week: money(week),
+      month: money(month),
+      total,
+      completedTrips,
+      averageNetEarnings: completedTrips > 0
+        ? Math.round((total / completedTrips) * 100) / 100
+        : 0,
+      timeZone: 'Asia/Manila',
     };
   },
 );
@@ -4561,6 +4783,195 @@ exports.setDriverOnlineStatus = onCall(
   },
 );
 
+function goQuoteInput({
+  actorId,
+  pickup,
+  destination,
+  additionalPassengers,
+  baggageCount,
+  issueToken = false,
+}) {
+  return {
+    actorId,
+    pickup,
+    destination,
+    additionalPassengers,
+    baggageCount,
+    issueToken,
+  };
+}
+
+function goQuoteHttpsError(error) {
+  if (!(error instanceof GoServiceError)) {
+    return new HttpsError(
+      'unavailable',
+      'The route and fare service is temporarily unavailable.',
+    );
+  }
+  const code = {
+    invalid_argument: 'invalid-argument',
+    failed_precondition: 'failed-precondition',
+    unauthenticated: 'unauthenticated',
+    permission_denied: 'permission-denied',
+    unavailable: 'unavailable',
+  }[error.code] || 'internal';
+  return new HttpsError(code, error.message);
+}
+
+function normalizedGoBookingQuote(raw) {
+  const quote = raw?.quote;
+  const coverage = quote?.coverage;
+  const distance = Number(quote?.distanceMeters);
+  if (!quote || !coverage || !Number.isInteger(distance) || distance <= 0 ||
+      typeof quote.authoritativeRoutePolyline !== 'string' ||
+      quote.authoritativeRoutePolyline.length === 0 ||
+      !Array.isArray(coverage.primaryTodaIds) ||
+      !Array.isArray(coverage.secondaryTodaIds) ||
+      !Array.isArray(coverage.eligibleTodaIds)) {
+    throw new GoServiceError(
+      'internal',
+      'Go service returned an incomplete booking quote.',
+      500,
+    );
+  }
+  const pricing = fareSnapshot(quote.fareSnapshot);
+  const fareBreakdown = calculateFareBreakdown({
+    config: pricing,
+    distanceMeters: distance,
+    additionalPassengers: Number(quote.fareBreakdown?.additionalPassengers),
+    baggageCount: Number(quote.fareBreakdown?.baggageCount),
+    isOutsideToda: coverage.isOutsideToda === true,
+  });
+  if (Math.abs(fareBreakdown.total - Number(quote.estimatedFare)) > 0.001 ||
+      Math.abs(fareBreakdown.total - Number(quote.fareBreakdown?.total)) >
+        0.001) {
+    throw new GoServiceError(
+      'internal',
+      'Go and Node fare calculations did not match.',
+      500,
+    );
+  }
+  return {
+    coverage: {
+      configured: coverage.configured === true,
+      serviceable: coverage.serviceable !== false,
+      isOutsideToda: coverage.isOutsideToda === true,
+      coverageClass: String(coverage.coverageClass || 'unconfigured_fallback'),
+      pickupTodaIds: coverage.pickupTodaIds || [],
+      destinationTodaIds: coverage.destinationTodaIds || [],
+      sharedTodaIds: coverage.sharedTodaIds || [],
+      primaryTodaIds: coverage.primaryTodaIds,
+      secondaryTodaIds: coverage.secondaryTodaIds,
+      allowAnyActiveToda: coverage.allowAnyActiveToda === true,
+      eligibleTodaIds: coverage.eligibleTodaIds,
+      serviceTodaId: coverage.serviceTodaId || null,
+      geofenceRevisions: coverage.geofenceRevisions || {},
+    },
+    route: {
+      distanceMeters: distance,
+      duration: String(quote.estimatedDuration || ''),
+      encodedPolyline: quote.authoritativeRoutePolyline,
+      restrictionIdsChecked: quote.routeRestrictionIdsChecked || [],
+      avoidedRestrictionIds: quote.avoidedRouteRestrictionIds || [],
+      avoidedRestrictionNames: quote.avoidedRouteRestrictionNames || [],
+      highwayRouteAdvisory: quote.highwayRouteAdvisory || null,
+    },
+    pricing,
+    fareBreakdown,
+    distanceMeters: distance,
+    estimatedFare: fareBreakdown.total,
+    policyRevision: String(quote.policyRevision || ''),
+    quoteExpiresAt: quote.expiresAt || null,
+  };
+}
+
+async function authoritativeGoBookingQuote({
+  actorId,
+  pickup,
+  destination,
+  additionalPassengers,
+  baggageCount,
+  quoteToken,
+  issueToken = false,
+}) {
+  const input = goQuoteInput({
+    actorId,
+    pickup,
+    destination,
+    additionalPassengers,
+    baggageCount,
+    issueToken,
+  });
+  const response = quoteToken
+    ? await goService.consumeQuote({ ...input, quoteToken })
+    : await goService.computeQuote(input);
+  return {
+    ...normalizedGoBookingQuote(response),
+    quoteToken: typeof response?.quoteToken === 'string'
+      ? response.quoteToken
+      : '',
+  };
+}
+
+exports.createBookingQuote = onCall(
+  { region: 'asia-southeast1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in before requesting a fare.');
+    }
+    if (!goService.quotesEnabled()) {
+      throw new HttpsError(
+        'failed-precondition',
+        'The Go quote bridge is not enabled.',
+      );
+    }
+    const pickup = parseCoordinate(request.data?.pickup, 'Pickup');
+    const destination = parseCoordinate(request.data?.destination, 'Destination');
+    const additionalPassengers = validNonNegativeInteger(
+      request.data?.additionalPassengers,
+      'Additional passengers',
+      3,
+    );
+    const baggageCount = validNonNegativeInteger(
+      request.data?.baggageCount,
+      'Baggage count',
+      1,
+    );
+    try {
+      const result = await authoritativeGoBookingQuote({
+        actorId: request.auth.uid,
+        pickup,
+        destination,
+        additionalPassengers,
+        baggageCount,
+        issueToken: true,
+      });
+      return {
+        distanceMeters: result.distanceMeters,
+        estimatedFare: result.estimatedFare,
+        estimatedDuration: result.route.duration,
+        authoritativeRoutePolyline: result.route.encodedPolyline,
+        fareSnapshot: result.pricing,
+        fareVersion: result.pricing.version,
+        fareBreakdown: result.fareBreakdown,
+        isOutsideToda: result.coverage.isOutsideToda,
+        coverageClass: result.coverage.coverageClass,
+        primaryTodaIds: result.coverage.primaryTodaIds,
+        secondaryTodaIds: result.coverage.secondaryTodaIds,
+        allowAnyActiveToda: result.coverage.allowAnyActiveToda,
+        eligibleTodaIds: result.coverage.eligibleTodaIds,
+        avoidedRouteRestrictionIds: result.route.avoidedRestrictionIds,
+        avoidedRouteRestrictionNames: result.route.avoidedRestrictionNames,
+        highwayRouteAdvisory: result.route.highwayRouteAdvisory,
+        quoteToken: result.quoteToken,
+        quoteExpiresAt: result.quoteExpiresAt,
+      };
+    } catch (error) {
+      throw goQuoteHttpsError(error);
+    }
+  },
+);
+
 // Creates the durable booking, passenger display snapshot, active-booking
 // lock, pickup secret, idempotency record, and audit event together.
 exports.createBookingLifecycle = onCall(
@@ -4666,46 +5077,85 @@ exports.createBookingLifecycle = onCall(
       };
     }
 
-    const [fareDocument, geofenceDocuments, restrictionDocuments] =
-      await Promise.all([
-      db.collection('settings').doc('fare_config').get(),
-      db.collection('geofences').limit(500).get(),
-      db.collection('routeRestrictions')
-        .where('isActive', '==', true)
-        .limit(200)
-        .get(),
-    ]);
-    const geofences = geofenceDocuments.docs.map((document) => ({
-      id: document.id,
-      ...document.data(),
-    }));
-    const restrictions = restrictionDocuments.docs.map((document) => ({
-      id: document.id,
-      ...document.data(),
-    })).filter((restriction) =>
-      restriction.isActive !== false &&
-      ((['no_service_area', 'restricted_crossing'].includes(restriction.type) &&
-        restriction.geometryType !== 'corridor') ||
-       (restriction.type === 'prohibited_highway' &&
-        restriction.geometryType === 'corridor')));
-    const coverage = classifyTripCoverage(
-      geofences,
-      pickup,
-      destination,
-    );
-    const route = await trustedRoute(pickup, destination, restrictions);
-    const pricing = fareSnapshot(
-      fareDocument.exists ? fareDocument.data() : null,
-    );
-    const distanceMeters = route.distanceMeters;
-    const fareBreakdown = calculateFareBreakdown({
-      config: pricing,
+    let authoritative = null;
+    const suppliedQuoteToken = typeof request.data?.quoteToken === 'string'
+      ? request.data.quoteToken.trim()
+      : '';
+    if (goService.quotesEnabled()) {
+      try {
+        authoritative = await authoritativeGoBookingQuote({
+          actorId: uid,
+          pickup,
+          destination,
+          additionalPassengers,
+          baggageCount,
+          quoteToken: suppliedQuoteToken,
+        });
+      } catch (error) {
+        if (suppliedQuoteToken) throw goQuoteHttpsError(error);
+        logger.warn('Go booking quote failed; using the Node safety path.', {
+          bookingId,
+          error: error?.message || String(error),
+        });
+      }
+    }
+    if (!authoritative) {
+      const [fareDocument, geofenceDocuments, restrictionDocuments] =
+        await Promise.all([
+        db.collection('settings').doc('fare_config').get(),
+        db.collection('geofences').limit(500).get(),
+        db.collection('routeRestrictions')
+          .where('isActive', '==', true)
+          .limit(200)
+          .get(),
+      ]);
+      const geofences = geofenceDocuments.docs.map((document) => ({
+        id: document.id,
+        ...document.data(),
+      }));
+      const restrictions = restrictionDocuments.docs.map((document) => ({
+        id: document.id,
+        ...document.data(),
+      })).filter((restriction) =>
+        restriction.isActive !== false &&
+        ((['no_service_area', 'restricted_crossing'].includes(restriction.type) &&
+          restriction.geometryType !== 'corridor') ||
+         (restriction.type === 'prohibited_highway' &&
+          restriction.geometryType === 'corridor')));
+      const coverage = classifyTripCoverage(
+        geofences,
+        pickup,
+        destination,
+      );
+      const route = await trustedRoute(pickup, destination, restrictions);
+      const pricing = fareSnapshot(
+        fareDocument.exists ? fareDocument.data() : null,
+      );
+      const distanceMeters = route.distanceMeters;
+      const fareBreakdown = calculateFareBreakdown({
+        config: pricing,
+        distanceMeters,
+        additionalPassengers,
+        baggageCount,
+        isOutsideToda: coverage.isOutsideToda,
+      });
+      authoritative = {
+        coverage,
+        route,
+        pricing,
+        distanceMeters,
+        fareBreakdown,
+        estimatedFare: fareBreakdown.total,
+      };
+    }
+    const {
+      coverage,
+      route,
+      pricing,
       distanceMeters,
-      additionalPassengers,
-      baggageCount,
-      isOutsideToda: coverage.isOutsideToda,
-    });
-    const estimatedFare = fareBreakdown.total;
+      fareBreakdown,
+      estimatedFare,
+    } = authoritative;
     const searchExpiresAt = Timestamp.fromMillis(
       Date.now() + bookingSearchDurationMs,
     );

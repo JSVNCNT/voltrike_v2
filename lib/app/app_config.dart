@@ -14,7 +14,7 @@ class AppConfig {
   static const String version = '1.0.0';
   static const int clientProtocolVersion = 3;
   static const int bookingSchemaVersion = 2;
-  static const int expectedFunctionsProtocolVersion = 3;
+  static const int expectedFunctionsProtocolVersion = 4;
 
   static const bool isProduction = false;
 
@@ -28,21 +28,17 @@ class AppConfig {
   // Splash
   // ---------------------------------------------------------------------------
 
-  static const Duration minimumSplashDuration =
-      Duration(seconds: 2);
+  static const Duration minimumSplashDuration = Duration(seconds: 2);
 
   // ---------------------------------------------------------------------------
   // Animation
   // ---------------------------------------------------------------------------
 
-  static const Duration fastAnimation =
-      Duration(milliseconds: 150);
+  static const Duration fastAnimation = Duration(milliseconds: 150);
 
-  static const Duration normalAnimation =
-      Duration(milliseconds: 300);
+  static const Duration normalAnimation = Duration(milliseconds: 300);
 
-  static const Duration slowAnimation =
-      Duration(milliseconds: 500);
+  static const Duration slowAnimation = Duration(milliseconds: 500);
 
   // ---------------------------------------------------------------------------
   // Maps
@@ -56,8 +52,7 @@ class AppConfig {
   // Booking
   // ---------------------------------------------------------------------------
 
-  static const Duration bookingTimeout =
-      Duration(seconds: 60);
+  static const Duration bookingTimeout = Duration(seconds: 60);
 
   // ---------------------------------------------------------------------------
   // Firestore
@@ -71,8 +66,7 @@ class AppConfig {
 
   static const String passengersCollection = 'passengers';
 
-  static const String notificationsCollection =
-      'notifications';
+  static const String notificationsCollection = 'notifications';
 
   static const String ratingsCollection = 'ratings';
 
@@ -80,6 +74,5 @@ class AppConfig {
 
   static const String pricingCollection = 'pricing';
 
-  static const String geofenceCollection =
-      'geofences';
+  static const String geofenceCollection = 'geofences';
 }

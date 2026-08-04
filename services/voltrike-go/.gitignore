@@ -1,0 +1,4 @@
+.gocache/
+coverage.out
+/voltrike-go
+/voltrike-go.exe

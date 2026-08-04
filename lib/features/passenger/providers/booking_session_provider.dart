@@ -42,6 +42,9 @@ class BookingSession {
     this.baggageCount = 0,
     this.isOutsideToda = false,
 
+    this.goQuoteToken = '',
+    this.goQuoteExpiresAt,
+
     this.hasRoute = false,
   });
 
@@ -103,6 +106,10 @@ class BookingSession {
   /// Whether the trip is outside the TODA boundary.
   final bool isOutsideToda;
 
+  /// Opaque, short-lived token issued through the private Go quote gateway.
+  final String goQuoteToken;
+  final DateTime? goQuoteExpiresAt;
+
   /// True when pickup, destination, and route exist.
   final bool hasRoute;
 
@@ -129,6 +136,9 @@ class BookingSession {
     int? additionalPassengers,
     int? baggageCount,
     bool? isOutsideToda,
+    String? goQuoteToken,
+    DateTime? goQuoteExpiresAt,
+    bool clearGoQuoteExpiry = false,
     bool? hasRoute,
   }) {
     return BookingSession(
@@ -155,6 +165,10 @@ class BookingSession {
       additionalPassengers: additionalPassengers ?? this.additionalPassengers,
       baggageCount: baggageCount ?? this.baggageCount,
       isOutsideToda: isOutsideToda ?? this.isOutsideToda,
+      goQuoteToken: goQuoteToken ?? this.goQuoteToken,
+      goQuoteExpiresAt: clearGoQuoteExpiry
+          ? null
+          : goQuoteExpiresAt ?? this.goQuoteExpiresAt,
       hasRoute: hasRoute ?? this.hasRoute,
     );
   }
@@ -195,6 +209,8 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       boundarySurcharge: 0,
       estimatedFare: 0,
       isOutsideToda: false,
+      goQuoteToken: '',
+      clearGoQuoteExpiry: true,
       hasRoute: false,
     );
   }
@@ -221,6 +237,8 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       boundarySurcharge: 0,
       estimatedFare: 0,
       isOutsideToda: false,
+      goQuoteToken: '',
+      clearGoQuoteExpiry: true,
       hasRoute: false,
     );
   }

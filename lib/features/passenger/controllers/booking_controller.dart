@@ -122,7 +122,16 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
       _retryBooking = booking;
       _retryFingerprint = fingerprint;
 
-      final creationResult = await _bookingRepository.createBooking(booking);
+      final creationResult = await _bookingRepository.createBooking(
+        booking,
+        goQuoteToken:
+            session.goQuoteExpiresAt?.isAfter(
+                  DateTime.now().add(const Duration(seconds: 5)),
+                ) ==
+                true
+            ? session.goQuoteToken
+            : '',
+      );
 
       _clearCreationRetry();
       state = const AsyncData(null);

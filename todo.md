@@ -1189,3 +1189,34 @@ analysis and planning only.
 - [ ] Add read-only restriction overlays to all idle passenger and driver map
   surfaces, including highway centreline groups, without treating corridors as
   endpoint-blocking red polygons.
+
+## Go private compute/read-plane implementation - 2026-08-04
+
+Active record: use `go_todo.md` as the detailed design. This entry covers the
+approved no-PostgreSQL implementation only. The Admin React frontend remains
+on Render; Firebase Functions stay the public callable and transaction layer;
+the new Go service is private Cloud Run work and is never called directly by
+the browser or Flutter in this phase.
+
+- [x] Correct the current Functions diagnostics protocol mismatch before adding
+  an internal Node-to-Go protocol.
+- [x] Add the root Go service with bounded HTTP handling, typed contracts,
+  health/version endpoints, request deadlines, panic-safe errors, and tests.
+- [x] Add a Node client and `off`/`on` feature modes. In `on`, Node validates
+  callers but does not duplicate Go-owned policy, Google Routes, or dispatch
+  candidate reads.
+- [x] Add a signed, short-lived authoritative quote path. It must preserve old
+  `createBookingLifecycle` clients, retain Node booking/idempotency/audit
+  transactions, and avoid a new Firestore quote record unless audit policy
+  explicitly requires one.
+- [x] Add a bounded revisioned policy cache/bundle path and invalidation hook
+  for fare/geofence/restriction data. Firestore remains the Admin edit source.
+- [x] Add RTDB spatial-cell dispatch candidates and compact eligibility data;
+  remove the Node full-location-root scan only when Go dispatch mode is on.
+- [ ] Finish the remaining full-history cursor pagination and offer display
+  snapshots in a separate measured UI-contract phase. This implementation did
+  reduce earnings, rating, dispatch, quote-policy, and Admin report reads.
+- [x] Run source-level Dart/Node/Go tests and static analysis/build checks. No
+  ADB, deployment, local integration emulator, or manual device test was run.
+- [x] Append verified completion, limitations, and manual Cloud Run/Firebase/
+  Render deployment commands to the bottom of `done.md` after implementation.

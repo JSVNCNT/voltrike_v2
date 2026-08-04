@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/services/fare_service.dart';
+import '../../../../core/services/go_service_bridge.dart';
 import '../../../../core/services/places_service.dart';
 import '../../../../core/services/polyline_service.dart';
 import '../../../../core/services/route_restriction_service.dart';
@@ -172,9 +173,87 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         boundarySurcharge: 0,
         estimatedFare: 0,
         isOutsideToda: false,
+        goQuoteToken: '',
+        clearGoQuoteExpiry: true,
         hasRoute: false,
       ),
     );
+
+    try {
+      final goQuote = await GoServiceBridge.instance.tryBookingQuote(
+        pickup: pickup,
+        destination: destination,
+        additionalPassengers: previousSession.additionalPassengers,
+        baggageCount: previousSession.baggageCount,
+      );
+      if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+        return;
+      }
+      if (goQuote != null) {
+        final routePoints = PolylineService.decodePolyline(
+          goQuote.encodedPolyline,
+        );
+        final breakdown = goQuote.fareBreakdown;
+        double component(String key) {
+          final value = breakdown[key];
+          return value is num && value.isFinite ? value.toDouble() : 0;
+        }
+
+        final routeAdvisory = goQuote.routePolicy.hasNotice
+            ? goQuote.routePolicy.passengerMessage
+            : '';
+        sessionNotifier.update(
+          ref
+              .read(bookingSessionProvider)
+              .copyWith(
+                pickup: pickup,
+                pickupName: pickupName,
+                pickupAddress: pickupAddress,
+                destination: destination,
+                destinationName: destinationName,
+                destinationAddress: destinationAddress,
+                routePoints: routePoints,
+                routeAdvisory: routeAdvisory,
+                routePolicy: goQuote.routePolicy,
+                distanceMeters: goQuote.distanceMeters,
+                duration: goQuote.durationMinutes == null
+                    ? goQuote.estimatedDuration
+                    : '${goQuote.durationMinutes} mins',
+                baseFare: component('baseFare'),
+                distanceFare: component('distanceFare'),
+                additionalPassengerFee: component('additionalPassengerFare'),
+                baggageFee: component('baggageFare'),
+                boundarySurcharge: component('boundarySurcharge'),
+                estimatedFare: goQuote.estimatedFare,
+                isOutsideToda: goQuote.isOutsideToda,
+                goQuoteToken: goQuote.quoteToken,
+                goQuoteExpiresAt: goQuote.quoteExpiresAt,
+                hasRoute: true,
+              ),
+        );
+        ref.read(bookingProvider.notifier).reset();
+        if (goQuote.isOutsideToda) {
+          _showCoverageWarning(
+            'This trip crosses or falls outside configured TODA coverage. '
+            'The â‚±${component('boundarySurcharge').toStringAsFixed(2)} '
+            'Outside TODA surcharge is included in the estimate.',
+          );
+        }
+        return;
+      }
+    } on GoQuoteException catch (error) {
+      if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+        return;
+      }
+      ref.read(bookingProvider.notifier).reset();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+      return;
+    } on FormatException {
+      // A malformed bridge route is treated as unavailable. The existing
+      // client path below remains the safe compatibility path.
+    }
 
     final TodaCoverageDecision coverage;
     try {
@@ -372,6 +451,8 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         .update(
           session.copyWith(
             additionalPassengers: session.additionalPassengers + 1,
+            goQuoteToken: '',
+            clearGoQuoteExpiry: true,
           ),
         );
 
@@ -390,6 +471,8 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         .update(
           session.copyWith(
             additionalPassengers: session.additionalPassengers - 1,
+            goQuoteToken: '',
+            clearGoQuoteExpiry: true,
           ),
         );
 
@@ -406,7 +489,13 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
     ref
         .read(bookingSessionProvider.notifier)
-        .update(session.copyWith(baggageCount: session.baggageCount + 1));
+        .update(
+          session.copyWith(
+            baggageCount: session.baggageCount + 1,
+            goQuoteToken: '',
+            clearGoQuoteExpiry: true,
+          ),
+        );
 
     _recalculateFare();
   }
@@ -420,7 +509,13 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
     ref
         .read(bookingSessionProvider.notifier)
-        .update(session.copyWith(baggageCount: session.baggageCount - 1));
+        .update(
+          session.copyWith(
+            baggageCount: session.baggageCount - 1,
+            goQuoteToken: '',
+            clearGoQuoteExpiry: true,
+          ),
+        );
 
     _recalculateFare();
   }

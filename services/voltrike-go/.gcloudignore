@@ -1,0 +1,5 @@
+.git
+.gitignore
+.gocache
+coverage.out
+README.md

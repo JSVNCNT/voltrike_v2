@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../core/constants/firestore_constants.dart';
 import '../models/booking.dart';
@@ -22,10 +23,16 @@ class DriverEarningsAggregate {
 }
 
 class DriverEarningsRepository {
-  DriverEarningsRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  DriverEarningsRepository({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions =
+           functions ??
+           FirebaseFunctions.instanceFor(region: 'asia-southeast1');
 
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
 
   CollectionReference<Map<String, dynamic>> get _bookings =>
       _firestore.collection(FirestoreConstants.bookings);
@@ -170,6 +177,26 @@ class DriverEarningsRepository {
     String driverId, {
     DateTime? now,
   }) async {
+    if (now == null) {
+      try {
+        final response = await _functions
+            .httpsCallable('getDriverEarningsSummary')
+            .call<Map<Object?, Object?>>();
+        return _aggregateFromCallable(response.data);
+      } on FirebaseFunctionsException catch (error) {
+        if (!const {
+          'not-found',
+          'unimplemented',
+          'unavailable',
+          'internal',
+          'deadline-exceeded',
+        }.contains(error.code)) {
+          rethrow;
+        }
+        // Compatibility for an app installed before the new callable is
+        // deployed. The server aggregate becomes the normal path afterward.
+      }
+    }
     final bookings = await _loadCompleted(driverId);
     final current = now ?? DateTime.now();
     final dayStart = DateTime(current.year, current.month, current.day);
@@ -197,6 +224,32 @@ class DriverEarningsRepository {
       total: total,
       completedTrips: bookings.length,
       averageNetEarnings: bookings.isEmpty ? 0 : total / bookings.length,
+    );
+  }
+
+  DriverEarningsAggregate _aggregateFromCallable(Object? value) {
+    final data = value is Map
+        ? value.map((key, item) => MapEntry(key.toString(), item))
+        : const <String, dynamic>{};
+    double money(String key) {
+      final value = data[key];
+      if (value is num && value.isFinite) return value.toDouble();
+      throw FormatException('Earnings summary is missing $key.');
+    }
+
+    final completed = data['completedTrips'];
+    if (completed is! num || !completed.isFinite || completed < 0) {
+      throw const FormatException(
+        'Earnings summary has an invalid trip count.',
+      );
+    }
+    return DriverEarningsAggregate(
+      today: money('today'),
+      week: money('week'),
+      month: money('month'),
+      total: money('total'),
+      completedTrips: completed.toInt(),
+      averageNetEarnings: money('averageNetEarnings'),
     );
   }
 

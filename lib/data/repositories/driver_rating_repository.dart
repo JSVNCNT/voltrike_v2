@@ -74,16 +74,7 @@ class DriverRatingRepository {
     required String bookingId,
     required String passengerId,
   }) async {
-    final snapshot = await _firestoreService.firestore
-        .collection(_collection)
-        .where('passengerId', isEqualTo: passengerId)
-        .get();
-    for (final document in snapshot.docs) {
-      if (document.data()['bookingId'] == bookingId) {
-        return DriverRating.fromFirestore(document);
-      }
-    }
-    return null;
+    return getRating('${bookingId}_$passengerId');
   }
 
   //==========================================================================
@@ -94,6 +85,8 @@ class DriverRatingRepository {
     return _firestoreService.firestore
         .collection(_collection)
         .where('driverId', isEqualTo: driverId)
+        .orderBy('createdAt', descending: true)
+        .limit(3)
         .snapshots()
         .map((snapshot) {
           final ratings = snapshot.docs

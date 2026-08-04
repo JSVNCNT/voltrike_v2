@@ -56,6 +56,14 @@
     "driver_tracking_access": {
       ".read": false,
       ".write": false
+    },
+    "dispatchCells": {
+      ".read": false,
+      ".write": false
+    },
+    "dispatchDriverCells": {
+      ".read": false,
+      ".write": false
     }
   }
 }

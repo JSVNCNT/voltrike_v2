@@ -137,13 +137,16 @@ class BookingRepository {
   // Create Booking
   //==========================================================================
 
-  Future<BookingCreationResult> createBooking(Booking booking) async {
+  Future<BookingCreationResult> createBooking(
+    Booking booking, {
+    String goQuoteToken = '',
+  }) async {
     final key = 'create:${booking.bookingId}';
     final existing = _inFlightCreations[key];
     if (existing != null) return existing;
 
     final operationId = _operationIdFor(key);
-    final future = _createBooking(booking, operationId);
+    final future = _createBooking(booking, operationId, goQuoteToken);
     _inFlightCreations[key] = future;
     try {
       final result = await future;
@@ -159,6 +162,7 @@ class BookingRepository {
   Future<BookingCreationResult> _createBooking(
     Booking booking,
     String operationId,
+    String goQuoteToken,
   ) async {
     final response = await _functions
         .httpsCallable('createBookingLifecycle')
@@ -181,6 +185,7 @@ class BookingRepository {
           'baggageCount': booking.baggageCount,
           'isOutsideToda': booking.isOutsideToda,
           'clientRouteAdvisory': booking.routePolicy.toMap(),
+          if (goQuoteToken.isNotEmpty) 'quoteToken': goQuoteToken,
         });
     return BookingCreationResult.fromCallable(response.data, fallback: booking);
   }

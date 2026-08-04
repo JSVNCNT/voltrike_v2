@@ -586,3 +586,178 @@ The audit found an existing version mismatch unrelated to Go:
 4. Adopt G8 PostgreSQL/PostGIS only when measurements show that the Firebase-centered design remains too expensive or limiting.
 
 The most aggressive technically sound end state is Go + PostgreSQL/PostGIS with Firebase retained for Auth, App Check, FCM, Storage, Hosting, and temporary compatibility projections. It is also the highest-risk and may cost more at VolTrike's current scale, so it must be a measured architecture decision rather than the first implementation step.
+
+## 27. No-PostgreSQL transition rule: one read owner per feature
+
+The first Go implementation must not make Node and Go perform the same normal-path Firebase reads. For every migrated feature, assign one owner for each type of data:
+
+| Feature data | Owner after Go cutover | Node responsibility |
+| --- | --- | --- |
+| Fare, geofence, restriction, and PSGC policy snapshots | Go revisioned bundle/cache | Auth, input validation, callable compatibility, final booking transaction only |
+| Google Routes request and route-policy evaluation | Go | Return/map result; do not request Routes again |
+| Nearby-driver candidate search and ranking | Go + RTDB spatial cells | Dispatch lease, offer writes, acceptance arbitration, final winner validation |
+| Dashboard/earnings/ratings summaries | Go-backed aggregate/read model | Scope checks and stable callable response |
+| Booking, operation, active-booking lock, audit, settlement transaction records | Node/Firestore | Sole command and transaction authority until an explicit later ownership migration |
+
+Node must not directly read a collection merely to re-check a value that Go owns for the current feature. Node still performs the small set of Firestore reads required for an atomic booking/offer/settlement transaction; those are correctness reads, not duplicated policy/search reads.
+
+### Mode rules
+
+- `off`: Node uses the current implementation; Go is not called.
+- `shadow`: Node and Go may both read/compute only for a small sampled, time-limited comparison population. This intentionally costs more and must never be the permanent mode.
+- `on`: Go is the normal read/compute owner. Node calls Go once and does not repeat Go-owned reads or external requests.
+- Exceptional fallback: a quote/dispatch request may use the legacy Node path only when Go is unavailable. This is logged and measured. It is an outage fallback, not normal operation.
+- Authoritative future commands cannot use an automatic dual-writer fallback. They require explicit ownership transfer; that is outside the first no-PostgreSQL phase.
+
+## 28. Exact no-PostgreSQL plan for the booking quote
+
+### Current normal path
+
+```text
+Flutter preview -> Google Routes + local policy reads
+Flutter createBookingLifecycle -> Node reads fare + geofences + restrictions
+                               -> Node calls Google Routes again
+                               -> Node writes booking transaction
+```
+
+### Target normal path, with Go enabled
+
+```text
+Flutter preview / booking request
+        -> existing createBookingLifecycle callable
+        -> Node validates caller and request
+        -> Go quote service
+             -> cached immutable policy bundle
+             -> one Google Routes request
+             -> route, coverage, restriction, and centavo quote result
+        -> Node performs only booking/lock/operation transaction reads+writes
+        -> response includes the authoritative route/fare result
+```
+
+- [ ] Keep Firestore as the Admin edit authority for fare, TODA geofences, and restrictions.
+- [ ] After a successful Admin policy change, build one compact versioned policy bundle in Cloud Storage/Hosting and publish its revision to Go through a trusted invalidation event.
+- [ ] The Go request path loads the bundle once on cold start or revision change, validates it completely, then serves it from bounded process memory.
+- [ ] Do not have Node read `fare_config`, all geofences, or all active restrictions when Go quote mode is on.
+- [ ] Do not have Node call Google Routes when Go quote mode is on.
+- [ ] Continue storing the final fare snapshot, route, policy version, and audit details in the booking transaction exactly as the durable record.
+- [ ] For a pre-booking quote, return a short-lived encrypted/signed opaque quote token bound to UID, normalized request hash, expiry, fare/policy revision, and route result. Avoid a new Firestore quote document unless a product requirement needs separately persisted quote audit history.
+- [ ] When booking consumes the token, Node asks Go to validate/decrypt it; Go checks expiry and current policy revision from its cache. Node then commits the existing transaction without rereading the whole policy dataset.
+- [ ] Keep legacy no-token booking requests working by having Node obtain an on-demand Go quote internally. This preserves old clients while still avoiding Node's duplicate policy/Routes work.
+- [ ] Let new Flutter builds request the Go-backed quote before showing the final preview. This removes the second Google Routes request as well as server-side duplicate Firebase policy reads.
+- [ ] A policy update invalidates old unconsumed quotes. A short quote lifetime bounds the transition even if an invalidation is delayed.
+
+The booking transaction still reads the user, booking ID, active-booking lock, and idempotency operation. Those reads are necessary to prevent duplicate/invalid bookings and should not be removed for cost reasons.
+
+## 29. Exact no-PostgreSQL plan for dispatch
+
+### Current normal path
+
+```text
+Node dispatch -> up to 500 Firestore driver records
+              -> complete RTDB driver_locations root
+              -> user/TODA/vehicle documents for nearby candidates
+              -> rank and create offers
+```
+
+### Target normal path, with Go enabled
+
+```text
+Driver location update -> compact RTDB spatial-cell record
+Booking dispatch -> Node gateway -> Go reads only pickup-neighbor cells
+                              -> Go returns bounded ranked candidate IDs
+                 -> Node creates offers and later validates the accepting winner
+```
+
+- [ ] Build a stable geohash/spatial-cell scheme and strict location expiry/accuracy rules.
+- [ ] Maintain compact `dispatchCells/{cell}/{driverId}` RTDB records containing only fields needed to find/rank a candidate.
+- [ ] Update a driver's cell membership idempotently when location, online status, vehicle approval, TODA, or availability changes.
+- [ ] Keep a compact server-maintained dispatch eligibility snapshot so Go does not fetch user, TODA, and vehicle documents for hundreds of candidates at dispatch time.
+- [ ] Allow Go to read only the few cells around pickup and return a capped candidate list.
+- [ ] Remove Node's `driver_locations` root read and full candidate ranking when Go dispatch mode is on.
+- [ ] Keep Node's final transaction validation for the driver who accepts an offer. This small final validation protects against stale presence/index data.
+- [ ] Measure the extra RTDB index-update bandwidth against the eliminated full-root downloads; promote only when it is favorable.
+
+## 30. Read models without PostgreSQL
+
+Go is not required for every read reduction. Use the least expensive correct mechanism.
+
+- [ ] Histories: use direct Firestore cursor pagination from Flutter when a page is sufficient; moving the same query through Go does not reduce Firestore reads.
+- [ ] Earnings/ratings/Admin totals: maintain a small authoritative aggregate document when its read frequency outweighs its additional completion-time write.
+- [ ] Go can cache and return those aggregates for Admin/report traffic, but it must not refetch all raw bookings for every request.
+- [ ] Driver offers: use a denormalized display snapshot in the offer document and retain the lightweight real-time stream.
+- [ ] Configuration: use Go's revisioned policy bundle cache, because it prevents many repeated backend policy reads with no new Firestore query per quote.
+- [ ] Keep Firestore as the durable booking and settlement store in this phase. No Cloud SQL, SQL Connect, Redis, or PostGIS is required.
+
+## 31. No-PostgreSQL cost guardrails
+
+- [ ] Use request-based Cloud Run with minimum instances set to zero for the first Go service.
+- [ ] Keep the service in the same region as the existing Functions/database boundary.
+- [ ] Use one service with bounded concurrency and an in-memory policy cache; do not add Redis/Memorystore merely for convenience.
+- [ ] Keep Cloud Storage policy bundles small, immutable, and revisioned; one Admin change should produce one bundle update, not one bundle per request.
+- [ ] Sample shadow comparisons, for example by controlled percentage and time window, instead of shadowing every production request indefinitely.
+- [ ] Emit `node_legacy_reads`, `go_policy_bundle_loads`, `go_cache_hits`, `go_cache_misses`, `routes_requests`, `dispatch_cell_bytes`, and `fallback_count` metrics.
+- [ ] Compare the total of Functions + Cloud Run + Firebase reads/downloads before and after each cutover. Do not call a migration a saving merely because Firestore reads moved to Cloud Run.
+- [ ] Do not enable a minimum Cloud Run instance, distributed cache, or PostgreSQL until measurement shows its fixed cost is justified.
+
+## 32. First no-PostgreSQL implementation order
+
+1. Correct the existing Functions protocol-version mismatch.
+2. Create the private Go service and Node client in `off` mode.
+3. Implement versioned policy bundle build/invalidation and Go cache tests.
+4. Run sampled quote shadow parity only long enough to establish correctness.
+5. Turn on Go quote ownership: Node stops its duplicate configuration/Routes reads.
+6. Add the Flutter pre-booking quote UI so the client also stops its duplicate Google Routes request.
+7. Implement paginated histories, offer snapshots, and aggregate summaries.
+8. Build the RTDB spatial-cell dispatch index, shadow it, then turn on Go candidate ownership.
+9. Review measured Blaze billing and only then decide whether PostgreSQL/PostGIS is needed.
+
+## 33. Implementation checkpoint - 2026-08-04
+
+The approved no-PostgreSQL implementation is code-complete and source-test
+verified. Deployment and passenger/driver device validation remain manual.
+
+- [x] Added `services/voltrike-go` as a private Cloud Run Go service with
+  bounded HTTP input, deadlines, panic recovery, health metadata, cached
+  Firestore fare/geofence/restriction policy, Google Routes ownership, opaque
+  short-lived quote tokens, and bounded RTDB spatial-cell lookup.
+- [x] Added Firebase Functions as the only public gateway. It authenticates
+  Flutter/Admin callers, invokes Cloud Run with an IAM ID token, retains all
+  booking/ride/settlement/commission writes, validates Go fare parity, and has
+  explicit `off`/`on` quote and dispatch modes.
+- [x] Added the Flutter `GoServiceBridge` over Firebase callable Functions with
+  legacy Dart fallback for a missing/disabled/unavailable backend. No native
+  `go_bridge` package and no direct mobile-to-Cloud-Run connection were added.
+- [x] Added compact RTDB dispatch cells maintained from driver-location writes.
+  Go returns capped nearby IDs; Node still loads only those candidates and
+  performs final eligibility, ranking, offer, and acceptance checks.
+- [x] Reduced driver-earnings reads with Firestore aggregation, reduced rating
+  reads with deterministic direct lookup and a three-item recent stream, and
+  corrected the scoped TODA commission report query/order path.
+- [x] Kept the Admin React frontend on Render with its existing authenticated
+  Firebase callable contract. Admin does not contain a Go URL or credential;
+  commission and settlement authority remain Node/Firestore.
+- [x] Added `services/voltrike-go/DEPLOYMENT.md` with private Cloud Run IAM,
+  secrets, staged Firebase deployment, health verification, and off/on rollout
+  commands. Firebase Hosting is intentionally excluded.
+- [x] Verified Go tests/vet/build, 93 Node tests plus syntax checking, all 206
+  Flutter tests, Flutter analysis (full before final read-model edits and
+  focused afterward), and the Admin production build.
+- [ ] Run the staged production deploy and manual two-account booking/dispatch/
+  ride/settlement/commission checks. These are intentionally deferred to the
+  user's deployment and next manual-testing chat.
+- [ ] Add trip-history cursor pagination and booking-offer display snapshots in
+  a later measured phase. These change visible UI contracts and were not mixed
+  into this backend cutover.
+
+Implementation deviations from the earlier exploratory plan:
+
+- A revision-hashed, bounded in-memory policy cache reads Firestore on miss and
+  is invalidated after relevant Admin writes. No Cloud Storage bundle writer or
+  Redis dependency was introduced.
+- The production switch is `off`/`on`, not long-running shadow duplication.
+  This avoids paying both Node and Go reads. Limited legacy fallback remains
+  only for service unavailability; invalid client-supplied quote tokens fail
+  closed.
+- Compact dispatch cells intentionally carry location/presence only. Node
+  fetches the capped candidate documents for authoritative eligibility instead
+  of duplicating sensitive driver profiles into RTDB.
