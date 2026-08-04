@@ -89,6 +89,13 @@ void main() {
       ]),
       isNull,
     );
+    expect(
+      RouteRestrictionMatcher.distanceToHighwayCorridorMeters(
+        const LatLng(10.67002, 122.9420),
+        restriction,
+      ),
+      lessThan(25),
+    );
   });
 
   for (final type in const [

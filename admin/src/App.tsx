@@ -1424,13 +1424,11 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
             </span>
             <span>{item.notes || 'No operational guidance supplied'}</span>
             <span className={item.isActive ? 'warning' : 'ok'}>
-              {item.type === 'prohibited_highway'
-                ? item.isActive
-                  ? 'Legacy active status · not enforced'
-                  : 'Legacy disabled status · retained for audit'
-                : item.isActive
-                  ? 'Active in route and live-driver checks'
-                  : 'Disabled and retained for audit'}
+              {item.isActive
+                ? item.type === 'prohibited_highway'
+                  ? 'Active in route checks and driver highway warnings'
+                  : 'Active in route and live-driver checks'
+                : 'Disabled and retained for audit'}
             </span>
             <span className="actions"><button onClick={() => toggle(item)}>{item.isActive ? 'Disable' : 'Enable'}</button></span>
           </div>;

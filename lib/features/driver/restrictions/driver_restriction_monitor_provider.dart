@@ -163,6 +163,29 @@ class DriverRestrictionMonitorController
     final restrictions = await _restrictionService.activeRestrictions();
     if (!_isCurrentOnlineSession(onlineSession)) return;
     final point = locationState.location!;
+    final highwayAtCurrentLocation = restrictions
+        .where(RouteRestrictionMatcher.isHighwayCorridor)
+        .where(
+          (restriction) =>
+              RouteRestrictionMatcher.distanceToHighwayCorridorMeters(
+                point,
+                restriction,
+              ) <=
+              restriction.bufferMeters,
+        )
+        .firstOrNull;
+    if (highwayAtCurrentLocation != null &&
+        state.highwayRestriction?.id != highwayAtCurrentLocation.id) {
+      state = state.copyWith(
+        highwayRestriction: highwayAtCurrentLocation,
+        clearReportError: true,
+      );
+      await HapticFeedback.selectionClick();
+      await _notificationService.showDriverRestrictionAlert(
+        restrictionName: highwayAtCurrentLocation.name,
+        inside: false,
+      );
+    }
     final highwayWarning = _highwayEngine.evaluate(
       point: point,
       accuracyMeters: accuracyMeters,
@@ -182,6 +205,7 @@ class DriverRestrictionMonitorController
         inside: false,
       );
     } else if (highwayWarning == null &&
+        highwayAtCurrentLocation == null &&
         _highwayEngine.current == null &&
         state.highwayRestriction != null) {
       state = state.copyWith(clearHighwayRestriction: true);

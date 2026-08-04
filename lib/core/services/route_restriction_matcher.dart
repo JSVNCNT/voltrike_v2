@@ -112,6 +112,18 @@ class RouteRestrictionMatcher {
     return total;
   }
 
+  /// Distance to the closest centreline of an active highway group. This is
+  /// for a low-severity "already on a highway" warning; it is never an
+  /// endpoint ban or confirmed driving violation.
+  static double distanceToHighwayCorridorMeters(
+    LatLng point,
+    RouteRestriction restriction,
+  ) {
+    if (!isHighwayCorridor(restriction)) return double.infinity;
+    return _closestCorridorSegment(point, restriction.areas)?.distanceMeters ??
+        double.infinity;
+  }
+
   static RouteRestrictionProximity pointProximity(
     LatLng point,
     List<RouteRestriction> restrictions, {
