@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:uuid/uuid.dart';
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../../core/services/places_service.dart';

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 

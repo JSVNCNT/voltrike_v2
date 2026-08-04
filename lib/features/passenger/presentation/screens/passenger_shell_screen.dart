@@ -26,7 +26,7 @@ class PassengerShellScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activeBooking = ref.watch(activePassengerBookingProvider).valueOrNull;
+    final activeBooking = ref.watch(activePassengerBookingProvider).value;
 
     return BookingRouteCoordinator(
       role: BookingParticipantRole.passenger,

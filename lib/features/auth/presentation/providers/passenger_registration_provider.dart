@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../controllers/passenger_registration_controller.dart';
 import 'auth_provider.dart';

@@ -53,8 +53,8 @@ class _MapViewState extends ConsumerState<MapView> {
   Widget build(BuildContext context) {
     final location = ref.watch(passengerLocationProvider);
     final restrictions =
-        ref.watch(routeRestrictionsProvider).valueOrNull ?? const [];
-    final position = location.valueOrNull;
+        ref.watch(routeRestrictionsProvider).value ?? const [];
+    final position = location.value;
     final currentLocation = position == null
         ? null
         : LatLng(position.latitude, position.longitude);

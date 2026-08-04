@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../data/repositories/booking_repository.dart';
 import '../../auth/presentation/providers/auth_provider.dart';

@@ -53,7 +53,7 @@ class _DriverMapViewState extends ConsumerState<DriverMapView> {
   @override
   Widget build(BuildContext context) {
     final restrictions =
-        ref.watch(routeRestrictionsProvider).valueOrNull ?? const [];
+        ref.watch(routeRestrictionsProvider).value ?? const [];
     return Stack(
       children: [
         GoogleMap(

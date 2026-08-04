@@ -48,7 +48,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
   bool _bookingCreationInProgress = false;
 
   FareConfiguration get _fareConfiguration =>
-      ref.read(fareConfigurationProvider).valueOrNull ?? devFareConfiguration;
+      ref.read(fareConfigurationProvider).value ?? devFareConfiguration;
 
   //==========================================================================
   // Select Pickup
@@ -435,7 +435,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       previous,
       next,
     ) {
-      if (!next.hasValue || previous?.valueOrNull == next.valueOrNull) {
+      if (!next.hasValue || previous?.value == next.value) {
         return;
       }
       Future<void>.microtask(() {
