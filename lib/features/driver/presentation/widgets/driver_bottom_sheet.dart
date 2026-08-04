@@ -58,96 +58,98 @@ class DriverBottomSheet extends StatelessWidget {
             _isUsableAddress(pickupAddress) &&
             _isUsableAddress(destinationAddress));
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 48,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: colors.outlineVariant,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SwitchListTile(
-              value: isOnline,
-              onChanged: onOnlineChanged,
-              title: const Text('Driver Online'),
-              subtitle: Text(isOnline ? 'Receiving bookings' : 'Offline'),
-            ),
-            const SizedBox(height: 16),
-            if (!hasBooking)
-              Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text(
-                    offerCooldownSeconds > 0
-                        ? 'New booking offers resume in $offerCooldownSeconds seconds.'
-                        : 'Waiting for booking requests...',
-                    style: TextStyle(color: colors.onSurfaceVariant),
+    return Material(
+      color: colors.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 48,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: colors.outlineVariant,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
                 ),
-              )
-            else ...[
-              Text(
-                passengerName!,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text('Pickup: ${pickupAddress ?? '--'}'),
-              Text('Destination: ${destinationAddress ?? '--'}'),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(child: Text(estimatedFare ?? '--')),
-                  Expanded(
-                    child: Text(distance ?? '--', textAlign: TextAlign.end),
+                const SizedBox(height: 20),
+                SwitchListTile(
+                  value: isOnline,
+                  onChanged: onOnlineChanged,
+                  title: const Text('Driver Online'),
+                  subtitle: Text(isOnline ? 'Receiving bookings' : 'Offline'),
+                ),
+                const SizedBox(height: 16),
+                if (!hasBooking)
+                  Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Text(
+                        offerCooldownSeconds > 0
+                            ? 'New booking offers resume in $offerCooldownSeconds seconds.'
+                            : 'Waiting for booking requests...',
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                    ),
+                  )
+                else ...[
+                  Text(
+                    passengerName!,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
+                  const SizedBox(height: 8),
+                  Text('Pickup: ${pickupAddress ?? '--'}'),
+                  Text('Destination: ${destinationAddress ?? '--'}'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: Text(estimatedFare ?? '--')),
+                      Expanded(
+                        child: Text(distance ?? '--', textAlign: TextAlign.end),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  if (isOffer)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: onDeclineBooking,
+                            child: const Text('Decline'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: onAcceptBooking,
+                            child: const Text('Accept'),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    _ActiveRideControls(
+                      status: bookingStatus,
+                      onNavigate: onNavigate,
+                      onArrived: onArrived,
+                      onStartTrip: onStartTrip,
+                      onCompleteTrip: onCompleteTrip,
+                      onCancelTrip: onCancelTrip,
+                    ),
                 ],
-              ),
-              const SizedBox(height: 20),
-              if (isOffer)
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: onDeclineBooking,
-                        child: const Text('Decline'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: onAcceptBooking,
-                        child: const Text('Accept'),
-                      ),
-                    ),
-                  ],
-                )
-              else
-                _ActiveRideControls(
-                  status: bookingStatus,
-                  onNavigate: onNavigate,
-                  onArrived: onArrived,
-                  onStartTrip: onStartTrip,
-                  onCompleteTrip: onCompleteTrip,
-                  onCancelTrip: onCancelTrip,
-                ),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
