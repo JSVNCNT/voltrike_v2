@@ -1220,3 +1220,13 @@ the browser or Flutter in this phase.
   ADB, deployment, local integration emulator, or manual device test was run.
 - [x] Append verified completion, limitations, and manual Cloud Run/Firebase/
   Render deployment commands to the bottom of `done.md` after implementation.
+
+## Post-manual-test follow-ups - 2026-08-04
+
+- [ ] Deploy the Firestore composite index for the driver-rating feed:
+  `driverId` ascending and `createdAt` descending. The emulator log reported
+  this as a missing-index query; it is independent of the verified navigation
+  and swipe-control fixes.
+- [ ] Raise the Android compile SDK from 36 to 37 in a separate compatibility
+  change. `permission_handler_android` now declares compile SDK 37; debug APK
+  builds currently succeed with a warning.

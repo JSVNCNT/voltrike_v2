@@ -555,14 +555,17 @@ class _DriverBookingTrackingScreenState
             ),
           ),
           if (primaryAction != RidePrimaryAction.none)
-            SafeArea(
-              top: false,
-              minimum: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-              child: RideConfirmationSlider(
-                key: ValueKey(primaryAction),
-                action: primaryAction,
-                isLoading: isUpdatingRide,
-                onConfirmed: () => _advanceRide(booking),
+            SizedBox(
+              width: double.infinity,
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                child: RideConfirmationSlider(
+                  key: ValueKey(primaryAction),
+                  action: primaryAction,
+                  isLoading: isUpdatingRide,
+                  onConfirmed: () => _advanceRide(booking),
+                ),
               ),
             ),
         ],

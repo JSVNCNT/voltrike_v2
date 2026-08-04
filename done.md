@@ -1102,3 +1102,23 @@ implementation remains pending in the matching bottom section of `todo.md`.
   trip-history cursor pagination, offer display snapshots, PostgreSQL/PostGIS,
   Go-owned ride transitions or settlements, direct Admin/Flutter Cloud Run
   calls, and Firebase Hosting deployment.
+
+## Driver navigation and action-control manual fix - 2026-08-04
+
+- Manual passenger-phone and driver-emulator booking, chat, and call checks
+  completed without an app crash.
+- Produced and installed an x86_64-specific debug APK for the Android emulator;
+  the prior universal debug APK had only an ARM64 Flutter engine and therefore
+  could run on the Samsung phone but not the x86_64 emulator.
+- Fixed Google Navigation SDK callbacks reading Riverpod `ref` after the map
+  widget was deactivated by caching the controller while active and ignoring
+  callbacks after disposal begins.
+- Fixed the follow-up disposal error by deferring the route-provider reset until
+  after the current Flutter frame, rather than modifying provider state during
+  widget-tree construction.
+- Forced the driver ride-confirmation slider to the full available sheet width
+  in every lifecycle state, so `arrive` and `start trip` match the later
+  `confirm arrival` and `confirm cash received` controls.
+- Validation passed: focused Flutter analysis and all five
+  `ride_confirmation_slider_test.dart` widget tests. ADB retest showed neither
+  navigation lifecycle error after the fixes.

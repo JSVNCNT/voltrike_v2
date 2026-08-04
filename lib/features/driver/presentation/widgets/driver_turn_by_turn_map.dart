@@ -9,6 +9,7 @@ import '../../../../core/maps/voltrike_map.dart' as app_map;
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/services/route_restriction_service.dart';
 import '../../../../core/services/routes_service.dart';
+import '../../controllers/driver_navigation_controller.dart';
 import '../../providers/driver_navigation_provider.dart';
 
 /// Android driver guidance backed by Google Navigation SDK for Flutter.
@@ -38,6 +39,7 @@ class DriverTurnByTurnMap extends ConsumerStatefulWidget {
 class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
   navigation.GoogleNavigationViewController? _viewController;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
+  late final DriverNavigationController _navigationController;
 
   bool _sessionReady = false;
   bool _disposed = false;
@@ -56,6 +58,12 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
   @override
   void initState() {
     super.initState();
+    // Native Navigation SDK callbacks can outlive the Flutter element during
+    // route transitions. Capture the notifier while this element is active so
+    // those callbacks never read Riverpod's `ref` after deactivation.
+    _navigationController = ref.read(
+      driverNavigationControllerProvider.notifier,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_initializeSession());
     });
@@ -79,14 +87,17 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
     if (oldWidget.legKey != widget.legKey ||
         oldWidget.destination != widget.destination) {
       _routedLegKey = null;
-      unawaited(_setDestinationWhenReady());
+      // Route setup updates the navigation provider. didUpdateWidget runs
+      // during the parent rebuild, so defer it until that frame is complete.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _disposed) return;
+        unawaited(_setDestinationWhenReady());
+      });
     }
   }
 
   Future<void> _initializeSession() async {
-    final stateController = ref.read(
-      driverNavigationControllerProvider.notifier,
-    );
+    final stateController = _navigationController;
     stateController.markSdkStarting();
 
     try {
@@ -144,13 +155,11 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
         navigation
             .GoogleMapsNavigator.setOnRemainingTimeOrDistanceChangedListener(
           (event) {
-            if (!mounted) return;
-            ref
-                .read(driverNavigationControllerProvider.notifier)
-                .updateSdkProgress(
-                  remainingTimeSeconds: event.remainingTime,
-                  remainingDistanceMeters: event.remainingDistance,
-                );
+            if (!mounted || _disposed) return;
+            _navigationController.updateSdkProgress(
+              remainingTimeSeconds: event.remainingTime,
+              remainingDistanceMeters: event.remainingDistance,
+            );
           },
           remainingTimeThresholdSeconds: 5,
           remainingDistanceThresholdMeters: 25,
@@ -158,41 +167,35 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
       )
       ..add(
         navigation.GoogleMapsNavigator.setNavInfoListener((event) {
-          if (!mounted) return;
+          if (!mounted || _disposed) return;
           final current = event.navInfo.currentStep;
           final remaining = event.navInfo.remainingSteps;
-          ref
-              .read(driverNavigationControllerProvider.notifier)
-              .updateSdkInstructions(
-                instruction: current?.fullInstructions,
-                nextInstruction: remaining.isEmpty
-                    ? null
-                    : remaining.first.fullInstructions,
-                maneuver: current?.maneuver.name,
-              );
+          _navigationController.updateSdkInstructions(
+            instruction: current?.fullInstructions,
+            nextInstruction: remaining.isEmpty
+                ? null
+                : remaining.first.fullInstructions,
+            maneuver: current?.maneuver.name,
+          );
         }, numNextStepsToPreview: 1),
       )
       ..add(
         navigation.GoogleMapsNavigator.setOnReroutingListener(() {
-          if (!mounted) return;
-          ref
-              .read(driverNavigationControllerProvider.notifier)
-              .markSdkRerouting();
+          if (!mounted || _disposed) return;
+          _navigationController.markSdkRerouting();
           unawaited(_replaceAutomaticReroute());
         }),
       )
       ..add(
         navigation.GoogleMapsNavigator.setOnRouteChangedListener(() {
-          if (!mounted) return;
-          ref.read(driverNavigationControllerProvider.notifier).markSdkReady();
+          if (!mounted || _disposed) return;
+          _navigationController.markSdkReady();
         }),
       )
       ..add(
         navigation.GoogleMapsNavigator.setOnArrivalListener((_) {
-          if (!mounted) return;
-          ref
-              .read(driverNavigationControllerProvider.notifier)
-              .markSdkArrival(widget.destinationLabel);
+          if (!mounted || _disposed) return;
+          _navigationController.markSdkArrival(widget.destinationLabel);
         }),
       );
   }
@@ -218,10 +221,8 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
       await controller.followMyLocation(navigation.CameraPerspective.tilted);
       await _setDestinationWhenReady();
     } catch (error) {
-      if (!mounted) return;
-      ref
-          .read(driverNavigationControllerProvider.notifier)
-          .setSdkError(_friendlyError(error));
+      if (!mounted || _disposed) return;
+      _navigationController.setSdkError(_friendlyError(error));
     }
   }
 
@@ -235,9 +236,7 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
     }
 
     final epoch = ++_routeEpoch;
-    final stateController = ref.read(
-      driverNavigationControllerProvider.notifier,
-    );
+    final stateController = _navigationController;
     stateController.markSdkStarting();
 
     try {
@@ -365,7 +364,12 @@ class _DriverTurnByTurnMapState extends ConsumerState<DriverTurnByTurnMap> {
   void dispose() {
     _disposed = true;
     _routeEpoch++;
-    ref.read(driverNavigationControllerProvider.notifier).clearRoute();
+    // Disposing a platform view can happen while its parent is rebuilding.
+    // StateNotifier updates are not allowed during that phase, so reset the
+    // route immediately after the current frame instead.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigationController.clearRoute();
+    });
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }
