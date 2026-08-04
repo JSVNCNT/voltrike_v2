@@ -288,6 +288,7 @@ export interface RouteRestriction {
   areas?: Point[][];
   geometryVersion?: number;
   bufferMeters?: number;
+  minimumAlignedTravelMeters?: number;
   notes?: string;
   isActive: boolean;
 }

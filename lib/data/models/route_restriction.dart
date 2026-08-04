@@ -11,6 +11,7 @@ class RouteRestriction {
     this.geometryVersion = 1,
     this.geometryType = 'polygon',
     this.bufferMeters = 0,
+    this.minimumAlignedTravelMeters = 80,
     this.areas = const [],
     this.notes = '',
   });
@@ -22,6 +23,10 @@ class RouteRestriction {
   final int geometryVersion;
   final String geometryType;
   final int bufferMeters;
+
+  /// Highway corridors only: route travel parallel to the centreline must
+  /// exceed this distance before it is treated as prohibited highway travel.
+  final int minimumAlignedTravelMeters;
   final List<List<LatLng>> areas;
   final bool isActive;
   final String notes;
@@ -63,6 +68,8 @@ class RouteRestriction {
       areas: effectiveAreas,
       geometryType: data['geometryType'] as String? ?? 'polygon',
       bufferMeters: (data['bufferMeters'] as num?)?.round() ?? 0,
+      minimumAlignedTravelMeters:
+          (data['minimumAlignedTravelMeters'] as num?)?.round() ?? 80,
       isActive: data['isActive'] as bool? ?? false,
       notes: data['notes'] as String? ?? '',
     );

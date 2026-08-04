@@ -1024,3 +1024,23 @@ implementation remains pending in the matching bottom section of `todo.md`.
 - Preserved `developer_admin` as the backend role and `System Admin` as the
   frontend label. No Dart, Rust, TypeScript, JavaScript, Firebase rules,
   dependency, generated, or deployment changes were made.
+
+## Grouped highway polyline restrictions - 2026-08-04
+
+- Restored Developer Admin creation of `prohibited_highway` records as grouped
+  Mapbox polylines. A single named group can contain up to 20 curved segments;
+  no-service and restricted-driving MultiPolygons remain separate hard bans.
+- Added a configurable 5-200 m corridor buffer and 30-1000 m minimum aligned
+  travel distance. Booking route selection checks provider alternatives and
+  rejects only sustained travel roughly parallel to a highway centreline. A
+  perpendicular crossing does not count as highway driving.
+- Kept Google `avoidHighways` as an additional provider preference. The
+  authoritative Functions booking route and the Flutter route preview now use
+  the same grouped-highway semantics after their existing hard-polygon checks.
+- Added an online-driver, accurate-GPS, three-sample local warning with haptic
+  feedback once the driver has travelled along a configured highway long
+  enough. It is an operational safety alert only; it does not create an admin
+  violation case or claim a legally confirmed road-class breach.
+- Validation passed: Functions highway policy tests, Flutter highway matcher
+  and driver-monitor tests, focused Flutter analysis, and Admin `npm.cmd run
+  build`. Firebase was not deployed.

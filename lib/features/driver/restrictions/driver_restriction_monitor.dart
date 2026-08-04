@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../../core/services/route_restriction_service.dart';
@@ -37,6 +39,83 @@ class DriverRestrictionTransition {
       previous.phase == DriverRestrictionPhase.inside &&
       (current.phase != DriverRestrictionPhase.inside ||
           previous.restriction?.id != current.restriction?.id);
+}
+
+/// Requires several accurate movement samples travelling along a configured
+/// highway group before warning. A single perpendicular crossing contributes
+/// no aligned distance and therefore cannot trigger haptics.
+class DriverHighwayTravelEngine {
+  DriverHighwayTravelEngine({
+    this.maximumAccuracyMeters = 20,
+    this.maximumSampleAge = const Duration(seconds: 30),
+    this.confirmationSamples = 3,
+  });
+
+  final double maximumAccuracyMeters;
+  final Duration maximumSampleAge;
+  final int confirmationSamples;
+  LatLng? _previousPoint;
+  DateTime? _previousObservedAt;
+  final Map<String, double> _alignedMeters = {};
+  final Map<String, int> _samples = {};
+  RouteRestriction? _current;
+
+  RouteRestriction? get current => _current;
+
+  RouteRestriction? evaluate({
+    required LatLng point,
+    required double accuracyMeters,
+    required DateTime observedAt,
+    required DateTime now,
+    required List<RouteRestriction> restrictions,
+  }) {
+    if (!accuracyMeters.isFinite ||
+        accuracyMeters < 0 ||
+        accuracyMeters > maximumAccuracyMeters ||
+        now.difference(observedAt) > maximumSampleAge ||
+        now.difference(observedAt) < const Duration(seconds: -10) ||
+        (_previousObservedAt != null &&
+            !observedAt.isAfter(_previousObservedAt!))) {
+      return null;
+    }
+    final previous = _previousPoint;
+    _previousPoint = point;
+    _previousObservedAt = observedAt;
+    if (previous == null) return null;
+    RouteRestriction? warning;
+    for (final restriction in restrictions.where(
+      RouteRestrictionMatcher.isHighwayCorridor,
+    )) {
+      final travelled = RouteRestrictionMatcher.highwayTravelMeters([
+        previous,
+        point,
+      ], restriction);
+      if (travelled > 0) {
+        _alignedMeters[restriction.id] =
+            (_alignedMeters[restriction.id] ?? 0) + travelled;
+        _samples[restriction.id] = (_samples[restriction.id] ?? 0) + 1;
+        if ((_samples[restriction.id] ?? 0) >= confirmationSamples &&
+            (_alignedMeters[restriction.id] ?? 0) >=
+                math.max(30, restriction.minimumAlignedTravelMeters)) {
+          warning = restriction;
+          break;
+        }
+      } else {
+        _alignedMeters.remove(restriction.id);
+        _samples.remove(restriction.id);
+      }
+    }
+    _current = warning;
+    return warning;
+  }
+
+  void reset() {
+    _previousPoint = null;
+    _previousObservedAt = null;
+    _alignedMeters.clear();
+    _samples.clear();
+    _current = null;
+  }
 }
 
 /// Applies GPS-quality gates, two-sample confirmation, boundary hysteresis,

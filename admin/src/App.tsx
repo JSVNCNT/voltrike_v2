@@ -1275,10 +1275,12 @@ function LegacyRouteRestrictionsPageV2({ onMessage }: { onMessage: (value: strin
 function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => void }) {
   const [restrictions, setRestrictions] = useState<RouteRestriction[]>([]);
   const [name, setName] = useState('');
-  const [type, setType] = useState<Exclude<RouteRestriction['type'], 'prohibited_highway'>>('no_service_area');
+  const [type, setType] = useState<RouteRestriction['type']>('no_service_area');
   const [notes, setNotes] = useState('');
   const [points, setPoints] = useState<Point[]>([]);
   const [completedAreas, setCompletedAreas] = useState<Point[][]>([]);
+  const [bufferMeters, setBufferMeters] = useState(20);
+  const [minimumAlignedTravelMeters, setMinimumAlignedTravelMeters] = useState(80);
 
   const reload = useCallback(async () => {
     try {
@@ -1289,14 +1291,16 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
   }, [onMessage]);
   useEffect(() => { void reload(); }, [reload]);
 
-  const minimumPoints = 3;
+  const isHighway = type === 'prohibited_highway';
+  const geometryType = isHighway ? 'corridor' : 'polygon';
+  const minimumPoints = isHighway ? 2 : 3;
   const hasIncompleteDraft = points.length > 0 && points.length < minimumPoints;
   const allAreas = [
     ...completedAreas,
     ...(points.length >= minimumPoints ? [points] : []),
   ];
   const savedAreas = restrictions
-    .filter((item) => item.isActive && item.geometryType !== 'corridor' && (item.type === 'no_service_area' || item.type === 'restricted_crossing'))
+    .filter((item) => item.isActive && item.geometryType === geometryType && (isHighway ? item.type === 'prohibited_highway' : item.type === 'no_service_area' || item.type === 'restricted_crossing'))
     .flatMap((item) => item.areas?.length ? item.areas : [item.polygon])
     .filter((area) => area.length >= minimumPoints);
 
@@ -1316,17 +1320,20 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
       await adminApi.createRouteRestriction(
         name.trim(),
         type,
-        'polygon',
+        geometryType,
         allAreas[0],
-        0,
+        isHighway ? bufferMeters : 0,
         notes,
         allAreas,
+        isHighway ? minimumAlignedTravelMeters : undefined,
       );
       setName('');
       setNotes('');
       setPoints([]);
       setCompletedAreas([]);
-      onMessage('Route restriction saved and active. Restriction-aware route checks will use it after their next refresh.');
+      onMessage(isHighway
+        ? 'Highway group saved. Routes that travel along it are rejected; normal perpendicular crossings remain allowed.'
+        : 'Route restriction saved and active. Restriction-aware route checks will use it after their next refresh.');
       await reload();
     } catch (error) {
       onMessage(error instanceof Error ? error.message : 'Unable to save restriction.');
@@ -1343,7 +1350,7 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
     }
   }
 
-  function changeType(next: Exclude<RouteRestriction['type'], 'prohibited_highway'>) {
+  function changeType(next: RouteRestriction['type']) {
     setType(next);
     setPoints([]);
     setCompletedAreas([]);
@@ -1351,21 +1358,22 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
 
   return <>
     <section className="panel wide">
-      <h2>Create a prohibited operating area</h2>
+      <h2>Create a route restriction</h2>
       <p className="muted">
-        Draw up to 20 disconnected polygons with up to 200 boundary points per
-        polygon. Pickup, destination, and routes inside or crossing either type
-        are blocked. Use no-service areas for complete downtown or commercial
-        district bans and restricted driving areas for other officially
-        prohibited operating areas. Coordinates are stored as longitude and
-        latitude.
+        No-service and restricted driving MultiPolygons block pickup,
+        destination, and crossing routes. A highway group holds up to 20 curved
+        centreline segments. Only sustained travel alongside a segment is
+        blocked, so ordinary cross-street crossings remain allowed.
       </p>
       <div className="form-grid">
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Restriction name" required />
-        <select value={type} onChange={(event) => changeType(event.target.value as Exclude<RouteRestriction['type'], 'prohibited_highway'>)}>
+        <select value={type} onChange={(event) => changeType(event.target.value as RouteRestriction['type'])}>
           <option value="no_service_area">No-service MultiPolygon</option>
           <option value="restricted_crossing">Restricted driving area</option>
+          <option value="prohibited_highway">Highway group (polyline)</option>
         </select>
+        {isHighway && <label>Highway buffer (metres)<input type="number" min="5" max="200" value={bufferMeters} onChange={(event) => setBufferMeters(Number(event.target.value))} /></label>}
+        {isHighway && <label>Minimum aligned travel (metres)<input type="number" min="30" max="1000" value={minimumAlignedTravelMeters} onChange={(event) => setMinimumAlignedTravelMeters(Number(event.target.value))} /></label>}
       </div>
       <PolygonEditor
         points={points}
@@ -1374,19 +1382,19 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
         onChange={setPoints}
         onFinish={finishGeometry}
         disabled={completedAreas.length >= 20}
-        geometryMode="polygon"
+        geometryMode={isHighway ? 'polyline' : 'polygon'}
         maxPoints={200}
       />
       <div className="map-actions">
         <span>
-          {allAreas.length} area(s) | current shape {points.length}/200 points
+          {allAreas.length} {isHighway ? 'segment(s)' : 'area(s)'} | current shape {points.length}/200 points
         </span>
         <button onClick={() => setPoints(points.slice(0, -1))} disabled={!points.length}>Undo point</button>
         <button
           onClick={finishGeometry}
           disabled={points.length < minimumPoints || completedAreas.length >= 20}
         >
-          Add another area
+          {isHighway ? 'Add another segment' : 'Add another area'}
         </button>
         <button onClick={() => { setPoints([]); setCompletedAreas([]); }} disabled={!points.length && !completedAreas.length}>Clear all</button>
         <button className="primary" onClick={create} disabled={allAreas.length === 0 || !name.trim() || hasIncompleteDraft}>Save restriction</button>
@@ -1394,12 +1402,11 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
       <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Operational reason and driver guidance" />
     </section>
     <section className="panel wide">
-      <h2>Active, archived, and legacy restrictions</h2>
+      <h2>Active and archived restrictions</h2>
       <p className="muted">
-        New hand-drawn highway corridors are no longer created. Existing
-        highway records remain visible and can be disabled or re-enabled for
-        audit history, but their geometry is not used to block booking routes
-        or create live driver violations.
+        A highway group is direction-and-distance checked: a route must follow
+        its centreline inside the configured buffer for the configured distance.
+        A normal perpendicular crossing is not treated as highway travel.
       </p>
       <div className="table">
         {restrictions.map((item) => {
@@ -1408,7 +1415,7 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
             ? 'Restricted driving area'
             : item.type === 'no_service_area'
               ? 'No-service MultiPolygon'
-              : 'Legacy prohibited highway corridor';
+              : 'Highway group (aligned travel)';
           return <div className="row" key={item.id}>
             <span>
               <b>{item.name}</b>

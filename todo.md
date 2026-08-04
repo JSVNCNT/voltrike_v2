@@ -1175,3 +1175,17 @@ analysis and planning only.
   worktree review. Record retained work, results, limitations, deployment
   commands, and manual checks in the matching bottom section of `done.md` only
   after implementation is genuinely complete.
+
+## Highway group rollout - 2026-08-04
+
+- [ ] Field-test each configured highway group in Bacolod: one route travelling
+  along it, one normal cross-street crossing, one route through each intentional
+  segment gap, and a poor-GPS sample. Tune the buffer and aligned-distance
+  threshold only from those results.
+- [ ] Add authoritative backend case creation for sustained highway travel only
+  after an approved map-matching/road-class evidence source is available. The
+  current on-device alert is deliberately a safety warning, not a confirmed
+  legal violation or administrator case.
+- [ ] Add read-only restriction overlays to all idle passenger and driver map
+  surfaces, including highway centreline groups, without treating corridors as
+  endpoint-blocking red polygons.

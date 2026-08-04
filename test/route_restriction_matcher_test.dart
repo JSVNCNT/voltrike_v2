@@ -52,6 +52,45 @@ void main() {
     );
   });
 
+  test('highway group blocks sustained aligned travel but not a crossing', () {
+    const corridor = <LatLng>[
+      LatLng(10.6700, 122.9400),
+      LatLng(10.6700, 122.9450),
+    ];
+    const restriction = RouteRestriction(
+      id: 'burgos-extension',
+      name: 'Burgos Extension',
+      type: 'prohibited_highway',
+      polygon: corridor,
+      areas: <List<LatLng>>[corridor],
+      geometryType: 'corridor',
+      bufferMeters: 25,
+      minimumAlignedTravelMeters: 80,
+      isActive: true,
+    );
+    const along = <LatLng>[
+      LatLng(10.67002, 122.9402),
+      LatLng(10.67002, 122.9420),
+    ];
+    const crossing = <LatLng>[
+      LatLng(10.6690, 122.9420),
+      LatLng(10.6710, 122.9420),
+    ];
+
+    expect(
+      RouteRestrictionMatcher.firstHighwayTravelConflict(along, const [
+        restriction,
+      ])?.restriction.id,
+      'burgos-extension',
+    );
+    expect(
+      RouteRestrictionMatcher.firstHighwayTravelConflict(crossing, const [
+        restriction,
+      ]),
+      isNull,
+    );
+  });
+
   for (final type in const [
     'no_service_area',
     'restricted_crossing',

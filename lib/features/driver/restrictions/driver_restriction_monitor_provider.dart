@@ -18,6 +18,7 @@ class DriverRestrictionMonitorState {
   const DriverRestrictionMonitorState({
     this.phase = DriverRestrictionPhase.clear,
     this.restriction,
+    this.highwayRestriction,
     this.distanceMeters = double.infinity,
     this.violationId,
     this.reporting = false,
@@ -26,12 +27,14 @@ class DriverRestrictionMonitorState {
 
   final DriverRestrictionPhase phase;
   final RouteRestriction? restriction;
+  final RouteRestriction? highwayRestriction;
   final double distanceMeters;
   final String? violationId;
   final bool reporting;
   final String? reportError;
 
-  bool get visible => phase != DriverRestrictionPhase.clear;
+  bool get visible =>
+      phase != DriverRestrictionPhase.clear || highwayRestriction != null;
 
   String get message => switch (phase) {
     DriverRestrictionPhase.approaching =>
@@ -41,12 +44,18 @@ class DriverRestrictionMonitorState {
       'Restricted area entered. Leave '
           '${restriction?.name ?? 'this area'} using the nearest permitted '
           'street.',
-    DriverRestrictionPhase.clear => '',
+    DriverRestrictionPhase.clear =>
+      highwayRestriction == null
+          ? ''
+          : 'Possible prohibited highway travel on ${highwayRestriction!.name}. '
+                'Leave the highway using the next permitted street.',
   };
 
   DriverRestrictionMonitorState copyWith({
     DriverRestrictionPhase? phase,
     RouteRestriction? restriction,
+    RouteRestriction? highwayRestriction,
+    bool clearHighwayRestriction = false,
     bool clearRestriction = false,
     double? distanceMeters,
     String? violationId,
@@ -58,6 +67,9 @@ class DriverRestrictionMonitorState {
     return DriverRestrictionMonitorState(
       phase: phase ?? this.phase,
       restriction: clearRestriction ? null : restriction ?? this.restriction,
+      highwayRestriction: clearHighwayRestriction
+          ? null
+          : highwayRestriction ?? this.highwayRestriction,
       distanceMeters: distanceMeters ?? this.distanceMeters,
       violationId: clearViolationId ? null : violationId ?? this.violationId,
       reporting: reporting ?? this.reporting,
@@ -70,10 +82,12 @@ class DriverRestrictionMonitorController
     extends StateNotifier<DriverRestrictionMonitorState> {
   DriverRestrictionMonitorController({
     DriverRestrictionTransitionEngine? engine,
+    DriverHighwayTravelEngine? highwayEngine,
     RouteRestrictionService? restrictionService,
     DriverViolationRepository? violationRepository,
     NotificationService? notificationService,
   }) : _engine = engine ?? DriverRestrictionTransitionEngine(),
+       _highwayEngine = highwayEngine ?? DriverHighwayTravelEngine(),
        _restrictionService =
            restrictionService ?? RouteRestrictionService.instance,
        _violationRepository =
@@ -83,6 +97,7 @@ class DriverRestrictionMonitorController
        super(const DriverRestrictionMonitorState());
 
   final DriverRestrictionTransitionEngine _engine;
+  final DriverHighwayTravelEngine _highwayEngine;
   final RouteRestrictionService _restrictionService;
   final DriverViolationRepository _violationRepository;
   final NotificationService _notificationService;
@@ -98,6 +113,7 @@ class DriverRestrictionMonitorController
     _onlineSession++;
     if (online) return;
     _engine.reset();
+    _highwayEngine.reset();
     _lastReportedObservationAt = null;
     unawaited(_notificationService.clearDriverRestrictionAlert());
     state = const DriverRestrictionMonitorState();
@@ -147,6 +163,32 @@ class DriverRestrictionMonitorController
     final restrictions = await _restrictionService.activeRestrictions();
     if (!_isCurrentOnlineSession(onlineSession)) return;
     final point = locationState.location!;
+    final highwayWarning = _highwayEngine.evaluate(
+      point: point,
+      accuracyMeters: accuracyMeters,
+      observedAt: observedAt,
+      now: DateTime.now(),
+      restrictions: restrictions,
+    );
+    if (highwayWarning != null &&
+        state.highwayRestriction?.id != highwayWarning.id) {
+      state = state.copyWith(
+        highwayRestriction: highwayWarning,
+        clearReportError: true,
+      );
+      await HapticFeedback.mediumImpact();
+      await _notificationService.showDriverRestrictionAlert(
+        restrictionName: highwayWarning.name,
+        inside: false,
+      );
+    } else if (highwayWarning == null &&
+        _highwayEngine.current == null &&
+        state.highwayRestriction != null) {
+      state = state.copyWith(clearHighwayRestriction: true);
+      if (_engine.current.phase == DriverRestrictionPhase.clear) {
+        await _notificationService.clearDriverRestrictionAlert();
+      }
+    }
     final proximity = await RouteRestrictionEngine.instance.pointProximity(
       point: point,
       restrictions: restrictions,

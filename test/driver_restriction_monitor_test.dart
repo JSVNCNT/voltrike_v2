@@ -110,6 +110,36 @@ void main() {
     expect(engine.current.phase, DriverRestrictionPhase.clear);
   });
 
+  test('highway alerts require sustained aligned accurate movement', () {
+    final engine = DriverHighwayTravelEngine();
+    const highway = RouteRestriction(
+      id: 'burgos-extension',
+      name: 'Burgos Extension',
+      type: 'prohibited_highway',
+      polygon: [LatLng(10.67, 122.94), LatLng(10.67, 122.95)],
+      areas: [
+        [LatLng(10.67, 122.94), LatLng(10.67, 122.95)],
+      ],
+      geometryType: 'corridor',
+      bufferMeters: 25,
+      minimumAlignedTravelMeters: 80,
+      isActive: true,
+    );
+    final base = DateTime.utc(2026, 8, 4, 1);
+    RouteRestriction? sample(LatLng point, int seconds) => engine.evaluate(
+      point: point,
+      accuracyMeters: 8,
+      observedAt: base.add(Duration(seconds: seconds)),
+      now: base.add(Duration(seconds: seconds + 1)),
+      restrictions: const [highway],
+    );
+
+    expect(sample(const LatLng(10.67, 122.9400), 0), isNull);
+    expect(sample(const LatLng(10.67, 122.9405), 5), isNull);
+    expect(sample(const LatLng(10.67, 122.9410), 10), isNull);
+    expect(sample(const LatLng(10.67, 122.9415), 15)?.id, 'burgos-extension');
+  });
+
   test('sample eligibility preflight is non-mutating', () {
     final engine = DriverRestrictionTransitionEngine(confirmationSamples: 1);
     final observedAt = DateTime.utc(2026, 7, 30, 1);

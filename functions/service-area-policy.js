@@ -434,6 +434,91 @@ function routeConflictsRestriction(rawRoute, restriction) {
   return areas.some((polygon) => routeIntersectsPolygon(route, polygon));
 }
 
+// A highway corridor is not a no-go polygon.  A short perpendicular crossing
+// is legal; only a route which remains inside the corridor while travelling
+// broadly parallel to its centreline is treated as highway travel.
+function isHighwayRestriction(restriction) {
+  return restriction?.isActive !== false &&
+    restriction?.type === 'prohibited_highway' &&
+    restriction?.geometryType === 'corridor';
+}
+
+function pointDistanceMeters(start, end) {
+  const metresPerDegree = 111320;
+  const referenceLatitude = (start.latitude + end.latitude) / 2 * Math.PI / 180;
+  return Math.hypot(
+    (end.longitude - start.longitude) * metresPerDegree * Math.cos(referenceLatitude),
+    (end.latitude - start.latitude) * metresPerDegree,
+  );
+}
+
+function headingDifferenceDegrees(start, end, lineStart, lineEnd) {
+  const heading = (a, b) => Math.atan2(
+    b.latitude - a.latitude,
+    (b.longitude - a.longitude) * Math.cos((a.latitude + b.latitude) / 2 * Math.PI / 180),
+  ) * 180 / Math.PI;
+  const difference = Math.abs(heading(start, end) - heading(lineStart, lineEnd)) % 180;
+  return difference > 90 ? 180 - difference : difference;
+}
+
+function closestCorridorSegment(point, areas) {
+  let closest = null;
+  for (const area of areas) {
+    for (let index = 1; index < area.length; index += 1) {
+      const distance = pointToSegmentMeters(point, area[index - 1], area[index]);
+      if (closest == null || distance < closest.distance) {
+        closest = { distance, start: area[index - 1], end: area[index] };
+      }
+    }
+  }
+  return closest;
+}
+
+function highwayTravelMeters(rawRoute, restriction) {
+  if (!isHighwayRestriction(restriction)) return 0;
+  const route = rawRoute.map((point) => normalizePoint(point));
+  if (route.length < 2) return 0;
+  const areas = normalizedRecordAreas(restriction, 'corridor');
+  const bufferMeters = Number(restriction.bufferMeters);
+  if (areas.length === 0 || !Number.isFinite(bufferMeters) || bufferMeters <= 0) return 0;
+  let alignedMeters = 0;
+  for (let index = 1; index < route.length; index += 1) {
+    const start = route[index - 1];
+    const end = route[index];
+    const segmentMeters = pointDistanceMeters(start, end);
+    if (segmentMeters < 1) continue;
+    // Sample long provider polyline legs so they cannot jump over a corridor.
+    const samples = Math.max(1, Math.ceil(segmentMeters / 12));
+    for (let sample = 0; sample < samples; sample += 1) {
+      const fraction = (sample + 0.5) / samples;
+      const midpoint = {
+        latitude: start.latitude + (end.latitude - start.latitude) * fraction,
+        longitude: start.longitude + (end.longitude - start.longitude) * fraction,
+      };
+      const closest = closestCorridorSegment(midpoint, areas);
+      if (closest && closest.distance <= bufferMeters &&
+          headingDifferenceDegrees(start, end, closest.start, closest.end) <= 45) {
+        alignedMeters += segmentMeters / samples;
+      }
+    }
+  }
+  return alignedMeters;
+}
+
+function firstHighwayTravelConflict(route, restrictions) {
+  for (const restriction of restrictions) {
+    if (!isHighwayRestriction(restriction)) continue;
+    const threshold = Number(restriction.minimumAlignedTravelMeters);
+    const minimumAlignedTravelMeters = Number.isFinite(threshold)
+      ? Math.max(30, threshold) : 80;
+    const alignedMeters = highwayTravelMeters(route, restriction);
+    if (alignedMeters >= minimumAlignedTravelMeters) {
+      return { restriction, alignedMeters, minimumAlignedTravelMeters };
+    }
+  }
+  return null;
+}
+
 function firstRouteConflict(route, restrictions) {
   return restrictions.find((restriction) =>
     endpointBlockingRestriction(restriction) &&
@@ -498,7 +583,10 @@ module.exports = {
   firstNoServiceEndpointConflict,
   firstRestrictedEndpointConflict,
   firstRouteConflict,
+  firstHighwayTravelConflict,
   firestoreGeometry,
+  highwayTravelMeters,
+  isHighwayRestriction,
   firestoreRestrictionGeometry,
   normalizeArea,
   normalizeGeometry,

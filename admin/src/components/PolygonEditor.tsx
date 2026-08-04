@@ -58,6 +58,14 @@ function zoneData(points: Point[], geometryMode: 'polygon' | 'polyline', complet
     }
   }
   for (const area of savedAreas) {
+    if (geometryMode === 'polyline' && area.length >= 2) {
+      completedFeatures.push({
+        type: 'Feature' as const,
+        properties: { saved: true },
+        geometry: { type: 'LineString' as const, coordinates: area },
+      });
+      continue;
+    }
     if (area.length >= 3) {
       completedFeatures.push({
         type: 'Feature' as const,

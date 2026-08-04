@@ -17,6 +17,16 @@ class RouteRestrictionProximity {
   final double? preferredDistanceMeters;
 }
 
+class HighwayTravelMatch {
+  const HighwayTravelMatch({
+    required this.restriction,
+    required this.alignedTravelMeters,
+  });
+
+  final RouteRestriction restriction;
+  final double alignedTravelMeters;
+}
+
 /// Pure, deterministic restriction geometry shared by runtime code and tests.
 class RouteRestrictionMatcher {
   const RouteRestrictionMatcher._();
@@ -42,6 +52,64 @@ class RouteRestrictionMatcher {
     return restriction.areas.any(
       (area) => area.length >= 3 && _contains(point, area),
     );
+  }
+
+  static bool isHighwayCorridor(RouteRestriction restriction) =>
+      restriction.isActive &&
+      restriction.type == 'prohibited_highway' &&
+      restriction.geometryType == 'corridor' &&
+      restriction.bufferMeters > 0;
+
+  /// Finds highway *travel*, not a simple crossing. The route is sampled at
+  /// short intervals, and only movement roughly parallel to the centreline is
+  /// accumulated. This lets ordinary cross streets remain legal.
+  static HighwayTravelMatch? firstHighwayTravelConflict(
+    List<LatLng> route,
+    List<RouteRestriction> restrictions,
+  ) {
+    if (route.length < 2) return null;
+    for (final restriction in restrictions) {
+      if (!isHighwayCorridor(restriction)) continue;
+      final alignedMeters = highwayTravelMeters(route, restriction);
+      final threshold = math.max(30, restriction.minimumAlignedTravelMeters);
+      if (alignedMeters >= threshold) {
+        return HighwayTravelMatch(
+          restriction: restriction,
+          alignedTravelMeters: alignedMeters,
+        );
+      }
+    }
+    return null;
+  }
+
+  static double highwayTravelMeters(
+    List<LatLng> route,
+    RouteRestriction restriction,
+  ) {
+    if (!isHighwayCorridor(restriction) || route.length < 2) return 0;
+    var total = 0.0;
+    for (var index = 1; index < route.length; index++) {
+      final start = route[index - 1];
+      final end = route[index];
+      final length = _distanceMeters(start, end);
+      if (length < 1) continue;
+      final samples = math.max(1, (length / 12).ceil());
+      for (var sample = 0; sample < samples; sample++) {
+        final fraction = (sample + .5) / samples;
+        final point = LatLng(
+          start.latitude + (end.latitude - start.latitude) * fraction,
+          start.longitude + (end.longitude - start.longitude) * fraction,
+        );
+        final closest = _closestCorridorSegment(point, restriction.areas);
+        if (closest != null &&
+            closest.distanceMeters <= restriction.bufferMeters &&
+            _headingDifferenceDegrees(start, end, closest.start, closest.end) <=
+                45) {
+          total += length / samples;
+        }
+      }
+    }
+    return total;
   }
 
   static RouteRestrictionProximity pointProximity(
@@ -161,6 +229,63 @@ class RouteRestrictionMatcher {
     return math.sqrt(dx * dx + dy * dy);
   }
 
+  static _CorridorSegment? _closestCorridorSegment(
+    LatLng point,
+    List<List<LatLng>> areas,
+  ) {
+    _CorridorSegment? closest;
+    for (final area in areas) {
+      for (var index = 1; index < area.length; index++) {
+        final distance = _pointToSegmentMeters(
+          point,
+          area[index - 1],
+          area[index],
+        );
+        if (closest == null || distance < closest.distanceMeters) {
+          closest = _CorridorSegment(
+            start: area[index - 1],
+            end: area[index],
+            distanceMeters: distance,
+          );
+        }
+      }
+    }
+    return closest;
+  }
+
+  static double _distanceMeters(LatLng start, LatLng end) {
+    const metresPerDegree = 111320.0;
+    final latitude = (start.latitude + end.latitude) / 2 * math.pi / 180;
+    return math.sqrt(
+      math.pow(
+            (end.longitude - start.longitude) *
+                metresPerDegree *
+                math.cos(latitude),
+            2,
+          ) +
+          math.pow((end.latitude - start.latitude) * metresPerDegree, 2),
+    );
+  }
+
+  static double _headingDifferenceDegrees(
+    LatLng start,
+    LatLng end,
+    LatLng corridorStart,
+    LatLng corridorEnd,
+  ) {
+    double heading(LatLng a, LatLng b) =>
+        math.atan2(
+          b.latitude - a.latitude,
+          (b.longitude - a.longitude) *
+              math.cos((a.latitude + b.latitude) / 2 * math.pi / 180),
+        ) *
+        180 /
+        math.pi;
+    final difference =
+        (heading(start, end) - heading(corridorStart, corridorEnd)).abs() % 180;
+    return difference > 90 ? 180 - difference : difference;
+  }
+
   static bool _segmentsIntersect(LatLng a, LatLng b, LatLng c, LatLng d) {
     final abC = _orientation(a, b, c);
     final abD = _orientation(a, b, d);
@@ -192,4 +317,16 @@ class RouteRestrictionMatcher {
         point.longitude >= math.min(start.longitude, end.longitude) - epsilon &&
         point.longitude <= math.max(start.longitude, end.longitude) + epsilon;
   }
+}
+
+class _CorridorSegment {
+  const _CorridorSegment({
+    required this.start,
+    required this.end,
+    required this.distanceMeters,
+  });
+
+  final LatLng start;
+  final LatLng end;
+  final double distanceMeters;
 }

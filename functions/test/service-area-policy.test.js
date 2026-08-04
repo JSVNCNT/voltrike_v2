@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   classifyTripCoverage,
   decodePolyline,
+  firstHighwayTravelConflict,
   firstNoServiceEndpointConflict,
   firstRouteConflict,
   firestoreGeometry,
@@ -422,6 +423,33 @@ test('active legacy highway corridors remain readable but do not block routes', 
   ];
   assert.equal(routeConflictsRestriction(crossingRoute, legacyRestriction), true);
   assert.equal(firstRouteConflict(crossingRoute, [legacyRestriction]), null);
+});
+
+test('highway groups reject sustained aligned travel but allow a cross-street crossing', () => {
+  const highway = {
+    id: 'burgos-extension',
+    name: 'Burgos Extension',
+    type: 'prohibited_highway',
+    geometryType: 'corridor',
+    bufferMeters: 25,
+    minimumAlignedTravelMeters: 80,
+    isActive: true,
+    ...firestoreRestrictionGeometry([[
+      [122.9400, 10.6700],
+      [122.9450, 10.6700],
+    ]], 'corridor'),
+  };
+  const along = [
+    { latitude: 10.67002, longitude: 122.9402 },
+    { latitude: 10.67002, longitude: 122.9420 },
+  ];
+  const crossing = [
+    { latitude: 10.6690, longitude: 122.9420 },
+    { latitude: 10.6710, longitude: 122.9420 },
+  ];
+  assert.equal(firstHighwayTravelConflict(along, [highway])?.restriction.id,
+    'burgos-extension');
+  assert.equal(firstHighwayTravelConflict(crossing, [highway]), null);
 });
 
 test('both retained polygon types reject pickup or destination endpoints', () => {

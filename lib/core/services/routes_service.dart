@@ -50,11 +50,15 @@ class RoutesService {
       // Recheck the encoded geometry before showing a cached preview.
       final conflict = await RouteRestrictionService.instance
           .encodedRouteConflict(cached.route.encodedPolyline);
-      if (conflict == null) {
+      final highwayConflict = await RouteRestrictionService.instance
+          .encodedHighwayTravelConflict(cached.route.encodedPolyline);
+      if (conflict == null && highwayConflict == null) {
         _cache[key] = cached;
         return cached.route;
       }
-      RouteRestrictionService.instance.markConflict(conflict);
+      RouteRestrictionService.instance.markConflict(
+        conflict ?? highwayConflict!.restriction,
+      );
     }
 
     final existing = _inFlight[key];
@@ -105,7 +109,11 @@ class RoutesService {
         final conflict = await restrictions.encodedRouteConflict(
           route.encodedPolyline,
         );
-        if (conflict == null) {
+        final highwayConflict = await restrictions.encodedHighwayTravelConflict(
+          route.encodedPolyline,
+        );
+        final blocked = conflict ?? highwayConflict?.restriction;
+        if (blocked == null) {
           final candidate = route.copyWith(
             avoidedRestrictionNames: List<String>.unmodifiable(
               avoidedRestrictionNames,
@@ -122,8 +130,8 @@ class RoutesService {
           highwayAdvisoryFallback ??= candidate;
           continue;
         }
-        avoidedRestrictionNames.add(conflict.name);
-        restrictions.markConflict(conflict);
+        avoidedRestrictionNames.add(blocked.name);
+        restrictions.markConflict(blocked);
       }
       // A polygon-safe flagged route remains a pilot fallback only after all
       // alternatives have been checked for an unflagged option.

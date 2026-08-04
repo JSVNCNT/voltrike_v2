@@ -5,6 +5,7 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../data/models/route_restriction.dart';
 import '../native/route_restriction_engine.dart';
+import 'polyline_service.dart';
 import 'route_restriction_matcher.dart';
 
 export 'route_restriction_matcher.dart';
@@ -101,6 +102,20 @@ class RouteRestrictionService {
       return restriction;
     }
     return null;
+  }
+
+  /// Highway corridor checks deliberately stay in Dart until the Rust bridge
+  /// supports direction-and-distance semantics. The native engine continues
+  /// to handle the hard MultiPolygon checks above.
+  Future<HighwayTravelMatch?> encodedHighwayTravelConflict(
+    String encodedPolyline,
+  ) async {
+    final restrictions = await activeRestrictions();
+    final route = PolylineService.decodePolyline(encodedPolyline);
+    return RouteRestrictionMatcher.firstHighwayTravelConflict(
+      route,
+      restrictions,
+    );
   }
 
   Future<RouteRestriction?> pointConflict(LatLng point) async {

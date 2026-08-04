@@ -58,6 +58,7 @@ const {
 const {
   classifyTripCoverage,
   decodePolyline,
+  firstHighwayTravelConflict,
   firstRestrictedEndpointConflict,
   firstRouteConflict,
   firestoreGeometry,
@@ -331,13 +332,15 @@ async function trustedRoute(pickup, destination, restrictions = []) {
     );
     const routePoints = [pickup, destination];
     const conflict = firstRouteConflict(routePoints, restrictions);
-    if (conflict) {
+    const highwayConflict = firstHighwayTravelConflict(routePoints, restrictions);
+    if (conflict || highwayConflict) {
+      const blocked = conflict || highwayConflict.restriction;
       throw new HttpsError(
         'failed-precondition',
         'No permitted e-trike route is available for this trip.',
         {
-          restrictionIds: conflict.id ? [conflict.id] : [],
-          restrictionNames: conflict.name ? [conflict.name] : [],
+          restrictionIds: blocked.id ? [blocked.id] : [],
+          restrictionNames: blocked.name ? [blocked.name] : [],
         },
       );
     }
@@ -410,9 +413,11 @@ async function trustedRoute(pickup, destination, restrictions = []) {
     if (routePoints.length < 2) continue;
     sawValidRoute = true;
     const conflict = firstRouteConflict(routePoints, restrictions);
-    if (conflict) {
-      if (conflict.id) avoidedRestrictionIds.add(conflict.id);
-      if (conflict.name) avoidedRestrictionNames.add(conflict.name);
+    const highwayConflict = firstHighwayTravelConflict(routePoints, restrictions);
+    const blocked = conflict || highwayConflict?.restriction;
+    if (blocked) {
+      if (blocked.id) avoidedRestrictionIds.add(blocked.id);
+      if (blocked.name) avoidedRestrictionNames.add(blocked.name);
       continue;
     }
     const highwayRouteAdvisory = googleHighwayRouteAdvisory(route);
@@ -2587,22 +2592,18 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
   const developer = await requireDeveloperAdmin(request);
   const name = requiredString(request.data?.name, 'Restriction name');
   const type = request.data?.type;
-  if (type === 'prohibited_highway') {
-    throw new HttpsError(
-      'failed-precondition',
-      'New manual highway corridors are disabled. Highway avoidance is now requested from the routing provider; existing corridors remain available for history and status management.',
-    );
-  }
-  if (!['no_service_area', 'restricted_crossing'].includes(type)) {
+  if (!['prohibited_highway', 'no_service_area', 'restricted_crossing'].includes(type)) {
     throw new HttpsError('invalid-argument', 'Unsupported restriction type.');
   }
-  if (request.data?.geometryType === 'corridor') {
+  const geometryType = type === 'prohibited_highway' ? 'corridor' : 'polygon';
+  if (request.data?.geometryType && request.data.geometryType !== geometryType) {
     throw new HttpsError(
       'invalid-argument',
-      'No-service and restricted-driving areas require polygon geometry.',
+      type === 'prohibited_highway'
+        ? 'Highway groups require polyline corridor geometry.'
+        : 'No-service and restricted-driving areas require polygon geometry.',
     );
   }
-  const geometryType = 'polygon';
   let areas;
   try {
     areas = normalizeGeometry({
@@ -2620,12 +2621,22 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
   const bufferMeters = geometryType === 'corridor'
     ? validPositiveInteger(request.data?.bufferMeters, 'Corridor buffer', 5, 200)
     : 0;
+  const minimumAlignedTravelMeters = geometryType === 'corridor'
+    ? validPositiveInteger(
+      request.data?.minimumAlignedTravelMeters ?? 80,
+      'Minimum highway travel distance', 30, 1000,
+    )
+    : 0;
   const ref = await db.collection('routeRestrictions').add({
     name,
     type,
     geometryType,
     ...firestoreRestrictionGeometry(areas, geometryType),
     bufferMeters,
+    ...(geometryType === 'corridor' ? {
+      enforcementMode: 'aligned_travel',
+      minimumAlignedTravelMeters,
+    } : {}),
     isActive: true,
     notes: String(request.data?.notes || '').slice(0, 1000),
     createdBy: developer.uid, createdAt: timestamp(), updatedAt: timestamp(),
@@ -2635,7 +2646,10 @@ exports.adminCreateRouteRestriction = onCall({ region: 'asia-southeast1' }, asyn
     action: 'create_route_restriction',
     targetType: 'routeRestriction',
     targetId: ref.id,
-    details: { type, geometryType, areaCount: areas.length, bufferMeters },
+    details: {
+      type, geometryType, areaCount: areas.length, bufferMeters,
+      minimumAlignedTravelMeters,
+    },
   });
   return { restrictionId: ref.id };
 });
@@ -4670,9 +4684,10 @@ exports.createBookingLifecycle = onCall(
       ...document.data(),
     })).filter((restriction) =>
       restriction.isActive !== false &&
-      ['no_service_area', 'restricted_crossing']
-        .includes(restriction.type) &&
-      restriction.geometryType !== 'corridor');
+      ((['no_service_area', 'restricted_crossing'].includes(restriction.type) &&
+        restriction.geometryType !== 'corridor') ||
+       (restriction.type === 'prohibited_highway' &&
+        restriction.geometryType === 'corridor')));
     const coverage = classifyTripCoverage(
       geofences,
       pickup,
