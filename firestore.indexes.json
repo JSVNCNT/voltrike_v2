@@ -122,6 +122,17 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "todaId", "order": "ASCENDING" },
+        { "fieldPath": "settlementTimestamp", "order": "DESCENDING" },
+        { "fieldPath": "commissionAmount", "order": "DESCENDING" },
+        { "fieldPath": "driverNetEarnings", "order": "DESCENDING" },
+        { "fieldPath": "grossFare", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "settlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "todaId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "settlementTimestamp", "order": "DESCENDING" }
       ]
