@@ -1375,16 +1375,18 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
         {isHighway && <label>Highway buffer (metres)<input type="number" min="5" max="200" value={bufferMeters} onChange={(event) => setBufferMeters(Number(event.target.value))} /></label>}
         {isHighway && <label>Minimum aligned travel (metres)<input type="number" min="30" max="1000" value={minimumAlignedTravelMeters} onChange={(event) => setMinimumAlignedTravelMeters(Number(event.target.value))} /></label>}
       </div>
-      <PolygonEditor
-        points={points}
-        completedAreas={completedAreas}
-        savedAreas={savedAreas}
-        onChange={setPoints}
-        onFinish={finishGeometry}
-        disabled={completedAreas.length >= 20}
-        geometryMode={isHighway ? 'polyline' : 'polygon'}
-        maxPoints={200}
-      />
+      <Suspense fallback={<div className="map-missing">Loading Mapbox route-restriction editor...</div>}>
+        <PolygonEditor
+          points={points}
+          completedAreas={completedAreas}
+          savedAreas={savedAreas}
+          onChange={setPoints}
+          onFinish={finishGeometry}
+          disabled={completedAreas.length >= 20}
+          geometryMode={isHighway ? 'polyline' : 'polygon'}
+          maxPoints={200}
+        />
+      </Suspense>
       <div className="map-actions">
         <span>
           {allAreas.length} {isHighway ? 'segment(s)' : 'area(s)'} | current shape {points.length}/200 points
