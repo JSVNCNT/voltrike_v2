@@ -21,7 +21,6 @@ import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
 import '../../widgets/legal_consent_card.dart';
-import '../../widgets/loading_overlay.dart';
 import '../../widgets/registration_back_scope.dart';
 import '../../widgets/registration_step_indicator.dart';
 import '../../widgets/validation_message.dart';
@@ -213,179 +212,175 @@ class _DriverRegistrationReviewScreenState
 
     return RegistrationBackScope(
       fallbackRoute: AppRoutes.uploadDocuments,
-      child: LoadingOverlay(
-        isLoading: submissionState.isLoading,
-        message: 'Submitting your application and images…',
-        child: AuthScaffold(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const AuthLogo(logoSize: 72),
-              const SizedBox(height: AppSpacing.xl),
-              const AuthHeader(
-                title: 'Review your application',
-                subtitle: 'Check every detail before submitting',
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const RegistrationStepIndicator(currentStep: 5, totalSteps: 5),
-              const SizedBox(height: AppSpacing.lg),
-              const ValidationMessage(
-                type: ValidationType.info,
-                message:
-                    'Nothing is submitted until you press Submit for TODA '
-                    'Review. Your assigned TODA will verify these details and '
-                    'images before deciding whether to approve the account.',
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: AppSpacing.md),
-                ValidationMessage(message: _error!),
-              ],
-              const SizedBox(height: AppSpacing.lg),
-              _ReviewSection(
-                title: 'Personal and account information',
-                icon: Icons.person_outline,
-                editKey: const Key('edit-driver-personal'),
-                onEdit: () => _edit(DriverRegistrationReviewSection.personal),
-                children: [
-                  _DetailRow(label: 'Full name', value: registration.fullName),
-                  _DetailRow(
-                    label: 'Date of birth',
-                    value: _formatDate(registration.dateOfBirth),
-                  ),
-                  _DetailRow(label: 'Phone', value: registration.phoneNumber),
-                  _DetailRow(label: 'Email', value: registration.email),
-                  const _DetailRow(
-                    label: 'Password',
-                    value: 'Set securely • not displayed',
-                  ),
-                ],
-              ),
+      child: AuthScaffold(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const AuthLogo(logoSize: 72),
+            const SizedBox(height: AppSpacing.xl),
+            const AuthHeader(
+              title: 'Review your application',
+              subtitle: 'Check every detail before submitting',
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            const RegistrationStepIndicator(currentStep: 5, totalSteps: 5),
+            const SizedBox(height: AppSpacing.lg),
+            const ValidationMessage(
+              type: ValidationType.info,
+              message:
+                  'Nothing is submitted until you press Submit for TODA '
+                  'Review. Your assigned TODA will verify these details and '
+                  'images before deciding whether to approve the account.',
+            ),
+            if (_error != null) ...[
               const SizedBox(height: AppSpacing.md),
-              _ReviewSection(
-                title: 'Address and TODA assignment',
-                icon: Icons.location_on_outlined,
-                editKey: const Key('edit-driver-assignment'),
-                onEdit: () => _edit(DriverRegistrationReviewSection.assignment),
-                children: [
-                  _DetailRow(
-                    label: 'Region',
-                    value: _loadingLabels ? 'Loading…' : _regionName,
-                  ),
-                  _DetailRow(
-                    label: 'Province',
-                    value: _loadingLabels ? 'Loading…' : _provinceName,
-                  ),
-                  _DetailRow(
-                    label: 'City',
-                    value: _loadingLabels ? 'Loading…' : _cityName,
-                  ),
-                  _DetailRow(
-                    label: 'Barangay',
-                    value: _loadingLabels ? 'Loading…' : _barangayName,
-                  ),
-                  _DetailRow(
-                    label: 'TODA',
-                    value: _loadingLabels ? 'Loading…' : _todaName,
-                  ),
-                  if (registration.licenseNumber.trim().isNotEmpty)
-                    _DetailRow(
-                      label: 'Licence no.',
-                      value: _maskedIdentifier(registration.licenseNumber),
-                    ),
-                  if (registration.licenseExpiry != null)
-                    _DetailRow(
-                      label: 'Licence expiry',
-                      value: _formatDate(registration.licenseExpiry),
-                    ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _ReviewSection(
-                title: 'Vehicle information',
-                icon: Icons.electric_rickshaw_outlined,
-                editKey: const Key('edit-driver-vehicle'),
-                onEdit: () => _edit(DriverRegistrationReviewSection.vehicle),
-                children: [
-                  _DetailRow(
-                    label: 'Vehicle type',
-                    value: registration.vehicleType,
-                  ),
-                  _DetailRow(
-                    label: 'Plate number',
-                    value: registration.plateNumber,
-                  ),
-                  _DetailRow(label: 'Brand', value: registration.vehicleBrand),
-                  _DetailRow(label: 'Model', value: registration.vehicleModel),
-                  _DetailRow(label: 'Color', value: registration.vehicleColor),
-                  _DetailRow(
-                    label: 'Passenger limit',
-                    value: '${registration.seatingCapacity} seats',
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _ReviewSection(
-                title: 'Registration images',
-                icon: Icons.photo_library_outlined,
-                editKey: const Key('edit-driver-documents'),
-                onEdit: () => _edit(DriverRegistrationReviewSection.documents),
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: Text(
-                      'Tap Edit to replace an unclear or incorrect image.',
-                    ),
-                  ),
-                  _DocumentReviewGrid(registration: registration),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const ValidationMessage(
-                type: ValidationType.info,
-                message:
-                    'Why submit? TODA reviewers need this information to confirm '
-                    'your identity, age eligibility, vehicle registration, and '
-                    'passenger capacity. Submission is an application—not '
-                    'permission to start accepting rides.',
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              LegalConsentCard(
-                termsViewed: _termsViewed,
-                privacyViewed: _privacyViewed,
-                accepted: _acceptedLegal,
-                onOpenTerms: () => _openLegalDocument(
-                  route: AppRoutes.termsAndConditions,
-                  terms: true,
-                ),
-                onOpenPrivacy: () => _openLegalDocument(
-                  route: AppRoutes.privacyPolicy,
-                  terms: false,
-                ),
-                onAcceptedChanged: (value) {
-                  setState(() {
-                    _acceptedLegal = value;
-                    _error = null;
-                  });
-                },
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              PrimaryButton(
-                text: 'Submit for TODA Review',
-                icon: Icons.send_outlined,
-                onPressed: _submit,
-                isLoading: submissionState.isLoading,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextButton.icon(
-                onPressed: submissionState.isLoading
-                    ? null
-                    : () => context.go(AppRoutes.uploadDocuments),
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Back to documents'),
-              ),
-              const SizedBox(height: AppSpacing.xl),
+              ValidationMessage(message: _error!),
             ],
-          ),
+            const SizedBox(height: AppSpacing.lg),
+            _ReviewSection(
+              title: 'Personal and account information',
+              icon: Icons.person_outline,
+              editKey: const Key('edit-driver-personal'),
+              onEdit: () => _edit(DriverRegistrationReviewSection.personal),
+              children: [
+                _DetailRow(label: 'Full name', value: registration.fullName),
+                _DetailRow(
+                  label: 'Date of birth',
+                  value: _formatDate(registration.dateOfBirth),
+                ),
+                _DetailRow(label: 'Phone', value: registration.phoneNumber),
+                _DetailRow(label: 'Email', value: registration.email),
+                const _DetailRow(
+                  label: 'Password',
+                  value: 'Set securely • not displayed',
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _ReviewSection(
+              title: 'Address and TODA assignment',
+              icon: Icons.location_on_outlined,
+              editKey: const Key('edit-driver-assignment'),
+              onEdit: () => _edit(DriverRegistrationReviewSection.assignment),
+              children: [
+                _DetailRow(
+                  label: 'Region',
+                  value: _loadingLabels ? 'Loading…' : _regionName,
+                ),
+                _DetailRow(
+                  label: 'Province',
+                  value: _loadingLabels ? 'Loading…' : _provinceName,
+                ),
+                _DetailRow(
+                  label: 'City',
+                  value: _loadingLabels ? 'Loading…' : _cityName,
+                ),
+                _DetailRow(
+                  label: 'Barangay',
+                  value: _loadingLabels ? 'Loading…' : _barangayName,
+                ),
+                _DetailRow(
+                  label: 'TODA',
+                  value: _loadingLabels ? 'Loading…' : _todaName,
+                ),
+                if (registration.licenseNumber.trim().isNotEmpty)
+                  _DetailRow(
+                    label: 'Licence no.',
+                    value: _maskedIdentifier(registration.licenseNumber),
+                  ),
+                if (registration.licenseExpiry != null)
+                  _DetailRow(
+                    label: 'Licence expiry',
+                    value: _formatDate(registration.licenseExpiry),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _ReviewSection(
+              title: 'Vehicle information',
+              icon: Icons.electric_rickshaw_outlined,
+              editKey: const Key('edit-driver-vehicle'),
+              onEdit: () => _edit(DriverRegistrationReviewSection.vehicle),
+              children: [
+                _DetailRow(
+                  label: 'Vehicle type',
+                  value: registration.vehicleType,
+                ),
+                _DetailRow(
+                  label: 'Plate number',
+                  value: registration.plateNumber,
+                ),
+                _DetailRow(label: 'Brand', value: registration.vehicleBrand),
+                _DetailRow(label: 'Model', value: registration.vehicleModel),
+                _DetailRow(label: 'Color', value: registration.vehicleColor),
+                _DetailRow(
+                  label: 'Passenger limit',
+                  value: '${registration.seatingCapacity} seats',
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _ReviewSection(
+              title: 'Registration images',
+              icon: Icons.photo_library_outlined,
+              editKey: const Key('edit-driver-documents'),
+              onEdit: () => _edit(DriverRegistrationReviewSection.documents),
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: Text(
+                    'Tap Edit to replace an unclear or incorrect image.',
+                  ),
+                ),
+                _DocumentReviewGrid(registration: registration),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            const ValidationMessage(
+              type: ValidationType.info,
+              message:
+                  'Why submit? TODA reviewers need this information to confirm '
+                  'your identity, age eligibility, vehicle registration, and '
+                  'passenger capacity. Submission is an application—not '
+                  'permission to start accepting rides.',
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            LegalConsentCard(
+              termsViewed: _termsViewed,
+              privacyViewed: _privacyViewed,
+              accepted: _acceptedLegal,
+              onOpenTerms: () => _openLegalDocument(
+                route: AppRoutes.termsAndConditions,
+                terms: true,
+              ),
+              onOpenPrivacy: () => _openLegalDocument(
+                route: AppRoutes.privacyPolicy,
+                terms: false,
+              ),
+              onAcceptedChanged: (value) {
+                setState(() {
+                  _acceptedLegal = value;
+                  _error = null;
+                });
+              },
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            PrimaryButton(
+              text: 'Submit for TODA Review',
+              icon: Icons.send_outlined,
+              onPressed: _submit,
+              isLoading: submissionState.isLoading,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextButton.icon(
+              onPressed: submissionState.isLoading
+                  ? null
+                  : () => context.go(AppRoutes.uploadDocuments),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Back to documents'),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+          ],
         ),
       ),
     );

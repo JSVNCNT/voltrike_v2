@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,7 +13,6 @@ import '../../providers/email_verification_provider.dart';
 import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
-import '../../widgets/countdown_timer.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../widgets/validation_message.dart';
 
@@ -29,25 +26,8 @@ class EmailVerificationScreen extends ConsumerStatefulWidget {
 
 class _EmailVerificationScreenState
     extends ConsumerState<EmailVerificationScreen> {
-  Timer? _timer;
-
   String? _message;
   String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _refreshStatus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
 
   Future<void> _refreshStatus() async {
     setState(() {
@@ -63,8 +43,6 @@ class _EmailVerificationScreenState
       if (!mounted) return;
 
       if (verified) {
-        _timer?.cancel();
-
         context.go(AppRoutes.splash);
       } else {
         setState(() {
@@ -129,14 +107,14 @@ class _EmailVerificationScreenState
             const AuthHeader(
               title: AppStrings.verifyEmail,
               subtitle:
-                  'Open the email we sent, verify your address, then refresh this screen.',
+                  'Open the email we sent, verify your address, then select Refresh Status.',
               textAlign: TextAlign.center,
             ),
 
             const SizedBox(height: AppSpacing.lg),
 
             Text(
-              'Once your email has been verified, VolTrike will automatically continue.',
+              'After verifying your email, select Refresh Status to continue.',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium,
             ),
@@ -155,10 +133,6 @@ class _EmailVerificationScreenState
               ),
               const SizedBox(height: AppSpacing.md),
             ],
-            CountdownTimer(seconds: 60, onFinished: () {}),
-
-            const SizedBox(height: AppSpacing.md),
-
             PrimaryButton(
               text: AppStrings.resendVerification,
               onPressed: _resendEmail,
@@ -177,8 +151,6 @@ class _EmailVerificationScreenState
 
             TextButton.icon(
               onPressed: () {
-                _timer?.cancel();
-
                 context.go(AppRoutes.login);
               },
               icon: const Icon(Icons.arrow_back),

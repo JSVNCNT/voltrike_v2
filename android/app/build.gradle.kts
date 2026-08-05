@@ -27,7 +27,10 @@ val mapsApiKey =
 android {
     namespace = "com.example.voltrike_v2"
 
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android is compiled against API 37. Keeping the
+    // compile SDK at that level is backward-compatible with the Android 16
+    // phone and Android 17 emulator used for capstone testing.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

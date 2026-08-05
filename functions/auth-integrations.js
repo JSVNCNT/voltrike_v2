@@ -52,7 +52,23 @@ const requestBrandedVerificationEmail = onCall(options, async (request) => {
   const message = verificationEmail({
     name: user.displayName || 'VolTrike user', verificationLink: link,
   });
-  const response = await deliver(user.email, user.displayName, message);
+  let response;
+  try {
+    response = await deliver(user.email, user.displayName, message);
+  } catch (error) {
+    // Do not consume the one-minute resend window when the provider did not
+    // accept the message. The mobile client can then use Firebase Auth's
+    // built-in verification email as a safe fallback.
+    await limiter.delete().catch(() => undefined);
+    console.error('Verification email provider rejected delivery.', {
+      code: error?.code,
+      responseCode: error?.responseCode,
+    });
+    throw new HttpsError(
+      'unavailable',
+      'Verification email delivery is temporarily unavailable.',
+    );
+  }
   await recordDelivery(request.auth.uid, 'account_verification', response);
   return { sent: true, alreadyVerified: false };
 });

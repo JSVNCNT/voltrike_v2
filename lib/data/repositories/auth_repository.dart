@@ -46,10 +46,15 @@ class AuthRepository {
           .httpsCallable('requestBrandedVerificationEmail')
           .call<Map<String, dynamic>>();
     } on FirebaseFunctionsException catch (error) {
-      // Keep older deployed environments usable while the branded email
-      // function is rolled out. Provider failures and rate limits are not
-      // silently retried through Firebase because that could send duplicates.
-      if (error.code == 'not-found' || error.code == 'unimplemented') {
+      // A new account must never be blocked from verification just because
+      // the optional branded provider is unavailable. Firebase Auth sends the
+      // same signed verification link as a dependable fallback. A rate-limit
+      // response deliberately does not fall back, as a branded message may
+      // already have been accepted for delivery.
+      if (error.code == 'not-found' ||
+          error.code == 'unimplemented' ||
+          error.code == 'internal' ||
+          error.code == 'unavailable') {
         await _authService.sendEmailVerification();
         return;
       }
