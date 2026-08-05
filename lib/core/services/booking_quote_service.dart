@@ -3,7 +3,8 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import '../../data/models/route_policy_advisory.dart';
 import 'voltrike_api.dart';
 
-typedef BookingQuoteRequest = Future<Object?> Function(Map<String, dynamic> input);
+typedef BookingQuoteRequest =
+    Future<Object?> Function(Map<String, dynamic> input);
 
 class GoQuoteException implements Exception {
   const GoQuoteException(this.message);
@@ -81,7 +82,11 @@ class GoBookingQuote {
             ),
           ),
       quoteToken: token,
-      quoteExpiresAt: DateTime.tryParse(_text(data['quoteExpiresAt']) ?? ''),
+      // Go serializes Quote.ExpiresAt as `expiresAt`; keep the older key for
+      // backward compatibility with any pre-V2 quote provider.
+      quoteExpiresAt: DateTime.tryParse(
+        _text(data['expiresAt']) ?? _text(data['quoteExpiresAt']) ?? '',
+      ),
     );
   }
 }

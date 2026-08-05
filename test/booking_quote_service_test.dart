@@ -19,7 +19,7 @@ void main() {
       },
       'avoidedRouteRestrictionNames': ['Highway A'],
       'quoteToken': 'opaque-token',
-      'quoteExpiresAt': '2026-08-04T01:02:03Z',
+      'expiresAt': '2026-08-04T01:02:03Z',
     });
     expect(quote.distanceMeters, 2450);
     expect(quote.estimatedFare, 65);
@@ -27,6 +27,7 @@ void main() {
     expect(quote.isOutsideToda, isTrue);
     expect(quote.routePolicy.avoidedRestrictionNames, ['Highway A']);
     expect(quote.quoteToken, 'opaque-token');
+    expect(quote.quoteExpiresAt, DateTime.utc(2026, 8, 4, 1, 2, 3));
   });
 
   test('bridge sends booking options and returns parsed quote', () async {
