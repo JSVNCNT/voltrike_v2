@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../../data/models/booking.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/booking_repository.dart';
+import '../../../core/services/booking_quote_service.dart';
 import '../providers/booking_session_provider.dart';
 
 /// ===========================================================================
@@ -121,16 +122,11 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
           );
       _retryBooking = booking;
       _retryFingerprint = fingerprint;
+      final quoteToken = await _quoteTokenFor(session);
 
       final creationResult = await _bookingRepository.createBooking(
         booking,
-        goQuoteToken:
-            session.goQuoteExpiresAt?.isAfter(
-                  DateTime.now().add(const Duration(seconds: 5)),
-                ) ==
-                true
-            ? session.goQuoteToken
-            : '',
+        goQuoteToken: quoteToken,
       );
 
       _clearCreationRetry();
@@ -149,6 +145,32 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
     _retryBooking = null;
     _retryFingerprint = null;
     _previousCreationFailed = false;
+  }
+
+  Future<String> _quoteTokenFor(BookingSession session) async {
+    final existingToken = session.goQuoteToken.trim();
+    final expiresAt = session.goQuoteExpiresAt;
+    if (existingToken.isNotEmpty &&
+        expiresAt != null &&
+        expiresAt.isAfter(DateTime.now().add(const Duration(seconds: 5)))) {
+      return existingToken;
+    }
+
+    final pickup = session.pickup;
+    final destination = session.destination;
+    if (pickup == null || destination == null) {
+      throw StateError('Select pickup and destination before booking.');
+    }
+    final refreshed = await BookingQuoteService.instance.tryBookingQuote(
+      pickup: pickup,
+      destination: destination,
+      additionalPassengers: session.additionalPassengers,
+      baggageCount: session.baggageCount,
+    );
+    if (refreshed == null || refreshed.quoteToken.trim().isEmpty) {
+      throw StateError('The route quote could not be refreshed. Try again.');
+    }
+    return refreshed.quoteToken;
   }
 
   //==========================================================================

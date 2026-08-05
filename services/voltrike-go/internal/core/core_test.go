@@ -97,3 +97,43 @@ func TestCoverageAndPolylineBoundaries(t *testing.T) {
 		t.Fatal("malformed polyline was accepted")
 	}
 }
+
+func TestOutsideTodaSurchargeRequiresConfiguredCoverage(t *testing.T) {
+	pickup := Coordinate{Latitude: 10.5, Longitude: 122.5}
+	destinationOutside := Coordinate{Latitude: 11.5, Longitude: 122.5}
+
+	// Until a TODA coverage request has been approved into an active geofence,
+	// legacy city-wide service remains available without a boundary surcharge.
+	unconfigured, err := ClassifyCoverage(nil, pickup, destinationOutside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unconfigured.Configured || unconfigured.IsOutsideToda || unconfigured.CoverageClass != "unconfigured_fallback" {
+		t.Fatalf("unexpected unconfigured coverage: %#v", unconfigured)
+	}
+
+	approvedZone := []Geofence{{
+		ID: "toda-1", TodaID: "toda-1", IsActive: true, CoverageRevision: 1,
+		Areas: []Area{{Points: []Coordinate{
+			{Latitude: 10, Longitude: 122},
+			{Latitude: 11, Longitude: 122},
+			{Latitude: 11, Longitude: 123},
+			{Latitude: 10, Longitude: 123},
+		}}},
+	}}
+	configured, err := ClassifyCoverage(approvedZone, pickup, destinationOutside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !configured.Configured || !configured.IsOutsideToda || configured.CoverageClass != "destination_outside_coverage" {
+		t.Fatalf("unexpected configured coverage: %#v", configured)
+	}
+
+	fare := DefaultFare
+	fare.OutsideTodaSurcharge = 37.50
+	insideFare := CalculateFare(fare, 1000, 0, 0, false)
+	outsideFare := CalculateFare(fare, 1000, 0, 0, configured.IsOutsideToda)
+	if outsideFare.BoundarySurcharge != 37.50 || outsideFare.Total != insideFare.Total+37.50 {
+		t.Fatalf("outside surcharge was not applied once: inside=%#v outside=%#v", insideFare, outsideFare)
+	}
+}
