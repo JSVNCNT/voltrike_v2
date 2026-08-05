@@ -42,10 +42,12 @@ func NewHTTPServer(cfg config.Config, service *Service, verifiers ...IdentityVer
 
 func (server *HTTPServer) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
+	healthHandler := func(writer http.ResponseWriter, _ *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "service": "voltrike-api-v2", "version": 2})
-	})
-	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, request *http.Request) {
+	}
+	mux.HandleFunc("GET /health", healthHandler)
+	mux.HandleFunc("GET /healthz", healthHandler)
+	readyHandler := func(writer http.ResponseWriter, request *http.Request) {
 		if verifier, ok := server.verifier.(ReadinessVerifier); ok {
 			ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
 			defer cancel()
@@ -55,7 +57,9 @@ func (server *HTTPServer) routes() http.Handler {
 			}
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{"status": "ready", "service": "voltrike-api-v2", "version": 2})
-	})
+	}
+	mux.HandleFunc("GET /ready", readyHandler)
+	mux.HandleFunc("GET /readyz", readyHandler)
 	mux.HandleFunc("POST /v1/quotes/compute", server.handleQuote)
 	mux.HandleFunc("POST /v1/quotes/consume", server.handleConsumeQuote)
 	mux.HandleFunc("POST /v1/policy/invalidate", server.handleInvalidatePolicy)
@@ -159,7 +163,7 @@ func (server *HTTPServer) authorize(next http.Handler) http.Handler {
 			next.ServeHTTP(writer, request)
 			return
 		}
-		if request.URL.Path == "/healthz" || request.URL.Path == "/readyz" || server.cfg.LocalInternalKey == "" {
+		if request.URL.Path == "/health" || request.URL.Path == "/healthz" || request.URL.Path == "/ready" || request.URL.Path == "/readyz" || server.cfg.LocalInternalKey == "" {
 			next.ServeHTTP(writer, request)
 			return
 		}

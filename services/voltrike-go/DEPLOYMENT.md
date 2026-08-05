@@ -37,9 +37,9 @@ $region = "asia-southeast1"
 $service = "voltrike-api-v2"
 $databaseUrl = "https://voltrike-v2-default-rtdb.asia-southeast1.firebasedatabase.app"
 $storageBucket = "voltrike-v2.firebasestorage.app"
-$renderOrigin = "https://YOUR-ADMIN.onrender.com"
-$liveKitServerUrl = "wss://YOUR-LIVEKIT-HOST"
-$runtimeServiceAccount = "voltrike-api-v2@$projectId.iam.gserviceaccount.com"
+$renderOrigin = "https://voltrike-admin.onrender.com"
+$liveKitServerUrl = "wss://voltrike-6c5lg2hv.livekit.cloud"
+$runtimeServiceAccount = "voltrike-go-runtime@$projectId.iam.gserviceaccount.com"
 
 gcloud auth login
 gcloud config set project $projectId
@@ -52,19 +52,18 @@ Enable the required Google APIs:
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com firestore.googleapis.com firebasedatabase.googleapis.com firebaseappcheck.googleapis.com routes.googleapis.com
 ```
 
-## 2. Create the API runtime identity and secrets
+## 2. Configure the API runtime identity and secrets
 
-Create the service account once, then grant only the Firebase data permissions
-needed by the current V2 API. Review these bindings in Google Cloud Console for
-your organization before applying them.
+The project reuses its existing `voltrike-go-runtime` service account. Grant
+only the Firebase data permissions needed by the current V2 API. Review these
+bindings in Google Cloud Console before applying them.
 
 ```powershell
-gcloud iam service-accounts create voltrike-api-v2 --display-name="VolTrike V2 API"
 gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/datastore.user"
 gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebasedatabase.admin"
 gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebaseappcheck.tokenVerifier"
 gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebaseauth.admin"
-gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/storage.objectAdmin"
+gcloud storage buckets add-iam-policy-binding "gs://$storageBucket" --member="serviceAccount:$runtimeServiceAccount" --role="roles/storage.objectAdmin"
 ```
 
 The API requires Google Routes and LiveKit credentials, a stable 32-byte quote
@@ -127,8 +126,8 @@ $apiUrl
 Verify only the unauthenticated health endpoints from a terminal:
 
 ```powershell
-curl.exe "$apiUrl/healthz"
-curl.exe "$apiUrl/readyz"
+curl.exe "$apiUrl/health"
+curl.exe "$apiUrl/ready"
 ```
 
 ## 4. Configure App Check for `flutter run`
