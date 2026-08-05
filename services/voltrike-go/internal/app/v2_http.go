@@ -253,3 +253,28 @@ func (server *HTTPServer) handleV2Location(writer http.ResponseWriter, request *
 	}
 	writeJSON(writer, http.StatusAccepted, map[string]any{"accepted": true, "sampleSequence": input.SampleSequence})
 }
+
+func (server *HTTPServer) handleV2Operation(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := server.v2Principal(request)
+	if !ok {
+		writeJSON(writer, http.StatusUnauthorized, errorBody("unauthenticated", "Authentication is required."))
+		return
+	}
+	var input struct {
+		CommandID string         `json:"commandId"`
+		Payload   map[string]any `json:"payload"`
+	}
+	if !server.decode(writer, request, &input) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), server.cfg.RequestTimeout)
+	defer cancel()
+	result, err := server.service.ExecuteOperation(ctx, principal, OperationCommand{
+		Name: request.PathValue("operation"), CommandID: input.CommandID, Payload: input.Payload,
+	})
+	if err != nil {
+		writeServiceError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"data": result})
+}

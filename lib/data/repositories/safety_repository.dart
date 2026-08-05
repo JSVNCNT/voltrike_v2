@@ -1,4 +1,4 @@
-import 'package:cloud_functions/cloud_functions.dart';
+import '../../core/services/voltrike_api.dart';
 
 class SafetyIncidentResult {
   const SafetyIncidentResult({
@@ -29,35 +29,31 @@ class MySafetyIncident {
 }
 
 class SafetyRepository {
-  SafetyRepository({FirebaseFunctions? functions})
-    : _functions =
-          functions ?? FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+  SafetyRepository({VoltrikeApi? api}) : _api = api ?? VoltrikeApi.instance;
 
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
 
   Future<SafetyIncidentResult> triggerSos(
     String bookingId, {
     bool accidental = false,
   }) async {
-    final result = await _functions
-        .httpsCallable('createSafetyIncident')
-        .call<Map<String, dynamic>>({
-          'bookingId': bookingId,
-          'category': 'sos',
-          'acknowledgement': accidental ? 'accidental' : 'needs_review',
-        });
+    final data = await _api.operation('createSafetyIncident', {
+      'bookingId': bookingId,
+      'category': 'sos',
+      'acknowledgement': accidental ? 'accidental' : 'needs_review',
+    });
     return SafetyIncidentResult(
-      incidentId: result.data['incidentId'] as String,
-      idempotent: result.data['idempotent'] == true,
-      deliveryStatus: result.data['deliveryStatus'] as String?,
+      incidentId: data['incidentId'] as String,
+      idempotent: data['idempotent'] == true,
+      deliveryStatus: data['deliveryStatus'] as String?,
     );
   }
 
   Future<MySafetyIncident?> getMyIncident(String bookingId) async {
-    final result = await _functions
-        .httpsCallable('getMySafetyIncident')
-        .call<Map<String, dynamic>>({'bookingId': bookingId});
-    final raw = result.data['incident'];
+    final result = await _api.operation('getMySafetyIncident', {
+      'bookingId': bookingId,
+    });
+    final raw = result['incident'];
     if (raw is! Map) return null;
     final incident = Map<String, dynamic>.from(raw);
     return MySafetyIncident(
@@ -69,15 +65,13 @@ class SafetyRepository {
   }
 
   Future<void> updateMyIncident(String bookingId, String action) async {
-    await _functions
-        .httpsCallable('updateMySafetyIncident')
-        .call<Map<String, dynamic>>({'bookingId': bookingId, 'action': action});
+    await _api.operation('updateMySafetyIncident', {
+      'bookingId': bookingId,
+      'action': action,
+    });
   }
 
   Future<Map<String, dynamic>> shareTripInformation(String bookingId) async {
-    final result = await _functions
-        .httpsCallable('getShareTripInformation')
-        .call<Map<String, dynamic>>({'bookingId': bookingId});
-    return Map<String, dynamic>.from(result.data);
+    return _api.operation('getShareTripInformation', {'bookingId': bookingId});
   }
 }

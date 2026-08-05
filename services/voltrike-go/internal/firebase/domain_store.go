@@ -131,6 +131,18 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 	if err != nil {
 		return app.BookingRecord{}, err
 	}
+	passengerID := text(result.Data, "passengerId", "passengerID")
+	driverID := text(result.Data, "driverId", "driverID")
+	if command.Action == "accept" && passengerID != "" && driverID != "" {
+		if err := store.realtime.NewRef("driver_tracking_access/"+passengerID+"/"+driverID).Set(ctx, map[string]any{"bookingId": command.BookingID, "grantedAt": time.Now().UnixMilli()}); err != nil {
+			return app.BookingRecord{}, fmt.Errorf("write tracking access projection: %w", err)
+		}
+	}
+	if (text(result.Data, "status") == "completed" || text(result.Data, "status") == "cancelled") && passengerID != "" && driverID != "" {
+		if err := store.realtime.NewRef("driver_tracking_access/" + passengerID + "/" + driverID).Delete(ctx); err != nil {
+			return app.BookingRecord{}, fmt.Errorf("remove tracking access projection: %w", err)
+		}
+	}
 	return result, nil
 }
 
@@ -722,14 +734,13 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		"todaId":          command.TodaID,
 		"receivedAt":      now.UnixMilli(),
 	}
-	if err := store.realtime.NewRef("driverLocations/"+principal.UID+"/"+command.SessionID).Set(ctx, updates); err != nil {
-		return fmt.Errorf("write driver location: %w", err)
-	}
 	cell := dispatchCell(command.Latitude, command.Longitude)
 	cellUpdates := map[string]any{
-		"dispatchCells/" + cell + "/" + principal.UID:               updates,
-		"dispatchDriverCells/" + principal.UID:                      cell,
-		"driverPresence/" + principal.UID + "/" + command.SessionID: updates,
+		"dispatchCells/" + cell + "/" + principal.UID:                updates,
+		"dispatchDriverCells/" + principal.UID:                       cell,
+		"driverPresence/" + principal.UID + "/" + command.SessionID:  updates,
+		"driverLocations/" + principal.UID + "/" + command.SessionID: updates,
+		"driver_locations/" + principal.UID:                          updates,
 	}
 	if !command.Online {
 		cellUpdates["dispatchCells/"+cell+"/"+principal.UID] = nil

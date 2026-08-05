@@ -37,6 +37,12 @@ type AdminPage struct {
 	NextCursor string           `json:"nextCursor,omitempty"`
 }
 
+type OperationCommand struct {
+	Name      string         `json:"-"`
+	CommandID string         `json:"commandId,omitempty"`
+	Payload   map[string]any `json:"payload,omitempty"`
+}
+
 type CreateBookingCommand struct {
 	BookingID            string          `json:"bookingId"`
 	OperationID          string          `json:"commandId"`
@@ -94,6 +100,24 @@ type DomainStore interface {
 	HeartbeatDriverSession(context.Context, Principal, DriverHeartbeatCommand) (DriverSessionRecord, error)
 	UpdateDriverLocation(context.Context, Principal, DriverLocationCommand) error
 	ListAdminBookings(context.Context, Principal, string, string, int) (AdminPage, error)
+}
+
+type OperationStore interface {
+	ExecuteOperation(context.Context, Principal, OperationCommand) (map[string]any, error)
+}
+
+func (service *Service) ExecuteOperation(ctx context.Context, principal Principal, command OperationCommand) (map[string]any, error) {
+	if strings.TrimSpace(principal.UID) == "" || strings.TrimSpace(command.Name) == "" {
+		return nil, fmt.Errorf("%w: authenticated user and operation are required", ErrInvalidArgument)
+	}
+	if command.Payload == nil {
+		command.Payload = map[string]any{}
+	}
+	store, ok := service.store.(OperationStore)
+	if !ok {
+		return nil, fmt.Errorf("%w: operation store is not configured", ErrUnavailable)
+	}
+	return store.ExecuteOperation(ctx, principal, command)
 }
 
 func (service *Service) ListAdminBookings(ctx context.Context, principal Principal, cursor, search string, pageSize int) (AdminPage, error) {

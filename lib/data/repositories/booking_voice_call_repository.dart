@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import '../../core/services/voltrike_api.dart';
 
 import '../models/booking_call_session.dart';
 
@@ -106,15 +106,11 @@ class BookingVoiceCallActionResult {
 /// Coordinates the server-authoritative booking call lifecycle. The LiveKit
 /// API secret remains exclusively in Cloud Functions.
 class BookingVoiceCallRepository {
-  BookingVoiceCallRepository({
-    FirebaseFunctions? functions,
-    FirebaseFirestore? firestore,
-  }) : _functions =
-           functions ??
-           FirebaseFunctions.instanceFor(region: 'asia-southeast1'),
-       _firestore = firestore ?? FirebaseFirestore.instance;
+  BookingVoiceCallRepository({VoltrikeApi? api, FirebaseFirestore? firestore})
+    : _api = api ?? VoltrikeApi.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
   final FirebaseFirestore _firestore;
 
   static const Duration _stateCallTimeout = Duration(seconds: 10);
@@ -156,13 +152,11 @@ class BookingVoiceCallRepository {
   Future<BookingVoiceCallActionResult> startCallWithResult(
     String bookingId,
   ) async {
-    final result = await _callWithOneRetry(
-      () => _functions
-          .httpsCallable('startBookingCall')
-          .call<Map<Object?, Object?>>({'bookingId': bookingId}),
+    final data = await _callWithOneRetry(
+      () => _api.operation('startBookingCall', {'bookingId': bookingId}),
       timeout: _stateCallTimeout,
     );
-    return BookingVoiceCallActionResult.fromCallableData(result.data);
+    return BookingVoiceCallActionResult.fromCallableData(data);
   }
 
   Future<BookingCallSession> respondCall({
@@ -196,33 +190,28 @@ class BookingVoiceCallRepository {
     ].contains(response)) {
       throw ArgumentError.value(response, 'response');
     }
-    final result = await _callWithOneRetry(
-      () => _functions
-          .httpsCallable('respondBookingCall')
-          .call<Map<Object?, Object?>>({
-            'bookingId': bookingId,
-            'callId': callId,
-            'response': response.name,
-          }),
+    final data = await _callWithOneRetry(
+      () => _api.operation('respondBookingCall', {
+        'bookingId': bookingId,
+        'callId': callId,
+        'response': response.name,
+      }),
       timeout: _stateCallTimeout,
     );
-    return BookingVoiceCallActionResult.fromCallableData(result.data);
+    return BookingVoiceCallActionResult.fromCallableData(data);
   }
 
   Future<BookingVoiceCallCredentials> createCredentials({
     required String bookingId,
     required String callId,
   }) async {
-    final result = await _callWithOneRetry(
-      () => _functions
-          .httpsCallable('createBookingCallToken')
-          .call<Map<Object?, Object?>>({
-            'bookingId': bookingId,
-            'callId': callId,
-          }),
+    final data = await _callWithOneRetry(
+      () => _api.operation('createBookingCallToken', {
+        'bookingId': bookingId,
+        'callId': callId,
+      }),
       timeout: _tokenCallTimeout,
     );
-    final data = result.data;
     final serverUrl = data['serverUrl'] as String?;
     final token = data['token'] as String?;
     final returnedCallId = data['callId'] as String?;
@@ -246,7 +235,7 @@ class BookingVoiceCallRepository {
     required String callId,
   }) async {
     await _callWithOneRetry(
-      () => _functions.httpsCallable('endBookingCall').call<void>({
+      () => _api.operation('endBookingCall', {
         'bookingId': bookingId,
         'callId': callId,
       }),
@@ -270,8 +259,7 @@ class BookingVoiceCallRepository {
 
   static bool _isRetryable(Object error) {
     if (error is TimeoutException) return true;
-    return error is FirebaseFunctionsException &&
-        (error.code == 'deadline-exceeded' || error.code == 'unavailable');
+    return error is VoltrikeApiException && error.code == 'unavailable';
   }
 
   static int? _int(Object? value) {

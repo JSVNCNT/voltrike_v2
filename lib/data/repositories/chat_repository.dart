@@ -1,11 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../core/services/voltrike_api.dart';
 import '../models/chat_message.dart';
 
 class ChatRepository {
-  ChatRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  ChatRepository({FirebaseFirestore? firestore, VoltrikeApi? api})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _api = api ?? VoltrikeApi.instance;
   final FirebaseFirestore _firestore;
+  final VoltrikeApi _api;
+  final Uuid _uuid = const Uuid();
 
   DocumentReference<Map<String, dynamic>> _conversation(String bookingId) =>
       _firestore.collection('chat').doc(bookingId);
@@ -53,40 +58,14 @@ class ChatRepository {
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    final conversation = _conversation(bookingId);
-    final message = conversation.collection('messages').doc();
-    final batch = _firestore.batch();
-    batch.set(conversation, {
+    await _api.operation('sendRideChatMessage', {
       'bookingId': bookingId,
-      'members': members,
-      'lastMessage': trimmed,
-      'lastMessageAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    batch.set(message, {
-      'senderId': senderId,
       'text': trimmed,
-      'sentAt': FieldValue.serverTimestamp(),
-      'seenBy': [senderId],
-    });
-    await batch.commit();
+    }, commandId: _uuid.v4());
   }
 
   Future<void> markSeen(String bookingId, String userId) async {
-    final unread = await _conversation(bookingId)
-        .collection('messages')
-        .orderBy('sentAt', descending: true)
-        .limit(50)
-        .get();
-    final batch = _firestore.batch();
-    for (final message in unread.docs.where(
-      (doc) => !(doc.data()['seenBy'] as List? ?? const []).contains(userId),
-    )) {
-      batch.update(message.reference, {
-        'seenBy': FieldValue.arrayUnion([userId]),
-      });
-    }
-    await batch.commit();
+    await _api.operation('markRideChatSeen', {'bookingId': bookingId});
   }
 
   Future<void> setTyping({
@@ -94,9 +73,9 @@ class ChatRepository {
     required String userId,
     required bool isTyping,
   }) {
-    return _conversation(bookingId).collection('typing').doc(userId).set({
+    return _api.operation('setRideChatTyping', {
+      'bookingId': bookingId,
       'isTyping': isTyping,
-      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 }

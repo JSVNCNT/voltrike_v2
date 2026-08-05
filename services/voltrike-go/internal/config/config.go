@@ -25,6 +25,9 @@ type Config struct {
 	DispatchCellDegrees       float64
 	DispatchRadiusMeters      float64
 	MaximumDispatchResults    int
+	LiveKitServerURL          string
+	LiveKitAPIKey             string
+	LiveKitAPISecret          string
 }
 
 func Load() (Config, error) {
@@ -45,6 +48,9 @@ func Load() (Config, error) {
 		DispatchCellDegrees:    0.05,
 		DispatchRadiusMeters:   decimal("DISPATCH_RADIUS_METERS", 5000),
 		MaximumDispatchResults: number("MAX_DISPATCH_RESULTS", 40),
+		LiveKitServerURL:       value("LIVEKIT_SERVER_URL", ""),
+		LiveKitAPIKey:          value("LIVEKIT_API_KEY", ""),
+		LiveKitAPISecret:       value("LIVEKIT_API_SECRET", ""),
 	}
 	if cfg.ProjectID == "" {
 		return Config{}, fmt.Errorf("GOOGLE_CLOUD_PROJECT is required")

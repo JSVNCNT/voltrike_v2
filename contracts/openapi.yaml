@@ -133,6 +133,25 @@ paths:
       responses:
         "202":
           description: Accepted location sample.
+  /api/v2/operations/{operation}:
+    post:
+      summary: Execute an explicitly whitelisted authenticated domain operation.
+      parameters:
+        - name: operation
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperationCommand"
+      responses:
+        "200":
+          description: Operation result.
+        default:
+          $ref: "#/components/responses/Error"
 components:
   responses:
     Error:
@@ -173,6 +192,12 @@ components:
               enum: [invalid_argument, unauthenticated, permission_denied, not_found, conflict, failed_precondition, unavailable, internal]
             message: {type: string}
             requestId: {type: string}
+    OperationCommand:
+      type: object
+      required: [payload]
+      properties:
+        commandId: {type: string}
+        payload: {type: object, additionalProperties: true}
     Coordinate:
       type: object
       required: [latitude, longitude]

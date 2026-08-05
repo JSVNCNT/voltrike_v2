@@ -125,6 +125,18 @@ class VoltrikeApi {
     );
   }
 
+  Future<Map<String, dynamic>> operation(
+    String name,
+    Map<String, dynamic> payload, {
+    String? commandId,
+  }) {
+    return _request(
+      'POST',
+      '/api/v2/operations/${Uri.encodeComponent(name)}',
+      body: <String, dynamic>{'commandId': ?commandId, 'payload': payload},
+    ).then((response) => _record(response['data']));
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {

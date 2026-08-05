@@ -1,13 +1,11 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/errors/domain_error_mapper.dart';
+import '../../core/services/voltrike_api.dart';
 
 class ReportRepository {
-  ReportRepository({FirebaseFunctions? functions})
-    : _functions =
-          functions ?? FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+  ReportRepository({VoltrikeApi? api}) : _api = api ?? VoltrikeApi.instance;
 
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
   final Uuid _uuid = const Uuid();
 
   Future<void> create({
@@ -18,7 +16,7 @@ class ReportRepository {
     // Reporter identity, the reported account, participant roles, and TODA
     // scope are all derived from the authenticated booking on the backend.
     try {
-      await _functions.httpsCallable('createRideReport').call({
+      await _api.operation('createRideReport', {
         'reportId': _uuid.v4(),
         'bookingId': bookingId,
         'category': category,

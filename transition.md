@@ -1031,9 +1031,10 @@ as a demo health call.
 
 - [ ] Port restriction and violation authority to Go.
 - [ ] Port settlement, commission, and dispute authority to Go.
-- [ ] Port safety incidents, reports, and ratings to Go.
-- [ ] Port call lifecycle and synchronous LiveKit authorization to Go.
-- [ ] Route chat sends/reads through Go and notify through the outbox.
+- [x] Port safety incidents, reports, and ratings to Go.
+- [x] Port call lifecycle and synchronous LiveKit authorization to Go.
+- [x] Route chat sends/read acknowledgements through Go and notify through the
+  outbox; Firestore listeners remain read-only projections.
 - [ ] Complete onboarding, driver/TODA applications, and role reconciliation.
 - [ ] Complete admin search, pagination, commands, and projections.
 - [ ] Split App.tsx by feature after the functional cutover.
@@ -1304,6 +1305,10 @@ need to serve the Admin bundle. Configure the Render rewrite rule
 | Admin TODA, safety, violations, reports, settlement actions | Existing callable authority | Not yet replaced | None |
 | Flutter safety, reports, ratings, calls, settlement | Existing callable authority | Not yet replaced | None |
 | Rust geometry/navigation/media | Existing native compute boundary | Retained and tested | None |
+| Flutter reports/ratings/SOS/earnings | Go V2 operations + outbox | Complete | None |
+| Flutter call lifecycle/LiveKit authorization | Go V2 operations | Complete | None |
+| Flutter chat writes/read acknowledgements | Go V2 operations + read-only listener | Complete | None |
+| Driver restriction observations/messages | Go session GPS + Firestore transactions | Complete for driver surface; Admin migration pending | None |
 
 The remaining rows are deliberately explicit: they are not silently marked
 complete. The screens remain unchanged while each row is moved behind the Go

@@ -1,5 +1,4 @@
-import 'package:cloud_functions/cloud_functions.dart';
-
+import '../../core/services/voltrike_api.dart';
 import '../models/driver_rating.dart';
 import '../services/firestore_service.dart';
 
@@ -10,16 +9,12 @@ import '../services/firestore_service.dart';
 /// ratings/{ratingId}
 /// ===========================================================================
 class DriverRatingRepository {
-  DriverRatingRepository({
-    FirestoreService? firestoreService,
-    FirebaseFunctions? functions,
-  }) : _firestoreService = firestoreService ?? FirestoreService.instance,
-       _functions =
-           functions ??
-           FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+  DriverRatingRepository({FirestoreService? firestoreService, VoltrikeApi? api})
+    : _firestoreService = firestoreService ?? FirestoreService.instance,
+      _api = api ?? VoltrikeApi.instance;
 
   final FirestoreService _firestoreService;
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
 
   static const String _collection = 'ratings';
 
@@ -28,7 +23,7 @@ class DriverRatingRepository {
   //==========================================================================
 
   Future<void> createRating(DriverRating rating) async {
-    await _functions.httpsCallable('submitDriverRating').call<void>({
+    await _api.operation('submitDriverRating', {
       'bookingId': rating.bookingId,
       'rating': rating.rating,
       'comment': rating.comment,

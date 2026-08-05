@@ -59,6 +59,7 @@ func (server *HTTPServer) routes() http.Handler {
 	v2.HandleFunc("POST /api/v2/driver/sessions", server.handleV2CreateSession)
 	v2.HandleFunc("POST /api/v2/driver/sessions/{sessionId}/heartbeat", server.handleV2Heartbeat)
 	v2.HandleFunc("PUT /api/v2/driver/sessions/{sessionId}/location", server.handleV2Location)
+	v2.HandleFunc("POST /api/v2/operations/{operation}", server.handleV2Operation)
 	mux.Handle("/api/v2/", server.authenticateV2(v2))
 	return server.cors(server.recover(server.authorize(mux)))
 }

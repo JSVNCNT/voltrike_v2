@@ -26,6 +26,7 @@ type Store struct {
 	realtime  *db.Client
 	auth      *auth.Client
 	appCheck  *appcheck.Client
+	cfg       config.Config
 }
 
 func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
@@ -57,6 +58,7 @@ func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
 		realtime:  realtimeClient,
 		auth:      authClient,
 		appCheck:  appCheckClient,
+		cfg:       cfg,
 	}
 	return store, func() { _ = firestoreClient.Close() }, nil
 }

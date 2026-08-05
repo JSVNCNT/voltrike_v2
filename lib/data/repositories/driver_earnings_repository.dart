@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import '../../core/services/voltrike_api.dart';
 
 import '../../core/constants/firestore_constants.dart';
 import '../models/booking.dart';
@@ -23,16 +23,12 @@ class DriverEarningsAggregate {
 }
 
 class DriverEarningsRepository {
-  DriverEarningsRepository({
-    FirebaseFirestore? firestore,
-    FirebaseFunctions? functions,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _functions =
-           functions ??
-           FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+  DriverEarningsRepository({FirebaseFirestore? firestore, VoltrikeApi? api})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _api = api ?? VoltrikeApi.instance;
 
   final FirebaseFirestore _firestore;
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
 
   CollectionReference<Map<String, dynamic>> get _bookings =>
       _firestore.collection(FirestoreConstants.bookings);
@@ -179,17 +175,16 @@ class DriverEarningsRepository {
   }) async {
     if (now == null) {
       try {
-        final response = await _functions
-            .httpsCallable('getDriverEarningsSummary')
-            .call<Map<Object?, Object?>>();
-        return _aggregateFromCallable(response.data);
-      } on FirebaseFunctionsException catch (error) {
+        final response = await _api.operation(
+          'getDriverEarningsSummary',
+          const <String, dynamic>{},
+        );
+        return _aggregateFromCallable(response);
+      } on VoltrikeApiException catch (error) {
         if (!const {
-          'not-found',
-          'unimplemented',
+          'not_found',
           'unavailable',
           'internal',
-          'deadline-exceeded',
         }.contains(error.code)) {
           rethrow;
         }
