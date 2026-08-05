@@ -912,9 +912,10 @@ Implementation should happen on one rewrite branch in this order.
 - [ ] Create the rewrite branch (blocked because this workspace exposes .git as
   read-only; implementation is proceeding on main with the baseline commit
   unchanged).
-- [ ] Add the correct ignore rule for the Go build cache.
-- [ ] Remove tracked Go cache artifacts from the rewrite branch.
-- [ ] Stop tracking environment files.
+- [x] Add the correct ignore rule for the Go build cache.
+- [x] Remove tracked Go cache artifacts from the rewrite branch.
+- [x] Stop tracking the production Functions environment file while preserving
+  each developer's ignored local copy.
 - [ ] Rotate any committed secret-like value and move it to Secret Manager.
 - [ ] Choose and document local emulator environment values.
 - [ ] Add minimal CI for Go, Node, Rust, Admin, and Flutter static/unit gates.
@@ -1050,8 +1051,9 @@ passenger/driver/admin defense run passes.
 - [ ] Delete Node-to-Go proxy modes.
 - [ ] Delete legacy Flutter callable bridges.
 - [ ] Delete stale schema parsers and duplicate admin code.
-- [ ] Replace the generic root README with a project overview.
-- [ ] Update deployment documents.
+- [x] Replace the generic root README with a project overview.
+- [x] Update deployment documents for Cloud Run, Firebase, Render, Flutter,
+  App Check, and rollback.
 - [ ] Update transition.md with final evidence.
 
 Checkpoint: all definition-of-done items pass and the source tree contains one

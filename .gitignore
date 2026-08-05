@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 /rust/target/
+/services/voltrike-go/.gocache/
+/services/voltrike-go/.tmp_go_cache/
+/services/voltrike-go/voltrike-go.exe
 
 # Symbolication related
 app.*.symbols
