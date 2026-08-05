@@ -164,11 +164,11 @@ revoke a token in Firebase Console if it is exposed.
 
 ## 5. Configure the existing Render Admin
 
-In Render, open the existing `voltrike-admin` Static Site and set these build
-environment variables:
+The public Cloud Run URL is pinned in `render.yaml`. In Render, open the
+existing `voltrike-admin` Static Site and set the remaining build environment
+variables:
 
 ```text
-VITE_VOLTRIKE_API_BASE_URL=<the apiUrl printed above>
 VITE_FIREBASE_APP_CHECK_SITE_KEY=<public reCAPTCHA v3 site key>
 VITE_MAPBOX_ACCESS_TOKEN=<public URL-restricted Mapbox token>
 VITE_FIREBASE_VAPID_KEY=<public Firebase web-push key>

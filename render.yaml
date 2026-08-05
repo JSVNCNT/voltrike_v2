@@ -7,7 +7,7 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_VOLTRIKE_API_BASE_URL
-        sync: false
+        value: https://voltrike-api-v2-327670792817.asia-southeast1.run.app
       - key: VITE_MAPBOX_ACCESS_TOKEN
         sync: false
       - key: VITE_FIREBASE_VAPID_KEY
