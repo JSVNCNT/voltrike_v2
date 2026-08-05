@@ -1,0 +1,213 @@
+openapi: 3.0.3
+info:
+  title: VolTrike V2 API
+  version: 2.0.0
+  description: Authenticated command and query API owned by the Go service.
+servers:
+  - url: https://voltrike-api-v2.example.invalid
+security:
+  - firebaseAuth: []
+paths:
+  /healthz:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service health.
+  /readyz:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service readiness.
+  /api/v2/capabilities:
+    get:
+      responses:
+        "200":
+          description: Supported features.
+  /api/v2/me:
+    get:
+      responses:
+        "200":
+          description: Authenticated identity.
+  /api/v2/quotes:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteRequest"
+      responses:
+        "200":
+          description: Signed, short-lived quote.
+  /api/v2/bookings:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingCommand"
+      responses:
+        "201":
+          description: Created booking.
+  /api/v2/bookings/{bookingId}:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      responses:
+        "200":
+          description: Booking projection.
+  /api/v2/bookings/{bookingId}/commands:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingCommand"
+      responses:
+        "200":
+          description: Transitioned booking.
+  /api/v2/admin/bookings:
+    get:
+      operationId: listAdminBookings
+      summary: List bookings for an authenticated administrator.
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: search, in: query, schema: {type: string}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        "200":
+          description: Booking page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {type: object}}
+                  nextCursor: {type: string}
+  /api/v2/driver/sessions:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionCommand"
+      responses:
+        "201":
+          description: Active driver session.
+  /api/v2/driver/sessions/{sessionId}/heartbeat:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Refreshed session lease.
+  /api/v2/driver/sessions/{sessionId}/location:
+    put:
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocationSample"
+      responses:
+        "202":
+          description: Accepted location sample.
+components:
+  securitySchemes:
+    firebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: FirebaseIDToken
+  parameters:
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    Coordinate:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+    QuoteRequest:
+      type: object
+      required: [pickup, destination, additionalPassengers, baggageCount]
+      properties:
+        pickup: {$ref: "#/components/schemas/Coordinate"}
+        destination: {$ref: "#/components/schemas/Coordinate"}
+        additionalPassengers: {type: integer, minimum: 0, maximum: 3}
+        baggageCount: {type: integer, minimum: 0, maximum: 1}
+    CommandEnvelope:
+      type: object
+      required: [commandId]
+      properties:
+        commandId: {type: string}
+        expectedRevision: {type: integer, minimum: 1}
+        sessionId: {type: string}
+        deviceId: {type: string}
+    CreateBookingCommand:
+      allOf:
+        - $ref: "#/components/schemas/CommandEnvelope"
+        - type: object
+          required: [bookingId, pickup, destination, quoteToken]
+          properties:
+            bookingId: {type: string}
+            pickup: {$ref: "#/components/schemas/Coordinate"}
+            destination: {$ref: "#/components/schemas/Coordinate"}
+            pickupAddress: {type: string}
+            destinationAddress: {type: string}
+            additionalPassengers: {type: integer, minimum: 0, maximum: 3}
+            baggageCount: {type: integer, minimum: 0, maximum: 1}
+            quoteToken: {type: string}
+    BookingCommand:
+      allOf:
+        - $ref: "#/components/schemas/CommandEnvelope"
+        - type: object
+          required: [action]
+          properties:
+            action:
+              type: string
+              enum: [accept, arrived, start, payment, complete, cancel, decline, dispute, receipt]
+            reasonCode: {type: string}
+            reasonDetail: {type: string}
+    CreateSessionCommand:
+      type: object
+      required: [sessionId, deviceId, platform, appVersion]
+      properties:
+        sessionId: {type: string}
+        deviceId: {type: string}
+        platform: {type: string}
+        appVersion: {type: string}
+        takeover: {type: boolean}
+    LocationSample:
+      type: object
+      required: [leaseGeneration, sampleSequence, latitude, longitude, accuracy]
+      properties:
+        leaseGeneration: {type: integer, minimum: 1}
+        sampleSequence: {type: integer, minimum: 1}
+        latitude: {type: number}
+        longitude: {type: number}
+        accuracy: {type: number, minimum: 0, maximum: 500}
+        observedAt: {type: string, format: date-time}
+        online: {type: boolean}
+        available: {type: boolean}
+        todaId: {type: string}

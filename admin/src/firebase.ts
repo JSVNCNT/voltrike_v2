@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { getToken, initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
@@ -28,6 +29,22 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app, 'asia-southeast1');
 export const storage = getStorage(app);
+
+const appCheckSiteKey = String(
+  import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY || '',
+).trim();
+const appCheck = appCheckSiteKey
+  ? initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider(appCheckSiteKey),
+    isTokenAutoRefreshEnabled: true,
+  })
+  : null;
+
+export async function firebaseAppCheckToken(): Promise<string | null> {
+  if (!appCheck) return null;
+  const result = await getToken(appCheck, false);
+  return result.token || null;
+}
 
 if (isFirebaseEmulator) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', {

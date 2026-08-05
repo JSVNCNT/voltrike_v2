@@ -1,13 +1,15 @@
 import 'dart:async';
 
-import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:uuid/uuid.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../../core/services/location_service.dart';
 import '../../../core/services/navigation_service.dart';
+import '../../../core/services/voltrike_api.dart';
 import '../../../data/repositories/auth_repository.dart';
 
 /// ===========================================================================
@@ -83,20 +85,25 @@ class DriverLocationState {
 }
 
 class DriverLocationController extends StateNotifier<DriverLocationState> {
-  DriverLocationController({required AuthRepository authRepository})
-    : _authRepository = authRepository,
-      super(const DriverLocationState());
+  DriverLocationController({
+    required AuthRepository authRepository,
+    VoltrikeApi? api,
+  }) : _authRepository = authRepository,
+       _api = api ?? VoltrikeApi.instance,
+       super(const DriverLocationState());
 
   final AuthRepository _authRepository;
-  final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final VoltrikeApi _api;
+  final Uuid _uuid = const Uuid();
 
   StreamSubscription<Position>? _subscription;
   Timer? _heartbeat;
   AppLifecycleListener? _lifecycleListener;
   DateTime? _lastDatabaseWrite;
   Position? _lastPosition;
-  DatabaseReference? _locationRef;
-  DatabaseReference? _presenceRef;
+  String? _sessionId;
+  int _leaseGeneration = 0;
+  int _sampleSequence = 0;
 
   bool get isTracking => _subscription != null;
 
@@ -118,22 +125,23 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
         throw Exception('No authenticated driver.');
       }
 
-      _locationRef = _database.ref('driver_locations/${driver.uid}');
-      _presenceRef = _database.ref('driver_presence/${driver.uid}');
+      _sessionId = _uuid.v4();
+      _leaseGeneration = 1;
+      _sampleSequence = 0;
+      await _api.createDriverSession({
+        'sessionId': _sessionId,
+        'deviceId': 'flutter-${_uuid.v4()}',
+        'platform': defaultTargetPlatform.name,
+        'appVersion': const String.fromEnvironment(
+          'FLUTTER_APP_VERSION',
+          defaultValue: 'dev',
+        ),
+        'takeover': true,
+      });
 
       await LocationService.instance.ensurePermission();
 
       await LocationService.instance.startTracking();
-
-      await _locationRef!.onDisconnect().remove();
-      await _presenceRef!.onDisconnect().set({
-        'online': false,
-        'updatedAt': ServerValue.timestamp,
-      });
-      await _presenceRef!.set({
-        'online': true,
-        'updatedAt': ServerValue.timestamp,
-      });
 
       NavigationService.instance.bindLiveLocation(
         LocationService.instance.locationStream,
@@ -150,7 +158,7 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
             isStarting: false,
             clearError: true,
           );
-          await _writeLocation(_locationRef!, position);
+          await _writeLocation(position);
         },
         onError: (Object error, StackTrace _) {
           state = state.copyWith(
@@ -163,9 +171,8 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
       _heartbeat?.cancel();
       _heartbeat = Timer.periodic(const Duration(seconds: 10), (_) {
         final position = _lastPosition;
-        final locationRef = _locationRef;
-        if (position != null && locationRef != null) {
-          unawaited(_writeLocation(locationRef, position));
+        if (position != null && _sessionId != null) {
+          unawaited(_writeLocation(position));
         }
       });
       _lifecycleListener ??= AppLifecycleListener(onResume: _refreshOnResume);
@@ -202,27 +209,16 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
 
       await LocationService.instance.stopTracking();
 
-      final driver = _authRepository.currentUser;
-      if (driver != null) {
-        await _database.ref('driver_locations/${driver.uid}').remove();
-        await _database.ref('driver_presence/${driver.uid}').set({
-          'online': false,
-          'updatedAt': ServerValue.timestamp,
-        });
-        await _database
-            .ref('driver_locations/${driver.uid}')
-            .onDisconnect()
-            .cancel();
-        await _database
-            .ref('driver_presence/${driver.uid}')
-            .onDisconnect()
-            .cancel();
+      final position = _lastPosition;
+      if (position != null && _sessionId != null) {
+        await _writeLocation(position, force: true, online: false);
       }
 
       _lastDatabaseWrite = null;
       _lastPosition = null;
-      _locationRef = null;
-      _presenceRef = null;
+      _sessionId = null;
+      _leaseGeneration = 0;
+      _sampleSequence = 0;
       state = state.copyWith(
         isTracking: false,
         isStarting: false,
@@ -239,8 +235,7 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
   }
 
   Future<void> _refreshOnResume() async {
-    final locationRef = _locationRef;
-    if (locationRef == null || _subscription == null) return;
+    if (_sessionId == null || _subscription == null) return;
     try {
       final position = await LocationService.instance.currentPosition();
       _lastPosition = position;
@@ -250,20 +245,16 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
         observedAt: position.timestamp,
         clearError: true,
       );
-      await _writeLocation(locationRef, position, force: true);
-      await _presenceRef?.set({
-        'online': true,
-        'updatedAt': ServerValue.timestamp,
-      });
+      await _writeLocation(position, force: true);
     } catch (error) {
       state = state.copyWith(errorMessage: _messageFor(error));
     }
   }
 
   Future<void> _writeLocation(
-    DatabaseReference locationRef,
     Position position, {
     bool force = false,
+    bool online = true,
   }) async {
     if (position.accuracy < 0 || position.accuracy > 100) {
       return;
@@ -275,18 +266,18 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
       return;
     }
     _lastDatabaseWrite = now;
-    await locationRef.set({
+    final sessionId = _sessionId;
+    if (sessionId == null) return;
+    _sampleSequence += 1;
+    await _api.updateLocation(sessionId, {
+      'leaseGeneration': _leaseGeneration,
+      'sampleSequence': _sampleSequence,
       'latitude': position.latitude,
       'longitude': position.longitude,
-      'bearing': position.heading,
-      'speed': position.speed,
       'accuracy': position.accuracy,
-      // Device-observed GPS time remains stable when the heartbeat republishes
-      // the same fix. The backend uses it to require two distinct samples.
-      'observedAt': position.timestamp.millisecondsSinceEpoch,
-      'timestamp': ServerValue.timestamp,
-      'online': true,
-      'updatedAt': ServerValue.timestamp,
+      'observedAt': position.timestamp.toUtc().toIso8601String(),
+      'online': online,
+      'available': online,
     });
     state = state.copyWith(
       lastPublishedAt: now,

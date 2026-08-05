@@ -111,7 +111,11 @@ const {
 } = require('./go-service-client');
 const { dispatchIndexUpdates } = require('./dispatch-spatial-index');
 const { driverEarningsPeriodStarts } = require('./driver-earnings-periods');
+const { processGoOutbox } = require('./outbox-worker');
 const functionsEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+const goV2Authority = process.env.GO_V2_AUTHORITY === 'on';
+
+exports.processGoOutbox = processGoOutbox;
 const runtimeProjectId =
   process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
 if (functionsEmulator && runtimeProjectId !== 'demo-voltrike') {
@@ -7967,6 +7971,7 @@ exports.redispatchPendingBookings = onSchedule(
 );
 
 exports.notifyBookingLifecycle = onDocumentUpdated('bookings/{bookingId}', async (event) => {
+  if (goV2Authority) return;
   const before = event.data.before.data();
   const after = event.data.after.data();
   if (before.status === after.status) return;

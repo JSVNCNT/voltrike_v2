@@ -11,7 +11,7 @@ import {
   where,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db, functions } from './firebase';
+import { auth, db, firebaseAppCheckToken, functions } from './firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
 import type {
@@ -43,6 +43,42 @@ async function call<T>(name: string, data: Record<string, unknown>): Promise<T> 
   } catch (error) {
     throw new Error(callableErrorMessage(name, error));
   }
+}
+
+async function goAdminBookings(
+  cursor = '',
+  search = '',
+): Promise<PageResult<BookingOperation> | null> {
+  const baseUrl = String(import.meta.env.VITE_VOLTRIKE_API_BASE_URL || '').trim().replace(/\/$/, '');
+  const user = auth.currentUser;
+  if (!baseUrl || !user) return null;
+  const token = await user.getIdToken();
+  const appCheckToken = await firebaseAppCheckToken();
+  const url = new URL(`${baseUrl}/api/v2/admin/bookings`);
+  url.searchParams.set('pageSize', '25');
+  if (cursor) url.searchParams.set('cursor', cursor);
+  if (search) url.searchParams.set('search', search);
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+    },
+  });
+  if (!response.ok) return null;
+  const payload = await response.json() as { items?: unknown[]; nextCursor?: unknown };
+  return {
+    items: (payload.items || []).map((entry) => {
+      const source = asRecord(entry);
+      const id = typeof source.id === 'string'
+        ? source.id
+        : typeof source.bookingId === 'string' ? source.bookingId : '';
+      return { id, ...source } as unknown as BookingOperation;
+    }),
+    nextCursor: typeof payload.nextCursor === 'string' && payload.nextCursor
+      ? payload.nextCursor
+      : null,
+  };
 }
 
 const mapDocument = <T>(id: string, value: unknown) => ({ id, ...(value as object) }) as T;
@@ -451,12 +487,15 @@ export const adminApi = {
   async reports(_todaId?: string): Promise<Report[]> {
     return (await adminApi.reportPage()).items;
   },
-  bookingPage: (cursor?: string | null, search = '') =>
-    call<PageResult<BookingOperation>>('adminListBookings', {
+  async bookingPage(cursor?: string | null, search = '') {
+    const migrated = await goAdminBookings(cursor || '', search);
+    if (migrated) return migrated;
+    return call<PageResult<BookingOperation>>('adminListBookings', {
       cursor: cursor || '',
       search,
       pageSize: 25,
-    }),
+    });
+  },
   safetyIncidentPage: (cursor?: string | null) =>
     call<PageResult<SafetyIncident>>('adminListSafetyIncidents', {
       cursor: cursor || '',

@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,6 +42,7 @@ Future<void> main() async {
             : DefaultFirebaseOptions.currentPlatform,
       );
       await FirebaseEmulatorConfig.connect();
+      await _activateAppCheck();
       await FirebaseEmulatorConfig.signInTestRoleIfRequested();
       if (!FirebaseEmulatorConfig.enabled) {
         FirebaseMessaging.onBackgroundMessage(
@@ -77,5 +80,29 @@ Future<void> main() async {
       // Future:
       // FirebaseCrashlytics.instance.recordError(error, stackTrace);
     },
+  );
+}
+
+Future<void> _activateAppCheck() async {
+  if (FirebaseEmulatorConfig.enabled) return;
+  if (kIsWeb) {
+    const siteKey = String.fromEnvironment('FIREBASE_APP_CHECK_WEB_SITE_KEY');
+    if (siteKey.isEmpty) {
+      throw StateError(
+        'FIREBASE_APP_CHECK_WEB_SITE_KEY is required for a production web build.',
+      );
+    }
+    await FirebaseAppCheck.instance.activate(
+      providerWeb: ReCaptchaV3Provider(siteKey),
+    );
+    return;
+  }
+  await FirebaseAppCheck.instance.activate(
+    providerAndroid: kDebugMode
+        ? const AndroidDebugProvider()
+        : const AndroidPlayIntegrityProvider(),
+    providerApple: kDebugMode
+        ? const AppleDebugProvider()
+        : const AppleAppAttestWithDeviceCheckFallbackProvider(),
   );
 }

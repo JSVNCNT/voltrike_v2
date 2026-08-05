@@ -16,12 +16,16 @@ import (
 )
 
 type HTTPServer struct {
-	cfg     config.Config
-	service *Service
+	cfg      config.Config
+	service  *Service
+	verifier IdentityVerifier
 }
 
-func NewHTTPServer(cfg config.Config, service *Service) *http.Server {
+func NewHTTPServer(cfg config.Config, service *Service, verifiers ...IdentityVerifier) *http.Server {
 	handler := &HTTPServer{cfg: cfg, service: service}
+	if len(verifiers) > 0 {
+		handler.verifier = verifiers[0]
+	}
 	return &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           handler.routes(),
@@ -35,13 +39,28 @@ func NewHTTPServer(cfg config.Config, service *Service) *http.Server {
 func (server *HTTPServer) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
-		writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "service": "voltrike-go", "version": 1})
+		writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "service": "voltrike-api-v2", "version": 2})
+	})
+	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, _ *http.Request) {
+		writeJSON(writer, http.StatusOK, map[string]any{"status": "ready", "service": "voltrike-api-v2", "version": 2})
 	})
 	mux.HandleFunc("POST /v1/quotes/compute", server.handleQuote)
 	mux.HandleFunc("POST /v1/quotes/consume", server.handleConsumeQuote)
 	mux.HandleFunc("POST /v1/policy/invalidate", server.handleInvalidatePolicy)
 	mux.HandleFunc("POST /v1/dispatch/candidates", server.handleDispatch)
-	return server.recover(server.authorize(mux))
+	v2 := http.NewServeMux()
+	v2.HandleFunc("GET /api/v2/capabilities", server.handleV2Capabilities)
+	v2.HandleFunc("GET /api/v2/me", server.handleV2Me)
+	v2.HandleFunc("POST /api/v2/quotes", server.handleV2Quote)
+	v2.HandleFunc("POST /api/v2/bookings", server.handleV2CreateBooking)
+	v2.HandleFunc("GET /api/v2/bookings/{bookingId}", server.handleV2GetBooking)
+	v2.HandleFunc("GET /api/v2/admin/bookings", server.handleV2AdminBookings)
+	v2.HandleFunc("POST /api/v2/bookings/{bookingId}/commands", server.handleV2TransitionBooking)
+	v2.HandleFunc("POST /api/v2/driver/sessions", server.handleV2CreateSession)
+	v2.HandleFunc("POST /api/v2/driver/sessions/{sessionId}/heartbeat", server.handleV2Heartbeat)
+	v2.HandleFunc("PUT /api/v2/driver/sessions/{sessionId}/location", server.handleV2Location)
+	mux.Handle("/api/v2/", server.authenticateV2(v2))
+	return server.cors(server.recover(server.authorize(mux)))
 }
 
 func (server *HTTPServer) handleQuote(writer http.ResponseWriter, request *http.Request) {
@@ -111,7 +130,11 @@ func (server *HTTPServer) decode(writer http.ResponseWriter, request *http.Reque
 
 func (server *HTTPServer) authorize(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/healthz" || server.cfg.LocalInternalKey == "" {
+		if strings.HasPrefix(request.URL.Path, "/api/v2/") {
+			next.ServeHTTP(writer, request)
+			return
+		}
+		if request.URL.Path == "/healthz" || request.URL.Path == "/readyz" || server.cfg.LocalInternalKey == "" {
 			next.ServeHTTP(writer, request)
 			return
 		}
@@ -124,6 +147,46 @@ func (server *HTTPServer) authorize(next http.Handler) http.Handler {
 	})
 }
 
+type principalContextKey struct{}
+
+func principalFromContext(ctx context.Context) (Principal, bool) {
+	value, ok := ctx.Value(principalContextKey{}).(Principal)
+	return value, ok && value.UID != ""
+}
+
+func (server *HTTPServer) authenticateV2(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var principal Principal
+		authorization := strings.TrimSpace(request.Header.Get("Authorization"))
+		token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+		if server.cfg.AllowUnauthenticatedLocal && token == "" {
+			principal = Principal{UID: strings.TrimSpace(request.Header.Get("X-Debug-UID"))}
+			if principal.UID == "" {
+				principal.UID = "local-user"
+			}
+		} else {
+			if server.verifier == nil || token == "" {
+				writeJSON(writer, http.StatusUnauthorized, errorBody("unauthenticated", "Firebase authentication is required."))
+				return
+			}
+			var err error
+			principal, err = server.verifier.VerifyIDToken(request.Context(), token)
+			if err != nil {
+				writeJSON(writer, http.StatusUnauthorized, errorBody("unauthenticated", "Firebase authentication is invalid."))
+				return
+			}
+		}
+		if server.cfg.RequireAppCheck {
+			appCheckToken := strings.TrimSpace(request.Header.Get("X-Firebase-AppCheck"))
+			if server.verifier == nil || appCheckToken == "" || server.verifier.VerifyAppCheck(appCheckToken) != nil {
+				writeJSON(writer, http.StatusUnauthorized, errorBody("unauthenticated", "Firebase App Check is required."))
+				return
+			}
+		}
+		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), principalContextKey{}, principal)))
+	})
+}
+
 func (server *HTTPServer) recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		defer func() {
@@ -132,6 +195,30 @@ func (server *HTTPServer) recover(next http.Handler) http.Handler {
 				writeJSON(writer, http.StatusInternalServerError, errorBody("internal", "Internal service error."))
 			}
 		}()
+		next.ServeHTTP(writer, request)
+	})
+}
+
+func (server *HTTPServer) cors(next http.Handler) http.Handler {
+	allowed := map[string]struct{}{}
+	for _, origin := range strings.Split(server.cfg.AllowedOrigins, ",") {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		origin := strings.TrimSpace(request.Header.Get("Origin"))
+		if _, ok := allowed[origin]; ok {
+			writer.Header().Set("Access-Control-Allow-Origin", origin)
+			writer.Header().Set("Vary", "Origin")
+			writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Firebase-AppCheck")
+			writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+		}
+		if request.Method == http.MethodOptions {
+			writer.WriteHeader(http.StatusNoContent)
+			return
+		}
 		next.ServeHTTP(writer, request)
 	})
 }

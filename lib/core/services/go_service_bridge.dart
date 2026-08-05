@@ -1,7 +1,7 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../data/models/route_policy_advisory.dart';
+import 'voltrike_api.dart';
 
 typedef GoQuoteCallable = Future<Object?> Function(Map<String, dynamic> input);
 
@@ -87,19 +87,14 @@ class GoBookingQuote {
 }
 
 class GoServiceBridge {
-  GoServiceBridge({
-    FirebaseFunctions? functions,
-    GoQuoteCallable? quoteCallable,
-  }) : _functions = quoteCallable == null
-           ? functions ??
-                 FirebaseFunctions.instanceFor(region: 'asia-southeast1')
-           : functions,
-       _quoteCallable = quoteCallable;
+  GoServiceBridge({GoQuoteCallable? quoteCallable, VoltrikeApi? api})
+    : _quoteCallable = quoteCallable,
+      _api = api ?? VoltrikeApi.instance;
 
   static final GoServiceBridge instance = GoServiceBridge();
 
-  final FirebaseFunctions? _functions;
   final GoQuoteCallable? _quoteCallable;
+  final VoltrikeApi _api;
 
   Future<GoBookingQuote?> tryBookingQuote({
     required LatLng pickup,
@@ -121,30 +116,16 @@ class GoServiceBridge {
       if (_quoteCallable != null) {
         response = await _quoteCallable(input);
       } else {
-        response =
-            (await _functions!
-                    .httpsCallable('createBookingQuote')
-                    .call<Map<Object?, Object?>>(input))
-                .data;
+        response = await _api.quote(
+          pickup: input['pickup'] as Map<String, dynamic>,
+          destination: input['destination'] as Map<String, dynamic>,
+          additionalPassengers: additionalPassengers,
+          baggageCount: baggageCount,
+        );
       }
       return GoBookingQuote.fromCallable(response);
-    } on FirebaseFunctionsException catch (error) {
-      final bridgeDisabled =
-          error.code == 'failed-precondition' &&
-          error.message?.contains('Go quote bridge is not enabled') == true;
-      if (bridgeDisabled ||
-          const {
-            'unavailable',
-            'deadline-exceeded',
-            'internal',
-            'not-found',
-            'unimplemented',
-          }.contains(error.code)) {
-        return null;
-      }
-      throw GoQuoteException(
-        error.message ?? 'The route and fare request was rejected.',
-      );
+    } on VoltrikeApiException catch (error) {
+      throw GoQuoteException(error.message);
     }
   }
 }

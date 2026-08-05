@@ -1,17 +1,45 @@
-# voltrike_v2
+# VolTrike V2
 
-A new Flutter project.
+VolTrike is a multi-platform tricycle booking and TODA operations system.
+The existing Flutter passenger/driver experience and React Admin interface are
+retained while the application authority moves to the Go V2 API.
 
-## Getting Started
+## Runtime ownership
 
-This project is a starting point for a Flutter application.
+- **Flutter/Dart:** mobile and desktop presentation, platform permissions,
+  secure Firebase token access, and durable client command replay.
+- **React/TypeScript:** Render-hosted Admin presentation and typed V2 API
+  client.
+- **Go:** sole authority for bookings, dispatch, policy, driver sessions,
+  safety, settlement, and Admin commands.
+- **Node.js Functions:** post-commit integrations only: notifications, email,
+  chat/call providers, and scheduled work driven by the transactional outbox.
+- **Rust:** device-local geometry, navigation, PSGC lookup, and media work;
+  never authoritative business state.
+- **Firebase:** Auth, App Check, Firestore, Realtime Database, Storage, FCM,
+  and Functions infrastructure.
 
-A few resources to get you started if this is your first Flutter project:
+## Repository layout
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- `lib/` — Flutter application.
+- `admin/` — React/Vite Admin, deployed as a Render Static Site.
+- `services/voltrike-go/` — V2 API and Firebase adapters.
+- `functions/` — Node integration workers and compatibility paths during the
+  cutover.
+- `rust/` — Flutter Rust Bridge/native compute.
+- `contracts/openapi.yaml` — V2 public API contract.
+- `transition.md` — architecture decisions, migration status, cutover rules,
+  validation gates, and deployment handoff.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Deployment
+
+Do not copy secret values into source control. Deploy the Go API with its
+runtime service account and Secret Manager values, deploy Node Functions and
+Firebase rules separately, then deploy Admin through Render with public build
+variables only. The command sequence and required console settings are in
+[services/voltrike-go/DEPLOYMENT.md](services/voltrike-go/DEPLOYMENT.md).
+
+Before a cutover, review every unchecked item in [transition.md](transition.md).
+The current repository deliberately retains compatibility paths only where a
+V2 feature is not yet ported; do not enable a production authority flag until
+the corresponding feature parity is implemented and validated.

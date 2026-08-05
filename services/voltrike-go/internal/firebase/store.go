@@ -10,6 +10,8 @@ import (
 
 	"cloud.google.com/go/firestore"
 	firebaseadmin "firebase.google.com/go/v4"
+	"firebase.google.com/go/v4/appcheck"
+	"firebase.google.com/go/v4/auth"
 	"firebase.google.com/go/v4/db"
 	"github.com/voltrike/voltrike-go/internal/app"
 	"github.com/voltrike/voltrike-go/internal/config"
@@ -22,6 +24,8 @@ import (
 type Store struct {
 	firestore *firestore.Client
 	realtime  *db.Client
+	auth      *auth.Client
+	appCheck  *appcheck.Client
 }
 
 func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
@@ -38,8 +42,42 @@ func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
 		_ = firestoreClient.Close()
 		return nil, nil, fmt.Errorf("initialize Realtime Database: %w", err)
 	}
-	store := &Store{firestore: firestoreClient, realtime: realtimeClient}
+	authClient, err := admin.Auth(ctx)
+	if err != nil {
+		_ = firestoreClient.Close()
+		return nil, nil, fmt.Errorf("initialize Firebase Auth: %w", err)
+	}
+	appCheckClient, err := admin.AppCheck(ctx)
+	if err != nil {
+		_ = firestoreClient.Close()
+		return nil, nil, fmt.Errorf("initialize Firebase App Check: %w", err)
+	}
+	store := &Store{
+		firestore: firestoreClient,
+		realtime:  realtimeClient,
+		auth:      authClient,
+		appCheck:  appCheckClient,
+	}
 	return store, func() { _ = firestoreClient.Close() }, nil
+}
+
+func (store *Store) VerifyIDToken(ctx context.Context, token string) (app.Principal, error) {
+	if store.auth == nil {
+		return app.Principal{}, fmt.Errorf("Firebase Auth verifier is unavailable")
+	}
+	decoded, err := store.auth.VerifyIDToken(ctx, token)
+	if err != nil {
+		return app.Principal{}, err
+	}
+	return app.Principal{UID: decoded.UID, Claims: decoded.Claims}, nil
+}
+
+func (store *Store) VerifyAppCheck(token string) error {
+	if store.appCheck == nil {
+		return fmt.Errorf("Firebase App Check verifier is unavailable")
+	}
+	_, err := store.appCheck.VerifyToken(token)
+	return err
 }
 
 func (store *Store) LoadPolicy(ctx context.Context) (app.Policy, error) {

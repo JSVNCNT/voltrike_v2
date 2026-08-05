@@ -34,7 +34,7 @@ func main() {
 		slog.Error("create service", "error", err)
 		os.Exit(1)
 	}
-	server := app.NewHTTPServer(cfg, service)
+	server := app.NewHTTPServer(cfg, service, store)
 	go func() {
 		slog.Info("VolTrike Go service listening", "port", cfg.Port, "project", cfg.ProjectID)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

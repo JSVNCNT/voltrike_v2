@@ -1,13 +1,13 @@
-# VolTrike private Go service
+# VolTrike V2 Go API
 
-This service is a private compute/read plane behind Firebase Functions. Mobile
-and admin clients must never call it directly.
+This service is the public, Firebase-token-authenticated application API.
+Flutter and the Render-hosted Admin call `/api/v2/**` directly with Firebase ID
+tokens and App Check tokens. Cloud Run is network-invokable; Go verifies both
+tokens and owns authoritative domain writes.
 
-It owns cached fare/coverage/restriction reads, Google Routes computation,
-opaque short-lived booking quote tokens, and spatial dispatch candidate reads.
-Firebase Functions remains authoritative for authentication, booking and ride
-state transitions, dispatch eligibility, settlements, commissions, and all
-durable writes.
+It owns quote integrity, booking/session transactions, revisions, idempotency,
+outbox records, and the gradual migration of dispatch, policy, settlement,
+safety, and Admin operations from Node compatibility code.
 
 Required runtime configuration:
 
@@ -20,5 +20,5 @@ Optional bounds include `POLICY_CACHE_TTL_SECONDS`,
 `REQUEST_TIMEOUT_SECONDS`, `DISPATCH_RADIUS_METERS`, and
 `MAX_DISPATCH_RESULTS`.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the private Cloud Run, IAM, staged
-Firebase Functions, Render Admin, and manual Flutter rollout commands.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Cloud Run, Firebase, Render Admin, and
+Flutter deployment commands.

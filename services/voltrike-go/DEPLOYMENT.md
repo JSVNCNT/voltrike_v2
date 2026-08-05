@@ -1,160 +1,146 @@
-# VolTrike Go/Firebase deployment
+# VolTrike V2 deployment
 
-This deploys the Go read/compute plane as a private Cloud Run service. Flutter
-and the Render-hosted Admin site continue to call Firebase Functions; neither
-client receives Cloud Run credentials or calls the Go URL directly.
+This runbook deploys the public Go V2 API, Firebase integration workers, and
+the existing Render-hosted Admin. The API is network-invokable because Flutter
+and Admin present Firebase ID and App Check tokens directly; authorization is
+enforced by Go, not Cloud Run IAM.
 
-Run these commands from the repository root in PowerShell. They intentionally
-do not deploy Firebase Hosting.
+Do not run the production commands until the V2 cutover features required for
+your release are implemented and reviewed in `../../transition.md`.
 
-## 1. Select the production project
+## 1. Select the project and deployment values
+
+Run from the repository root. Replace each placeholder before execution.
 
 ```powershell
 $projectId = "voltrike-v2"
 $region = "asia-southeast1"
-$service = "voltrike-go"
+$service = "voltrike-api-v2"
 $databaseUrl = "https://voltrike-v2-default-rtdb.asia-southeast1.firebasedatabase.app"
-$runtimeServiceAccount = "voltrike-go-runtime@$projectId.iam.gserviceaccount.com"
+$renderOrigin = "https://YOUR-ADMIN.onrender.com"
+$runtimeServiceAccount = "voltrike-api-v2@$projectId.iam.gserviceaccount.com"
 
 gcloud auth login
 gcloud config set project $projectId
 firebase use $projectId
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com firestore.googleapis.com firebasedatabase.googleapis.com routes.googleapis.com
 ```
 
-## 2. Create the read-only Go runtime identity
-
-Create this service account once:
+Enable the required Google APIs:
 
 ```powershell
-gcloud iam service-accounts create voltrike-go-runtime --display-name="VolTrike Go runtime"
-gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/viewer"
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com firestore.googleapis.com firebasedatabase.googleapis.com firebaseappcheck.googleapis.com routes.googleapis.com
 ```
 
-The project Viewer role is used because Firebase Realtime Database server
-access currently documents its read-only service-account level as the project
-Reader/Viewer role. The Go process itself exposes no write operation. Firestore
-reads are also read-only under this role.
+## 2. Create the API runtime identity and secrets
 
-## 3. Prepare secrets
+Create the service account once, then grant only the Firebase data permissions
+needed by the current V2 API. Review these bindings in Google Cloud Console for
+your organization before applying them.
 
-The existing `GOOGLE_ROUTES_API_KEY` Firebase secret can be reused. Confirm it
-exists:
+```powershell
+gcloud iam service-accounts create voltrike-api-v2 --display-name="VolTrike V2 API"
+gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/datastore.user"
+gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebasedatabase.admin"
+gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebaseappcheck.tokenVerifier"
+```
+
+The API requires a Google Routes key and a stable 32-byte quote encryption key.
+Store both in Secret Manager; never add either to Render, Flutter, or Git.
 
 ```powershell
 gcloud secrets describe GOOGLE_ROUTES_API_KEY
-```
-
-If it does not exist, create it with the same Google Routes API key already
-used by Functions:
-
-```powershell
-firebase functions:secrets:set GOOGLE_ROUTES_API_KEY
-```
-
-Create the quote encryption key once. If `describe` shows that it already
-exists, do not recreate or rotate it during an active rollout because existing
-short-lived quote tokens would stop decrypting.
-
-```powershell
 gcloud secrets describe GO_QUOTE_ENCRYPTION_KEY
+```
+
+If the quote key does not exist, create it once:
+
+```powershell
 $quoteKeyBytes = New-Object byte[] 32
 [Security.Cryptography.RandomNumberGenerator]::Fill($quoteKeyBytes)
 $quoteKey = [Convert]::ToBase64String($quoteKeyBytes)
 $quoteKey | gcloud secrets create GO_QUOTE_ENCRYPTION_KEY --replication-policy=automatic --data-file=-
 ```
 
-Permit only the Go runtime identity to read the two secret payloads:
+Grant the runtime identity secret access:
 
 ```powershell
 gcloud secrets add-iam-policy-binding GOOGLE_ROUTES_API_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
 gcloud secrets add-iam-policy-binding GO_QUOTE_ENCRYPTION_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
 ```
 
-## 4. Deploy the private Go service
+## 3. Deploy the Go API
+
+The service is intentionally public at the network layer. Every `/api/v2/**`
+request requires a Firebase ID token and, in production, an App Check token.
 
 ```powershell
-gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --no-allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 15s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest"
-$goServiceUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
-$goServiceUrl
+gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 15s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=true,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest"
+$apiUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
+$apiUrl
 ```
 
-The service remains IAM-private. Do not add `allUsers` as an invoker.
-
-## 5. Allow Firebase Functions to invoke Go
-
-Read the runtime identity of the already-deployed second-generation booking
-function, then grant that identity only the Cloud Run Invoker role:
+Verify only the unauthenticated health endpoints from a terminal:
 
 ```powershell
-$functionsServiceAccount = gcloud functions describe createBookingLifecycle --gen2 --region $region --project $projectId --format="value(serviceConfig.serviceAccountEmail)"
-$functionsServiceAccount
-gcloud run services add-iam-policy-binding $service --region $region --project $projectId --member="serviceAccount:$functionsServiceAccount" --role="roles/run.invoker"
+curl.exe "$apiUrl/healthz"
+curl.exe "$apiUrl/readyz"
 ```
 
-If the first command returns nothing, inspect the function in Google Cloud
-Console before continuing; do not guess a service-account identity.
+## 4. Configure Firebase App Check and Render
 
-## 6. Configure Functions with Go initially off
+In Firebase Console:
 
-Open `functions/.env.voltrike-v2` and add or update these lines without deleting
-any existing environment values:
+1. **Security → App Check:** register Android with Play Integrity, Apple with
+   App Attest/DeviceCheck fallback, and the Render Admin web app with your
+   reCAPTCHA v3 site key.
+2. **Authentication → Settings → Authorized domains:** add the Render Admin
+   hostname.
+3. Do not enable Firebase-product enforcement until the new builds have sent
+   valid tokens and the validation pass is complete.
 
-```dotenv
-GO_SERVICE_URL=https://THE-URL-PRINTED-IN-STEP-4
-GO_QUOTE_MODE=off
-GO_DISPATCH_MODE=off
+In Render, open the existing `voltrike-admin` Static Site and set these build
+environment variables:
+
+```text
+VITE_VOLTRIKE_API_BASE_URL=<the apiUrl printed above>
+VITE_FIREBASE_APP_CHECK_SITE_KEY=<public reCAPTCHA v3 site key>
+VITE_MAPBOX_ACCESS_TOKEN=<public URL-restricted Mapbox token>
+VITE_FIREBASE_VAPID_KEY=<public Firebase web-push key>
 ```
 
-Deploy rules, indexes, and Functions. This also deploys the TODA commission
-report correction and the dispatch-cell maintenance trigger. It does not deploy
-the Render frontend or Firebase Hosting.
+Render uses `render.yaml`: build command `npm ci && npm run build`, publish
+directory `admin/dist`, and SPA rewrite `/* -> /index.html`.
+
+## 5. Deploy Firebase integration infrastructure
+
+Deploy rules, indexes, and Functions. The Functions deployment includes the
+Go outbox notification worker. Set `GO_V2_AUTHORITY=on` in the Functions
+environment only when the V2 notification path is ready to replace the legacy
+lifecycle notifier.
 
 ```powershell
-firebase deploy --only "firestore:indexes,database,functions" --project $projectId
+firebase deploy --only "firestore:rules,firestore:indexes,database,storage,functions" --project $projectId
 ```
 
-With an online driver sending locations, allow the trigger to warm the compact
-index, then inspect it:
+## 6. Build clients
+
+Admin builds in Render. For Flutter production builds, pass the public API
+origin and the web App Check key only for web targets:
 
 ```powershell
-firebase database:get /dispatchCells --project $projectId
+flutter build appbundle --dart-define=VOLTRIKE_API_BASE_URL=$apiUrl
+flutter build web --dart-define=VOLTRIKE_API_BASE_URL=$apiUrl --dart-define=FIREBASE_APP_CHECK_WEB_SITE_KEY=YOUR_PUBLIC_RECAPTCHA_SITE_KEY
 ```
 
-## 7. Verify and enable in two controlled steps
+Do not use emulator defines in a release build.
 
-Test the private health endpoint through an authenticated local proxy:
+## Rollback
 
-```powershell
-gcloud run services proxy $service --region $region --project $projectId --port 8085
-```
-
-In a second terminal:
-
-```powershell
-curl.exe http://127.0.0.1:8085/healthz
-```
-
-First change only `GO_QUOTE_MODE=on` in `functions/.env.voltrike-v2`, redeploy
-Functions, and manually test passenger quote/booking creation:
-
-```powershell
-firebase deploy --only functions --project $projectId
-```
-
-After quote and booking tests pass, change `GO_DISPATCH_MODE=on`, redeploy
-Functions again, and manually test passenger/driver dispatch. Off/on are the
-only planned production modes; temporary legacy fallback is retained for a Go
-outage, while invalid supplied quote tokens fail closed.
-
-## 8. Admin and Flutter deployment behavior
-
-- Admin remains on Render and keeps calling Firebase callable Functions. No TSX
-  Cloud Run URL or Go credential is added.
-- The commission report correction becomes active with the Functions/index
-  deployment above; no Render rebuild is required for that correction.
-- Flutter uses `GoServiceBridge` through `createBookingQuote`; there is no
-  `go_bridge` pub dependency.
-- After backend deployment, run the app manually with `flutter run -d DEVICE_ID`.
-- Do not deploy Firebase Hosting while Render is the chosen Admin host.
-
+- Render: redeploy the previous successful Admin release and restore its V2 API
+  build variable.
+- Cloud Run: route traffic back to the prior verified revision with
+  `gcloud run services update-traffic`.
+- Firebase: redeploy the baseline Functions/rules only if the matching Flutter
+  and Admin releases are restored together.
+- Never rotate `GO_QUOTE_ENCRYPTION_KEY` as an outage workaround; it invalidates
+  still-live signed quotes.

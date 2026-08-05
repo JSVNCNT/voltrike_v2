@@ -8,6 +8,7 @@ import '../../../data/repositories/driver_repository.dart';
 
 import '../providers/driver_current_booking_provider.dart';
 import '../providers/driver_incoming_booking_provider.dart';
+import '../providers/driver_location_controller_provider.dart';
 import '../services/driver_current_booking_listener.dart';
 
 /// ===========================================================================
@@ -68,7 +69,9 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
         );
       }
 
-      await _driverRepository.goOnline(firebaseUser.uid);
+      await _ref
+          .read(driverLocationControllerProvider.notifier)
+          .startTracking();
 
       state = const AsyncData(null);
     } catch (e, stackTrace) {
@@ -94,7 +97,7 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
         throw Exception('No authenticated driver.');
       }
 
-      await _driverRepository.goOffline(firebaseUser.uid);
+      await _ref.read(driverLocationControllerProvider.notifier).stopTracking();
 
       state = const AsyncData(null);
     } catch (e, stackTrace) {

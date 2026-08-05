@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/booking.dart';
 import '../models/driver_booking_offer.dart';
 import '../models/model_date_parser.dart';
 import '../models/route_policy_advisory.dart';
+import '../../core/services/voltrike_api.dart';
 
 class BookingCreationResult {
   const BookingCreationResult({
@@ -110,16 +110,12 @@ class BookingCreationResult {
 /// • Admin Portal
 /// ===========================================================================
 class BookingRepository {
-  BookingRepository({
-    FirebaseFirestore? firestore,
-    FirebaseFunctions? functions,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _functions =
-           functions ??
-           FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+  BookingRepository({FirebaseFirestore? firestore, VoltrikeApi? api})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _api = api ?? VoltrikeApi.instance;
 
   final FirebaseFirestore _firestore;
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
   final Uuid _uuid = const Uuid();
   static const int _maximumRetainedOperationIds = 32;
   static const Duration _operationIdRetention = Duration(minutes: 10);
@@ -164,30 +160,24 @@ class BookingRepository {
     String operationId,
     String goQuoteToken,
   ) async {
-    final response = await _functions
-        .httpsCallable('createBookingLifecycle')
-        .call({
-          'bookingId': booking.bookingId,
-          'operationId': operationId,
-          'pickup': {
-            'latitude': booking.pickup.latitude,
-            'longitude': booking.pickup.longitude,
-          },
-          'destination': {
-            'latitude': booking.destination.latitude,
-            'longitude': booking.destination.longitude,
-          },
-          'pickupAddress': booking.pickupAddress,
-          'destinationAddress': booking.destinationAddress,
-          'distanceMeters': booking.distanceMeters,
-          'estimatedFare': booking.estimatedFare,
-          'additionalPassengers': booking.additionalPassengers,
-          'baggageCount': booking.baggageCount,
-          'isOutsideToda': booking.isOutsideToda,
-          'clientRouteAdvisory': booking.routePolicy.toMap(),
-          if (goQuoteToken.isNotEmpty) 'quoteToken': goQuoteToken,
-        });
-    return BookingCreationResult.fromCallable(response.data, fallback: booking);
+    final response = await _api.createBooking({
+      'bookingId': booking.bookingId,
+      'commandId': operationId,
+      'pickup': {
+        'latitude': booking.pickup.latitude,
+        'longitude': booking.pickup.longitude,
+      },
+      'destination': {
+        'latitude': booking.destination.latitude,
+        'longitude': booking.destination.longitude,
+      },
+      'pickupAddress': booking.pickupAddress,
+      'destinationAddress': booking.destinationAddress,
+      'additionalPassengers': booking.additionalPassengers,
+      'baggageCount': booking.baggageCount,
+      'quoteToken': goQuoteToken,
+    });
+    return BookingCreationResult.fromCallable(response, fallback: booking);
   }
 
   //==========================================================================
@@ -487,9 +477,11 @@ class BookingRepository {
 
   Future<void> declineBookingOffer({required String bookingId}) async {
     await _runVoidOperation('decline:$bookingId', (operationId) async {
-      await _functions.httpsCallable('declineBookingOfferLifecycle').call<void>(
-        {'bookingId': bookingId, 'operationId': operationId},
-      );
+      await _api.transitionBooking(bookingId, {
+        'commandId': operationId,
+        'action': 'decline',
+        'expectedRevision': await _expectedRevision(bookingId),
+      });
     });
   }
 
@@ -497,39 +489,42 @@ class BookingRepository {
     required String bookingId,
     required bool received,
   }) async {
-    final confirmation = received ? 'received' : 'paid';
-    await _runVoidOperation('cash:$bookingId:$confirmation', (
-      operationId,
-    ) async {
-      await _functions.httpsCallable('confirmCashPayment').call<void>({
-        'bookingId': bookingId,
-        'operationId': operationId,
-        'confirmation': confirmation,
-      });
-    });
+    await _transition(
+      bookingId: bookingId,
+      action: received ? 'payment' : 'payment',
+    );
   }
 
   Future<void> disputeSettlement({
     required String bookingId,
     required String reason,
   }) async {
-    await _functions.httpsCallable('submitSettlementDispute').call<void>({
-      'bookingId': bookingId,
-      'reason': reason,
+    await _runVoidOperation('dispute:$bookingId', (operationId) async {
+      await _api.transitionBooking(bookingId, {
+        'commandId': operationId,
+        'action': 'dispute',
+        'reasonDetail': reason,
+        'expectedRevision': await _expectedRevision(bookingId),
+      });
     });
   }
 
   Future<void> acknowledgeDriverReceipt({required String bookingId}) async {
-    await _functions.httpsCallable('acknowledgeDriverReceipt').call<void>({
-      'bookingId': bookingId,
+    await _runVoidOperation('receipt:$bookingId', (operationId) async {
+      await _api.transitionBooking(bookingId, {
+        'commandId': operationId,
+        'action': 'receipt',
+        'expectedRevision': await _expectedRevision(bookingId),
+      });
     });
   }
 
   Future<void> _accept(String bookingId) async {
     await _runVoidOperation('accept:$bookingId', (operationId) async {
-      await _functions.httpsCallable('acceptBookingLifecycle').call({
-        'bookingId': bookingId,
-        'operationId': operationId,
+      await _api.transitionBooking(bookingId, {
+        'commandId': operationId,
+        'action': 'accept',
+        'expectedRevision': await _expectedRevision(bookingId),
       });
     });
   }
@@ -541,14 +536,20 @@ class BookingRepository {
     String? reasonDetail,
   }) async {
     await _runVoidOperation('$action:$bookingId', (operationId) async {
-      await _functions.httpsCallable('transitionBookingLifecycle').call({
-        'bookingId': bookingId,
-        'operationId': operationId,
+      await _api.transitionBooking(bookingId, {
+        'commandId': operationId,
         'action': action,
+        'expectedRevision': await _expectedRevision(bookingId),
         'reasonCode': ?reasonCode,
         'reasonDetail': ?reasonDetail,
       });
     });
+  }
+
+  Future<int> _expectedRevision(String bookingId) async {
+    final snapshot = await _collection.doc(bookingId).get();
+    final value = snapshot.data()?['revision'];
+    return value is num ? value.toInt() : 1;
   }
 
   Future<void> _runVoidOperation(
@@ -594,7 +595,7 @@ class BookingRepository {
       case BookingStatus.passengerOnBoard:
         return 'start';
       case BookingStatus.paymentConfirmation:
-        return 'dropOff';
+        return 'payment';
       case BookingStatus.completed:
         return 'complete';
       case BookingStatus.cancelled:

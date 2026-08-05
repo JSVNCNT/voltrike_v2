@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/driver_booking_listener_provider.dart';
-import '../providers/driver_booking_provider.dart';
 import '../providers/driver_location_controller_provider.dart';
 import '../providers/driver_status_provider.dart';
 
@@ -12,12 +11,6 @@ import '../providers/driver_status_provider.dart';
 Future<void> shutdownDriverSession(WidgetRef ref) async {
   ref.read(driverStatusProvider.notifier).goOffline();
 
-  final user = ref.read(driverAuthRepositoryProvider).currentUser;
-  if (user != null) {
-    await _bestEffort(
-      () => ref.read(driverRepositoryProvider).goOffline(user.uid),
-    );
-  }
   await _bestEffort(
     () => ref.read(driverBookingListenerProvider).stopListening(),
   );

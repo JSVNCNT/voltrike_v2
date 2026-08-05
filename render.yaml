@@ -5,6 +5,15 @@ services:
     rootDir: admin
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
+    envVars:
+      - key: VITE_VOLTRIKE_API_BASE_URL
+        sync: false
+      - key: VITE_MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: VITE_FIREBASE_VAPID_KEY
+        sync: false
+      - key: VITE_FIREBASE_APP_CHECK_SITE_KEY
+        sync: false
     routes:
       - type: rewrite
         source: /*

@@ -311,6 +311,13 @@ func (service *Service) DispatchCandidates(ctx context.Context, request Dispatch
 		if !presence.Online || !location.Valid() || presence.Timestamp <= 0 || now-presence.Timestamp > 35000 || presence.Timestamp > now+10000 || presence.Accuracy < 0 || presence.Accuracy > 100 {
 			continue
 		}
+		if len(append(request.PrimaryTodaIDs, request.SecondaryTodaIDs...)) > 0 && !presence.Available {
+			continue
+		}
+		todaIDs := append(request.PrimaryTodaIDs, request.SecondaryTodaIDs...)
+		if len(todaIDs) > 0 && !request.AllowAnyActiveToda && !containsString(todaIDs, presence.TodaID) {
+			continue
+		}
 		distance := core.HaversineMeters(request.Pickup, location)
 		if distance > service.cfg.DispatchRadiusMeters {
 			continue
@@ -322,6 +329,18 @@ func (service *Service) DispatchCandidates(ctx context.Context, request Dispatch
 		result = result[:limit]
 	}
 	return result, nil
+}
+
+func containsString(values []string, target string) bool {
+	if target == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (service *Service) policy(ctx context.Context) (Policy, error) {
