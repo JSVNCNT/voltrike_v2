@@ -18,6 +18,8 @@ import (
 
 func (store *Store) ExecuteOperation(ctx context.Context, principal app.Principal, command app.OperationCommand) (map[string]any, error) {
 	switch command.Name {
+	case "listActiveRouteRestrictions":
+		return store.listActiveRouteRestrictions(ctx)
 	case "createRideReport":
 		return store.createRideReport(ctx, principal, command.Payload)
 	case "submitDriverRating":
@@ -72,6 +74,26 @@ func (store *Store) ExecuteOperation(ctx context.Context, principal app.Principa
 		}
 		return nil, fmt.Errorf("%w: unsupported operation %q", app.ErrInvalidArgument, command.Name)
 	}
+}
+
+// listActiveRouteRestrictions returns only the public, active geometry needed
+// by authenticated rider and driver maps. Policy enforcement remains on the
+// server; this endpoint exists solely for visual overlays and local warnings.
+func (store *Store) listActiveRouteRestrictions(ctx context.Context) (map[string]any, error) {
+	restrictions, revisions, err := store.readRestrictions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]core.Restriction, 0, len(restrictions))
+	for _, restriction := range restrictions {
+		if restriction.IsActive {
+			items = append(items, restriction)
+		}
+	}
+	return map[string]any{
+		"items":    items,
+		"revision": strings.Join(revisions, ","),
+	}, nil
 }
 
 func (store *Store) participantBooking(ctx context.Context, principal app.Principal, bookingID string) (map[string]any, error) {

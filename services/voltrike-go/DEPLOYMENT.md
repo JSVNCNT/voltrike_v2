@@ -77,7 +77,7 @@ gcloud secrets describe GO_QUOTE_ENCRYPTION_KEY
 gcloud secrets describe GO_LOCAL_INTERNAL_KEY
 gcloud secrets describe LIVEKIT_API_KEY
 gcloud secrets describe LIVEKIT_API_SECRET
-gcloud secrets describe DEVELOPER_BOOTSTRAP_CODE
+gcloud secrets describe ADMIN_BOOTSTRAP_CODE
 ```
 
 If the quote key does not exist, create it once:
@@ -98,7 +98,7 @@ gcloud secrets create GOOGLE_ROUTES_API_KEY --replication-policy=automatic --dat
 gcloud secrets create GO_LOCAL_INTERNAL_KEY --replication-policy=automatic --data-file=-
 gcloud secrets create LIVEKIT_API_KEY --replication-policy=automatic --data-file=-
 gcloud secrets create LIVEKIT_API_SECRET --replication-policy=automatic --data-file=-
-gcloud secrets create DEVELOPER_BOOTSTRAP_CODE --replication-policy=automatic --data-file=-
+gcloud secrets create ADMIN_BOOTSTRAP_CODE --replication-policy=automatic --data-file=-
 ```
 
 Grant the runtime identity secret access:
@@ -109,7 +109,7 @@ gcloud secrets add-iam-policy-binding GO_QUOTE_ENCRYPTION_KEY --member="serviceA
 gcloud secrets add-iam-policy-binding GO_LOCAL_INTERNAL_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
 gcloud secrets add-iam-policy-binding LIVEKIT_API_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
 gcloud secrets add-iam-policy-binding LIVEKIT_API_SECRET --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding DEVELOPER_BOOTSTRAP_CODE --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
+gcloud secrets add-iam-policy-binding ADMIN_BOOTSTRAP_CODE --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
 ```
 
 ## 3. Deploy the Go API
@@ -118,7 +118,7 @@ The service is intentionally public at the network layer. Every `/api/v2/**`
 request requires a Firebase ID token and, in production, an App Check token.
 
 ```powershell
-gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=true,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,LIVEKIT_SERVER_URL=$liveKitServerUrl" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=DEVELOPER_BOOTSTRAP_CODE:latest"
+gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=true,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,LIVEKIT_SERVER_URL=$liveKitServerUrl" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
 $apiUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
 $apiUrl
 ```

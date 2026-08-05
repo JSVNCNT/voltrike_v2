@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../data/models/route_restriction.dart';
 import '../native/route_restriction_engine.dart';
 import 'polyline_service.dart';
 import 'route_restriction_matcher.dart';
+import 'voltrike_api.dart';
 
 export 'route_restriction_matcher.dart';
 
@@ -15,55 +15,55 @@ class RouteRestrictionService {
   RouteRestrictionService._();
 
   static final RouteRestrictionService instance = RouteRestrictionService._();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final VoltrikeApi _api = VoltrikeApi.instance;
   List<RouteRestriction>? _cache;
   DateTime? _loadedAt;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subscription;
   RouteRestriction? _lastConflict;
 
   RouteRestriction? get lastConflict => _lastConflict;
 
-  Future<List<RouteRestriction>> activeRestrictions() async {
-    _ensureLiveUpdates();
+  Future<List<RouteRestriction>> activeRestrictions({
+    bool forceRefresh = false,
+  }) async {
     if (_cache != null &&
         _loadedAt != null &&
+        !forceRefresh &&
         DateTime.now().difference(_loadedAt!) < const Duration(seconds: 30)) {
       return _cache!;
     }
-    final snapshot = await _activeQuery.get();
-    _replaceCache(snapshot);
+    final response = await _api.operation(
+      'listActiveRouteRestrictions',
+      const <String, dynamic>{},
+    );
+    final items = response['items'];
+    _cache = items is Iterable
+        ? items
+              .whereType<Map>()
+              .map(_restrictionFromApi)
+              .toList(growable: false)
+        : const <RouteRestriction>[];
+    _loadedAt = DateTime.now();
     return _cache!;
   }
 
   /// Live active restrictions for maps. Callers still filter through the shared
   /// matcher so legacy, non-enforced corridor records never become overlays.
-  Stream<List<RouteRestriction>> watchActiveRestrictions() {
-    return _activeQuery.snapshots().map((snapshot) {
-      _replaceCache(snapshot);
-      return List<RouteRestriction>.unmodifiable(_cache!);
-    });
+  /// The authenticated Go API is polled rather than reading Firestore directly.
+  Stream<List<RouteRestriction>> watchActiveRestrictions() async* {
+    yield List<RouteRestriction>.unmodifiable(await activeRestrictions());
+    await for (final _ in Stream<void>.periodic(const Duration(seconds: 30))) {
+      yield List<RouteRestriction>.unmodifiable(
+        await activeRestrictions(forceRefresh: true),
+      );
+    }
   }
 
-  Query<Map<String, dynamic>> get _activeQuery => _firestore
-      .collection('routeRestrictions')
-      .where('isActive', isEqualTo: true);
-
-  void _ensureLiveUpdates() {
-    _subscription ??= _activeQuery.snapshots().listen(
-      _replaceCache,
-      onError: (_) {
-        // The bounded fetch above remains the fallback while Firestore
-        // reconnects or the current account is not allowed to subscribe.
-        _subscription = null;
-      },
-      onDone: () => _subscription = null,
-      cancelOnError: true,
+  RouteRestriction _restrictionFromApi(Map<dynamic, dynamic> raw) {
+    final data = raw.map((key, value) => MapEntry(key.toString(), value));
+    return RouteRestriction.fromMap(
+      id: (data['id'] as String?)?.trim() ?? '',
+      data: data,
     );
-  }
-
-  void _replaceCache(QuerySnapshot<Map<String, dynamic>> snapshot) {
-    _cache = snapshot.docs.map(RouteRestriction.fromFirestore).toList();
-    _loadedAt = DateTime.now();
   }
 
   void invalidate() {

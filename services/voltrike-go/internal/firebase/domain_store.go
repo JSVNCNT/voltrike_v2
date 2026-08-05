@@ -692,7 +692,7 @@ func (store *Store) HeartbeatDriverSession(ctx context.Context, principal app.Pr
 			return nil
 		}
 		now := time.Now().UTC()
-		updates := map[string]any{"heartbeatAt": now, "expiresAt": now.Add(45 * time.Second), "sampleSequence": command.SampleSequence, "updatedAt": now}
+		updates := map[string]any{"heartbeatAt": now, "expiresAt": now.Add(45 * time.Second), "sampleSequence": int64(command.SampleSequence), "updatedAt": now}
 		tx.Set(ref, updates, firestore.MergeAll)
 		for key, value := range updates {
 			data[key] = value
@@ -724,7 +724,7 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		"driverId":        principal.UID,
 		"sessionId":       command.SessionID,
 		"leaseGeneration": command.LeaseGeneration,
-		"sampleSequence":  command.SampleSequence,
+		"sampleSequence":  int64(command.SampleSequence),
 		"latitude":        command.Latitude,
 		"longitude":       command.Longitude,
 		"accuracy":        command.Accuracy,
@@ -749,7 +749,7 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		return fmt.Errorf("write driver dispatch projection: %w", err)
 	}
 	_, err = ref.Update(ctx, []firestore.Update{
-		{Path: "sampleSequence", Value: command.SampleSequence},
+		{Path: "sampleSequence", Value: int64(command.SampleSequence)},
 		{Path: "heartbeatAt", Value: now},
 		{Path: "expiresAt", Value: now.Add(45 * time.Second)},
 		{Path: "updatedAt", Value: now},
