@@ -165,7 +165,7 @@ func (service *Service) TransitionBooking(ctx context.Context, principal Princip
 		return BookingRecord{}, fmt.Errorf("%w: expectedRevision is required", ErrInvalidArgument)
 	}
 	switch command.Action {
-	case "accept", "arrived", "start", "payment", "complete", "cancel", "decline", "dispute", "receipt":
+	case "accept", "arrived", "start", "payment", "complete", "cancel", "noShow", "decline", "dispute", "receipt":
 	default:
 		return BookingRecord{}, fmt.Errorf("%w: unsupported booking action", ErrInvalidArgument)
 	}
