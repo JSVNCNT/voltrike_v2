@@ -638,7 +638,7 @@ function LiveDriversPage() {
     title: driver.name,
     details: [
       `${driver.vehicleType || 'Vehicle'} · ${driver.plateNumber || 'No plate'}`,
-      `Status: ${driver.bookingStatus.split('_').join(' ')}`,
+      `Status: ${statusLabel(driver.bookingStatus)}`,
       driver.bookingId ? `Booking: ${driver.bookingId}` : 'No active booking',
     ],
   }));
@@ -656,7 +656,7 @@ function LiveDriversPage() {
       <div className="table">{drivers.map((driver) => <button className={selectedId === driver.uid ? 'live-driver selected' : 'live-driver'} onClick={() => setSelectedId(driver.uid)} key={driver.uid}>
         <b>{driver.name}</b>
         <small>{driver.vehicleType || 'Vehicle'} · {driver.plateNumber || 'No plate'}</small>
-        <small>{driver.bookingStatus.split('_').join(' ')}{driver.bookingId ? ` · ${driver.bookingId}` : ''}</small>
+        <small>{statusLabel(driver.bookingStatus)}{driver.bookingId ? ` · ${driver.bookingId}` : ''}</small>
       </button>)}{drivers.length === 0 && <p className="muted">No online driver has a fresh location.</p>}</div>
     </section>
   </div>;
@@ -893,8 +893,8 @@ function OperationsPage({ session }: { session: AdminSession }) {
       {items.map((booking) => <div className="row operation" key={booking.bookingId}>
         <span><b>{booking.passengerName}</b><small>{booking.pickupAddress} → {booking.destinationAddress}</small><small className="technical-id">Booking: {booking.bookingId}</small></span>
         <span><b>{booking.driverName || 'Searching for driver'}</b><small>{booking.plateNumber || 'No plate assigned'} · {booking.todaName || 'No TODA assigned'}</small></span>
-        <span className={booking.status === 'cancelled' ? 'warning' : booking.status === 'completed' ? 'ok' : ''}>{booking.status}{booking.cancellationCode && <small>{booking.cancellationCode.split('_').join(' ')}</small>}</span>
-        <span><b>{peso(booking.amountDue)}</b><small>{booking.paymentMethod} · {booking.settlementStatus.split('_').join(' ')}</small><small>Adjustment: {booking.adjustmentStatus.split('_').join(' ')}</small>{booking.receiptNumber && <small>Receipt: {booking.receiptNumber}</small>}{booking.adjustmentStatus === 'disputed' && <button onClick={() => resolveDispute(booking)}>Resolve dispute</button>}</span>
+        <span className={booking.status === 'cancelled' ? 'warning' : booking.status === 'completed' ? 'ok' : ''}>{statusLabel(booking.status)}{booking.cancellationCode && <small>{statusLabel(booking.cancellationCode)}</small>}</span>
+        <span><b>{peso(booking.amountDue)}</b><small>{booking.paymentMethod} · {statusLabel(booking.settlementStatus)}</small><small>Adjustment: {statusLabel(booking.adjustmentStatus)}</small>{booking.receiptNumber && <small>Receipt: {booking.receiptNumber}</small>}{booking.adjustmentStatus === 'disputed' && <button onClick={() => resolveDispute(booking)}>Resolve dispute</button>}</span>
       </div>)}
       {loading && items.length === 0 && <p className="muted">Loading Firebase bookings…</p>}
       {!loading && !error && items.length === 0 && <p className="muted">No ride operations match this search.</p>}
@@ -959,7 +959,7 @@ function SafetyIncidentsPage({ session }: { session: AdminSession }) {
     title: `SOS · ${incident.driverName || incident.reporterRole}`,
     details: [
       `Booking: ${incident.bookingId}`,
-      `Status: ${incident.bookingStatus.split('_').join(' ')}`,
+      `Status: ${statusLabel(incident.bookingStatus)}`,
       incident.todaName || incident.todaId || 'TODA unavailable',
     ],
     urgent: incident.status === 'open' &&
@@ -1042,9 +1042,9 @@ function SafetyIncidentsPage({ session }: { session: AdminSession }) {
     </section>
     <section className="panel wide">
       <div className="table">{incidents.map((incident) => <div className="row report" key={incident.id}>
-        <span><b>{incident.category.toUpperCase()} · {(incident.responseStatus || incident.status).split('_').join(' ')}</b><small>{incident.createdAt ? new Date(incident.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><small>Booking {incident.bookingId}</small><small>Alert: {(incident.deliveryStatus || 'legacy record').split('_').join(' ')} · escalation level {incident.escalationLevel || 0}</small></span>
+        <span><b>{incident.category.toUpperCase()} · {statusLabel(incident.responseStatus || incident.status)}</b><small>{incident.createdAt ? new Date(incident.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><small>Booking {incident.bookingId}</small><small>Alert: {statusLabel(incident.deliveryStatus || 'legacy record')} · escalation level {incident.escalationLevel || 0}</small></span>
         <span><b>Reported by {incident.reporterRole}</b><small>Passenger: {incident.passengerName || incident.passengerId}</small><small>Driver: {incident.driverName || incident.driverId || 'Not assigned'}</small><small>TODA: {incident.todaName || incident.todaId || 'Not assigned'}</small></span>
-        <span className="warning">{incident.bookingStatus.split('_').join(' ')}<small>{incident.pickupAddress || 'Pickup unavailable'} → {incident.destinationAddress || 'Destination unavailable'}</small><small>{incident.locationSource === 'live_driver_location' ? 'Live driver location' : 'SOS location snapshot'}{incident.driverLocation?.timestamp ? ` · ${new Date(incident.driverLocation.timestamp).toLocaleTimeString('en-PH')}` : ''}</small>{incident.lastResponseNote && <small>Latest note: {incident.lastResponseNote}</small>}{incident.resolutionNote && <small>Resolution: {incident.resolutionNote}</small>}</span>
+        <span className="warning">{statusLabel(incident.bookingStatus)}<small>{incident.pickupAddress || 'Pickup unavailable'} → {incident.destinationAddress || 'Destination unavailable'}</small><small>{incident.locationSource === 'live_driver_location' ? 'Live driver location' : 'SOS location snapshot'}{incident.driverLocation?.timestamp ? ` · ${new Date(incident.driverLocation.timestamp).toLocaleTimeString('en-PH')}` : ''}</small>{incident.lastResponseNote && <small>Latest note: {incident.lastResponseNote}</small>}{incident.resolutionNote && <small>Resolution: {incident.resolutionNote}</small>}</span>
         <span className="actions">
           {incident.driverLocation && <button onClick={() => setSelectedId(incident.id)}>View location</button>}
           <button onClick={contact911}>Call 911</button>

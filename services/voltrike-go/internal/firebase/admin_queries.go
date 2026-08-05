@@ -87,34 +87,91 @@ func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, p
 		return nil, fmt.Errorf("%w: invalid end date", app.ErrInvalidArgument)
 	}
 	end = end.AddDate(0, 0, 1)
-	query := store.firestore.Collection("settlements").Where("settlementTimestamp", ">=", start).Where("settlementTimestamp", "<", end).OrderBy("settlementTimestamp", firestore.Desc).Limit(500)
+	query := store.firestore.Collection("settlements").Limit(500)
 	documents, err := query.Documents(ctx).GetAll()
 	if err != nil {
 		return nil, err
 	}
-	items := make([]map[string]any, 0)
+	type reportEntry struct {
+		item map[string]any
+		at   time.Time
+	}
+	entries := make([]reportEntry, 0)
 	var gross, commission, net float64
+	completed, pending, settled, disputed := 0, 0, 0, 0
 	for _, document := range documents {
 		data := document.Data()
 		if !actor.canAccessToda(text(data, "todaId")) {
 			continue
 		}
-		data["id"] = document.Ref.ID
-		items = append(items, data)
+		occurredAt := reportTimestamp(data)
+		if occurredAt.IsZero() || occurredAt.Before(start) || !occurredAt.Before(end) {
+			continue
+		}
+		settlementStatus := text(data, "status", "settlementStatus")
+		adjustmentStatus := text(data, "adjustmentStatus")
+		if settlementStatus == "awaiting_confirmation" || settlementStatus == "pending" {
+			pending++
+		}
+		if settlementStatus == "settled" {
+			settled++
+			completed++
+		}
+		if adjustmentStatus == "disputed" || settlementStatus == "disputed" {
+			disputed++
+		}
+		if settlementStatus != "settled" {
+			continue
+		}
+		item := map[string]any{
+			"bookingId":         text(data, "bookingId"),
+			"receiptNumber":     text(data, "receiptNumber"),
+			"driverId":          text(data, "driverId"),
+			"driverName":        text(data, "driverName"),
+			"completedAt":       occurredAt,
+			"grossFare":         number(data, "grossFare", "amountDue"),
+			"commissionPercent": number(data, "commissionPercent"),
+			"commissionAmount":  number(data, "commissionAmount"),
+			"driverNetEarnings": number(data, "driverNetEarnings"),
+			"settlementStatus":  settlementStatus,
+			"adjustmentStatus":  adjustmentStatus,
+			"disputeReason":     text(data, "disputeReason"),
+		}
+		entries = append(entries, reportEntry{item: item, at: occurredAt})
 		gross += number(data, "grossFare")
 		commission += number(data, "commissionAmount")
 		net += number(data, "driverNetEarnings")
 	}
-	result := map[string]any{"summary": map[string]any{"grossFare": gross, "commissionAmount": commission, "driverNetEarnings": net, "tripCount": len(items)}, "items": items, "nextCursor": ""}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].at.After(entries[j].at) })
+	items := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, entry.item)
+	}
+	result := map[string]any{"summary": map[string]any{"grossFare": gross, "commissionAmount": commission, "driverNetEarnings": net, "completedRides": completed, "pendingSettlements": pending, "settledSettlements": settled, "disputedSettlements": disputed}, "items": items, "nextCursor": ""}
 	if booleanDefault(payload, false, "summaryOnly") {
 		result["items"] = []map[string]any{}
 	}
 	return result, nil
 }
 
+func reportTimestamp(data map[string]any) time.Time {
+	for _, key := range []string{"settlementTimestamp", "completedAt", "driverReceivedAt", "createdAt"} {
+		switch value := data[key].(type) {
+		case time.Time:
+			return value
+		case *time.Time:
+			if value != nil {
+				return *value
+			}
+		}
+	}
+	return time.Time{}
+}
+
 func (store *Store) adminMetrics(ctx context.Context, actor adminIdentity) (map[string]any, error) {
-	collections := []string{"users", "drivers", "todas", "bookings", "reports", "safetyIncidents", "driverViolations"}
+	collections := []string{"users", "drivers", "todas", "bookings", "reports", "safetyIncidents", "driverViolations", "zoneRequests"}
 	result := map[string]any{}
+	completedTrips := 0
 	for _, name := range collections {
 		documents, err := store.firestore.Collection(name).Limit(2000).Documents(ctx).GetAll()
 		if err != nil {
@@ -124,11 +181,16 @@ func (store *Store) adminMetrics(ctx context.Context, actor adminIdentity) (map[
 		for _, document := range documents {
 			if actor.canAccessToda(text(document.Data(), "todaId", "ownerTodaId", "driverTodaId")) {
 				count++
+				if name == "bookings" && text(document.Data(), "status") == "completed" {
+					completedTrips++
+				}
 			}
 		}
 		result[name] = count
 	}
 	result["activeDrivers"] = result["drivers"]
+	result["trips"] = completedTrips
+	result["zones"] = result["zoneRequests"]
 	result["openReports"] = result["reports"]
 	result["openSafetyIncidents"] = result["safetyIncidents"]
 	return result, nil

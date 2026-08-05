@@ -135,6 +135,104 @@ function dateString(value: unknown): string | null {
   return null;
 }
 
+function textValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+function normalizeLiveDriver(value: unknown): LiveDriver {
+  const source = asRecord(value);
+  const location = asRecord(source.location);
+  const vehicle = asRecord(source.vehicle);
+  const applicant = asRecord(source.applicant);
+  const applicantName = [
+    textValue(applicant.firstName),
+    textValue(applicant.middleName),
+    textValue(applicant.lastName),
+  ].filter(Boolean).join(' ');
+
+  return {
+    uid: textValue(source.uid ?? source.driverId ?? source.id),
+    name: textValue(source.name ?? source.driverName ?? source.displayName,
+      applicantName || 'Unnamed driver'),
+    todaId: textValue(source.todaId ?? source.driverTodaId),
+    latitude: finiteNumber(location.latitude ?? location.lat ?? source.latitude) ?? 0,
+    longitude: finiteNumber(location.longitude ?? location.lng ?? source.longitude) ?? 0,
+    accuracy: finiteNumber(location.accuracy ?? source.accuracy) ?? 0,
+    timestamp: finiteNumber(location.timestamp ?? location.updatedAt ?? source.timestamp) ?? 0,
+    bookingId: textValue(source.bookingId ?? source.currentBookingId) || null,
+    bookingStatus: textValue(source.bookingStatus ?? source.status,
+      source.isOnline === true ? 'available' : 'not_recorded'),
+    vehicleType: textValue(source.vehicleType ?? vehicle.type ?? vehicle.model) || null,
+    plateNumber: textValue(source.plateNumber ?? vehicle.plateNumber) || null,
+  };
+}
+
+function normalizeBookingOperation(value: unknown): BookingOperation {
+  const source = asRecord(value);
+  const acknowledgement = source.acknowledgement === 'accidental' ||
+    source.acknowledgement === 'needs_review'
+    ? source.acknowledgement
+    : undefined;
+  return {
+    bookingId: textValue(source.bookingId ?? source.id),
+    schemaVersion: finiteNumber(source.schemaVersion) ?? 0,
+    status: textValue(source.status, 'not_recorded'),
+    acknowledgement,
+    passengerName: textValue(source.passengerName, 'Passenger unavailable'),
+    driverName: textValue(source.driverName) || null,
+    driverId: textValue(source.driverId) || null,
+    plateNumber: textValue(source.plateNumber) || null,
+    todaId: textValue(source.todaId ?? source.driverTodaId) || null,
+    todaName: textValue(source.todaName) || null,
+    pickupAddress: textValue(source.pickupAddress, 'Pickup unavailable'),
+    destinationAddress: textValue(source.destinationAddress, 'Destination unavailable'),
+    amountDue: finiteNumber(source.amountDue ?? source.totalFare) ?? 0,
+    paymentMethod: textValue(source.paymentMethod, 'not recorded'),
+    settlementStatus: textValue(source.settlementStatus, 'not_recorded'),
+    adjustmentStatus: textValue(source.adjustmentStatus, 'not_recorded'),
+    disputeReason: textValue(source.disputeReason) || null,
+    receiptNumber: textValue(source.receiptNumber) || null,
+    cancellationCode: textValue(source.cancellationCode) || null,
+    createdAt: dateString(source.createdAt),
+    updatedAt: dateString(source.updatedAt),
+  };
+}
+
+function normalizeCommissionReport(value: unknown): TodaCommissionReport {
+  const source = asRecord(value);
+  const summary = asRecord(source.summary);
+  const items = Array.isArray(source.items) ? source.items : [];
+  return {
+    summary: {
+      grossFare: finiteNumber(summary.grossFare) ?? 0,
+      commissionAmount: finiteNumber(summary.commissionAmount) ?? 0,
+      driverNetEarnings: finiteNumber(summary.driverNetEarnings) ?? 0,
+      completedRides: finiteNumber(summary.completedRides ?? summary.tripCount) ?? 0,
+      pendingSettlements: finiteNumber(summary.pendingSettlements) ?? 0,
+      settledSettlements: finiteNumber(summary.settledSettlements) ?? 0,
+      disputedSettlements: finiteNumber(summary.disputedSettlements) ?? 0,
+    },
+    items: items.map((value) => {
+      const item = asRecord(value);
+      return {
+        bookingId: textValue(item.bookingId ?? item.id),
+        receiptNumber: textValue(item.receiptNumber) || null,
+        driverId: textValue(item.driverId),
+        driverName: textValue(item.driverName, 'Driver name unavailable'),
+        completedAt: dateString(item.completedAt ?? item.settlementTimestamp),
+        grossFare: finiteNumber(item.grossFare ?? item.amountDue) ?? 0,
+        commissionPercent: finiteNumber(item.commissionPercent) ?? 0,
+        commissionAmount: finiteNumber(item.commissionAmount) ?? 0,
+        driverNetEarnings: finiteNumber(item.driverNetEarnings) ?? 0,
+        settlementStatus: textValue(item.settlementStatus ?? item.status, 'not_recorded'),
+        adjustmentStatus: textValue(item.adjustmentStatus) || null,
+        disputeReason: textValue(item.disputeReason) || null,
+      };
+    }).filter((item) => Boolean(item.bookingId)),
+    nextCursor: textValue(source.nextCursor) || null,
+  };
+}
+
 function decodePoint(value: unknown): Point | null {
   if (Array.isArray(value)) {
     const longitude = finiteNumber(value[0]);
@@ -496,27 +594,40 @@ export const adminApi = {
   async reports(_todaId?: string): Promise<Report[]> {
     return (await adminApi.reportPage()).items;
   },
-  async bookingPage(cursor?: string | null, search = '') {
-    return call<PageResult<BookingOperation>>('adminListBookings', {
+  async bookingPage(cursor?: string | null, search = ''): Promise<PageResult<BookingOperation>> {
+    const result = await call<{ items?: unknown[]; nextCursor?: unknown }>('adminListBookings', {
       cursor: cursor || '',
       search,
       pageSize: 25,
     });
+    return {
+      items: Array.isArray(result.items)
+        ? result.items.map(normalizeBookingOperation).filter((item) => Boolean(item.bookingId))
+        : [],
+      nextCursor: typeof result.nextCursor === 'string' && result.nextCursor
+        ? result.nextCursor
+        : null,
+    };
   },
   safetyIncidentPage: (cursor?: string | null) =>
     call<PageResult<SafetyIncident>>('adminListSafetyIncidents', {
       cursor: cursor || '',
       pageSize: 50,
     }),
-  liveDrivers: () => call<{ items: LiveDriver[] }>('adminListLiveDrivers', {}).then((result) => result.items),
+  async liveDrivers(): Promise<LiveDriver[]> {
+    const result = await call<{ items?: unknown[] }>('adminListLiveDrivers', {});
+    return Array.isArray(result.items)
+      ? result.items.map(normalizeLiveDriver).filter((item) => Boolean(item.uid))
+      : [];
+  },
   todaCommission: () => call<TodaCommission>('adminGetTodaCommission', {}),
   setTodaCommission: (percent: number) =>
     call<TodaCommission>('adminSetTodaCommission', { percent }),
-  todaCommissionReport(
+  async todaCommissionReport(
     startDate: string,
     endDate: string,
     options: TodaCommissionReportOptions = {},
-  ) {
+  ): Promise<TodaCommissionReport> {
     const data: Record<string, unknown> = {
       startDate,
       endDate,
@@ -526,10 +637,11 @@ export const adminApi = {
       data.cursor = options.cursor || '';
       data.pageSize = 25;
     }
-    return call<TodaCommissionReport>(
+    const result = await call<unknown>(
       'adminGetTodaCommissionReport',
       data,
     );
+    return normalizeCommissionReport(result);
   },
   cancelBookingForSafety: (incidentId: string) =>
     call<{ cancelled: boolean }>('adminCancelBookingForSafety', { incidentId }),

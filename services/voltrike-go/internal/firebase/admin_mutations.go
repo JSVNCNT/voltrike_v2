@@ -10,6 +10,7 @@ import (
 	"firebase.google.com/go/v4/auth"
 	"github.com/google/uuid"
 	"github.com/voltrike/voltrike-go/internal/app"
+	"github.com/voltrike/voltrike-go/internal/core"
 )
 
 func (store *Store) setDriverStatus(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
@@ -99,12 +100,16 @@ func (store *Store) resolveSettlementDispute(ctx context.Context, actor adminIde
 
 func (store *Store) submitZone(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
 	todaID := text(payload, "todaId")
-	if !actor.canAccessToda(todaID) {
+	if todaID == "" || !actor.canAccessToda(todaID) {
 		return nil, fmt.Errorf("%w: TODA is outside administrator scope", app.ErrPrecondition)
+	}
+	polygon, areas, err := firestoreGeometry(payload, 3)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", app.ErrInvalidArgument, err)
 	}
 	id := "zone_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	now := time.Now().UTC()
-	_, err := store.firestore.Collection("zoneRequests").Doc(id).Create(ctx, map[string]any{"zoneRequestId": id, "todaId": todaID, "polygon": payload["polygon"], "areas": payload["areas"], "notes": truncate(text(payload, "notes"), 1000), "status": "pending", "geometryVersion": 1, "submittedBy": actor.UID, "createdAt": now, "updatedAt": now})
+	_, err = store.firestore.Collection("zoneRequests").Doc(id).Create(ctx, map[string]any{"zoneRequestId": id, "todaId": todaID, "polygon": polygon, "areas": areas, "notes": truncate(text(payload, "notes"), 1000), "status": "pending", "geometryVersion": 1, "submittedBy": actor.UID, "createdAt": now, "updatedAt": now})
 	return map[string]any{"zoneRequestId": id}, err
 }
 
@@ -138,7 +143,11 @@ func (store *Store) updateZone(ctx context.Context, actor adminIdentity, payload
 	if err != nil || !actor.canAccessToda(text(doc.Data(), "todaId")) {
 		return nil, fmt.Errorf("%w: zone is outside administrator scope", app.ErrPrecondition)
 	}
-	_, err = ref.Set(ctx, map[string]any{"polygon": payload["polygon"], "areas": payload["areas"], "notes": truncate(text(payload, "notes"), 1000), "status": "pending", "geometryVersion": integer(doc.Data(), "geometryVersion") + 1, "updatedBy": actor.UID, "updatedAt": time.Now().UTC()}, firestore.MergeAll)
+	polygon, areas, geometryErr := firestoreGeometry(payload, 3)
+	if geometryErr != nil {
+		return nil, fmt.Errorf("%w: %v", app.ErrInvalidArgument, geometryErr)
+	}
+	_, err = ref.Set(ctx, map[string]any{"polygon": polygon, "areas": areas, "notes": truncate(text(payload, "notes"), 1000), "status": "pending", "geometryVersion": integer(doc.Data(), "geometryVersion") + 1, "updatedBy": actor.UID, "updatedAt": time.Now().UTC()}, firestore.MergeAll)
 	return map[string]any{"updated": err == nil}, err
 }
 
@@ -146,12 +155,89 @@ func (store *Store) createRestriction(ctx context.Context, actor adminIdentity, 
 	if !actor.developer() {
 		return nil, fmt.Errorf("%w: developer administrator is required", app.ErrPrecondition)
 	}
+	name, restrictionType, geometryType := text(payload, "name"), text(payload, "type"), text(payload, "geometryType")
+	if name == "" || !contains([]string{"no_service_area", "restricted_crossing", "prohibited_highway"}, restrictionType) || !contains([]string{"polygon", "corridor"}, geometryType) {
+		return nil, fmt.Errorf("%w: restriction name and supported type are required", app.ErrInvalidArgument)
+	}
+	minimumPoints := 3
+	if geometryType == "corridor" {
+		minimumPoints = 2
+	}
+	polygon, areas, err := firestoreGeometry(payload, minimumPoints)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", app.ErrInvalidArgument, err)
+	}
 	id := "restriction_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	now := time.Now().UTC()
-	data := copyMap(payload)
-	data["restrictionId"], data["isActive"], data["geometryVersion"], data["createdBy"], data["createdAt"], data["updatedAt"] = id, true, 1, actor.UID, now, now
-	_, err := store.firestore.Collection("routeRestrictions").Doc(id).Create(ctx, data)
+	data := map[string]any{"restrictionId": id, "name": name, "type": restrictionType, "geometryType": geometryType, "polygon": polygon, "areas": areas, "bufferMeters": number(payload, "bufferMeters"), "minimumAlignedTravelMeters": number(payload, "minimumAlignedTravelMeters"), "notes": truncate(text(payload, "notes"), 1000), "isActive": true, "geometryVersion": 1, "createdBy": actor.UID, "createdAt": now, "updatedAt": now}
+	_, err = store.firestore.Collection("routeRestrictions").Doc(id).Create(ctx, data)
 	return map[string]any{"restrictionId": id}, err
+}
+
+// firestoreGeometry converts the Admin's JSON coordinate arrays into maps.
+// Firestore permits arrays of maps, but prohibits arrays containing arrays.
+func firestoreGeometry(payload map[string]any, minimumPoints int) ([]map[string]any, []map[string]any, error) {
+	rawAreas, _ := payload["areas"].([]any)
+	if len(rawAreas) == 0 {
+		rawAreas = []any{payload["polygon"]}
+	}
+	if len(rawAreas) == 0 || len(rawAreas) > core.MaxAreas {
+		return nil, nil, fmt.Errorf("between 1 and %d geometry areas are required", core.MaxAreas)
+	}
+	areas := make([]map[string]any, 0, len(rawAreas))
+	var polygon []map[string]any
+	for _, rawArea := range rawAreas {
+		points, err := firestorePoints(rawArea, minimumPoints)
+		if err != nil {
+			return nil, nil, err
+		}
+		if polygon == nil {
+			polygon = points
+		}
+		areas = append(areas, map[string]any{"points": points})
+	}
+	return polygon, areas, nil
+}
+
+func firestorePoints(raw any, minimumPoints int) ([]map[string]any, error) {
+	values, ok := raw.([]any)
+	if !ok {
+		if object, objectOK := raw.(map[string]any); objectOK {
+			values, ok = object["points"].([]any)
+		}
+	}
+	if !ok || len(values) < minimumPoints || len(values) > core.MaxPoints {
+		return nil, fmt.Errorf("each geometry area requires %d to %d valid points", minimumPoints, core.MaxPoints)
+	}
+	points := make([]map[string]any, 0, len(values))
+	for _, rawPoint := range values {
+		longitude, latitude, valid := geometryCoordinate(rawPoint)
+		if !valid {
+			return nil, fmt.Errorf("geometry contains an invalid coordinate")
+		}
+		points = append(points, map[string]any{"longitude": longitude, "latitude": latitude})
+	}
+	return points, nil
+}
+
+func geometryCoordinate(raw any) (float64, float64, bool) {
+	if pair, ok := raw.([]any); ok && len(pair) >= 2 {
+		longitude, longitudeOK := numeric(pair[0])
+		latitude, latitudeOK := numeric(pair[1])
+		return longitude, latitude, longitudeOK && latitudeOK && core.Coordinate{Latitude: latitude, Longitude: longitude}.Valid()
+	}
+	if point, ok := raw.(map[string]any); ok {
+		longitude, longitudeOK := numeric(point["longitude"])
+		if !longitudeOK {
+			longitude, longitudeOK = numeric(point["lng"])
+		}
+		latitude, latitudeOK := numeric(point["latitude"])
+		if !latitudeOK {
+			latitude, latitudeOK = numeric(point["lat"])
+		}
+		return longitude, latitude, longitudeOK && latitudeOK && core.Coordinate{Latitude: latitude, Longitude: longitude}.Valid()
+	}
+	return 0, 0, false
 }
 
 func (store *Store) setRestrictionStatus(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {

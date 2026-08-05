@@ -38,7 +38,8 @@ const openStatuses = new Set<DriverViolationStatus>([
   'responding',
 ]);
 
-function humanize(value: string): string {
+function humanize(value: string | null | undefined): string {
+  if (!value?.trim()) return 'Not recorded';
   if (value === 'responding') return 'Investigating';
   return value
     .split('_')
@@ -340,7 +341,7 @@ export function ViolationsPage({
       longitude: selectedDriver.longitude,
       title: `${selectedDriver.name} · current location`,
       details: [
-        selectedDriver.bookingStatus.split('_').join(' '),
+        humanize(selectedDriver.bookingStatus),
         selectedDriver.bookingId
           ? `Booking: ${selectedDriver.bookingId}`
           : 'No active booking',
