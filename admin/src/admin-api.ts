@@ -167,6 +167,56 @@ function normalizeLiveDriver(value: unknown): LiveDriver {
   };
 }
 
+function normalizeDriver(value: unknown): Driver {
+  const source = asRecord(value);
+  const applicantSource = asRecord(source.applicant ?? source.user ?? source.profile);
+  const vehicleSource = asRecord(source.vehicle);
+  const applicant = {
+    firstName: textValue(applicantSource.firstName ?? source.firstName ?? source.givenName),
+    middleName: textValue(applicantSource.middleName ?? source.middleName),
+    lastName: textValue(applicantSource.lastName ?? source.lastName ?? source.familyName ?? source.surname),
+    email: textValue(applicantSource.email ?? source.email),
+    phoneNumber: textValue(applicantSource.phoneNumber ?? applicantSource.phone ?? source.phoneNumber ?? source.phone),
+    dateOfBirth: textValue(applicantSource.dateOfBirth ?? applicantSource.birthDate ?? source.dateOfBirth ?? source.birthDate),
+    profileImage: textValue(applicantSource.profileImage ?? source.profileImage ?? source.profilePhotoUrl),
+  };
+  const status = source.driverStatus === 'approved' || source.driverStatus === 'rejected' ||
+      source.driverStatus === 'suspended' ? source.driverStatus : 'pending';
+  const vehicleId = textValue(source.vehicleId ?? vehicleSource.id);
+  const vehicle = Object.keys(vehicleSource).length > 0 || vehicleId
+    ? {
+      id: vehicleId,
+      isVerified: vehicleSource.isVerified === true,
+      vehicleNumber: textValue(vehicleSource.vehicleNumber ?? source.vehicleNumber),
+      plateNumber: textValue(vehicleSource.plateNumber ?? source.plateNumber),
+      model: textValue(vehicleSource.model ?? source.vehicleModel ?? source.vehicleType),
+    }
+    : null;
+  return {
+    ...source,
+    uid: textValue(source.uid ?? source.driverId ?? source.id),
+    todaId: textValue(source.todaId ?? source.driverTodaId),
+    driverStatus: status,
+    isOnline: source.isOnline === true,
+    rating: finiteNumber(source.rating) ?? 0,
+    ratingCount: finiteNumber(source.ratingCount) ?? 0,
+    completedTrips: finiteNumber(source.completedTrips) ?? 0,
+    totalEarnings: finiteNumber(source.totalEarnings) ?? 0,
+    licenseNumber: textValue(source.licenseNumber),
+    licenseExpiry: dateString(source.licenseExpiry) ?? undefined,
+    profilePhotoUrl: textValue(source.profilePhotoUrl ?? source.profileImage) || undefined,
+    driverLicenseFrontUrl: textValue(source.driverLicenseFrontUrl) || undefined,
+    driverLicenseBackUrl: textValue(source.driverLicenseBackUrl) || undefined,
+    governmentIdUrl: textValue(source.governmentIdUrl) || undefined,
+    orDocumentUrl: textValue(source.orDocumentUrl) || undefined,
+    crDocumentUrl: textValue(source.crDocumentUrl) || undefined,
+    vehiclePhotoUrl: textValue(source.vehiclePhotoUrl) || undefined,
+    applicant,
+    vehicleId: vehicleId || undefined,
+    vehicle,
+  } as Driver;
+}
+
 function normalizeBookingOperation(value: unknown): BookingOperation {
   const source = asRecord(value);
   const acknowledgement = source.acknowledgement === 'accidental' ||
@@ -196,6 +246,116 @@ function normalizeBookingOperation(value: unknown): BookingOperation {
     createdAt: dateString(source.createdAt),
     updatedAt: dateString(source.updatedAt),
   };
+}
+
+function normalizeRating(value: unknown): DriverRatingRecord {
+  const source = asRecord(value);
+  return {
+    ...source,
+    id: textValue(source.id ?? source.ratingId),
+    ratingId: textValue(source.ratingId ?? source.id) || undefined,
+    bookingId: textValue(source.bookingId),
+    driverId: textValue(source.driverId),
+    passengerId: textValue(source.passengerId),
+    todaId: textValue(source.todaId) || null,
+    todaName: textValue(source.todaName) || null,
+    driverName: textValue(source.driverName) || null,
+    passengerName: textValue(source.passengerName) || null,
+    rating: finiteNumber(source.rating) ?? 0,
+    comment: textValue(source.comment),
+    createdAt: dateString(source.createdAt),
+  } as DriverRatingRecord;
+}
+
+function normalizePerson(value: unknown) {
+  const source = asRecord(value);
+  if (Object.keys(source).length === 0) return undefined;
+  return {
+    firstName: textValue(source.firstName ?? source.givenName),
+    middleName: textValue(source.middleName),
+    lastName: textValue(source.lastName ?? source.familyName ?? source.surname),
+    email: textValue(source.email),
+    phoneNumber: textValue(source.phoneNumber ?? source.phone),
+    role: textValue(source.role) || undefined,
+    isActive: typeof source.isActive === 'boolean' ? source.isActive : undefined,
+  };
+}
+
+function normalizeReport(value: unknown): Report {
+  const source = asRecord(value);
+  return {
+    ...source,
+    id: textValue(source.id ?? source.reportId),
+    bookingId: textValue(source.bookingId),
+    reporterId: textValue(source.reporterId ?? source.reportedBy),
+    reportedUserId: textValue(source.reportedUserId ?? source.reportedId),
+    todaId: textValue(source.todaId ?? source.driverTodaId) || undefined,
+    reporterRole: source.reporterRole === 'driver' ? 'driver' : 'passenger',
+    reportedRole: source.reportedRole === 'driver' ? 'driver' : 'passenger',
+    category: textValue(source.category, 'Uncategorized report'),
+    details: textValue(source.details ?? source.description),
+    status: source.status === 'resolved' || source.status === 'dismissed' ? source.status : 'open',
+    action: textValue(source.action) || undefined,
+    reporter: normalizePerson(source.reporter ?? source.reporterProfile),
+    reportedUser: normalizePerson(source.reportedUser ?? source.reportedUserProfile),
+  } as Report;
+}
+
+function normalizeSafetyIncident(value: unknown): SafetyIncident {
+  const source = asRecord(value);
+  const rawLocation = asRecord(source.driverLocation ?? source.location);
+  const latitude = finiteNumber(rawLocation.latitude ?? rawLocation.lat);
+  const longitude = finiteNumber(rawLocation.longitude ?? rawLocation.lng ?? rawLocation.lon);
+  const driverLocation = latitude !== null && longitude !== null &&
+      Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+    ? {
+      latitude,
+      longitude,
+      accuracy: finiteNumber(rawLocation.accuracy) ?? undefined,
+      bearing: finiteNumber(rawLocation.bearing ?? rawLocation.heading) ?? undefined,
+      speed: finiteNumber(rawLocation.speed) ?? undefined,
+      timestamp: finiteNumber(rawLocation.timestamp) ?? undefined,
+      online: rawLocation.online === true,
+    }
+    : null;
+  return {
+    ...source,
+    id: textValue(source.id ?? source.incidentId),
+    bookingId: textValue(source.bookingId),
+    category: textValue(source.category, 'sos'),
+    reporterRole: textValue(source.reporterRole, 'passenger'),
+    passengerId: textValue(source.passengerId),
+    passengerName: textValue(source.passengerName) || null,
+    driverId: textValue(source.driverId) || null,
+    driverName: textValue(source.driverName) || null,
+    todaId: textValue(source.todaId) || null,
+    todaName: textValue(source.todaName) || null,
+    bookingStatus: textValue(source.bookingStatus ?? source.status, 'not_recorded'),
+    pickupAddress: textValue(source.pickupAddress) || null,
+    destinationAddress: textValue(source.destinationAddress) || null,
+    driverLocation,
+    status: textValue(source.status, 'open'),
+    responseStatus: source.responseStatus === 'acknowledged' || source.responseStatus === 'responding' || source.responseStatus === 'resolved' ? source.responseStatus : 'reported',
+    deliveryStatus: typeof source.deliveryStatus === 'string' ? source.deliveryStatus as SafetyIncident['deliveryStatus'] : null,
+    deliveryRecipientCount: finiteNumber(source.deliveryRecipientCount) ?? 0,
+    deliveryAttemptCount: finiteNumber(source.deliveryAttemptCount) ?? 0,
+    deliverySuccessCount: finiteNumber(source.deliverySuccessCount) ?? 0,
+    escalationLevel: finiteNumber(source.escalationLevel) ?? 0,
+    bookingCancelledForSafety: source.bookingCancelledForSafety === true,
+    bookingSafetyAction: textValue(source.bookingSafetyAction) || null,
+    locationSource: source.locationSource === 'live_driver_location' ? 'live_driver_location' : 'sos_snapshot',
+    emergencyDispatch: textValue(source.emergencyDispatch),
+    requiresManualEmergencyContact: source.requiresManualEmergencyContact === true,
+    createdAt: dateString(source.createdAt),
+    updatedAt: dateString(source.updatedAt),
+    deliveredAt: dateString(source.deliveredAt),
+    acknowledgedAt: dateString(source.acknowledgedAt),
+    respondingAt: dateString(source.respondingAt),
+    resolvedAt: dateString(source.resolvedAt),
+    escalatedAt: dateString(source.escalatedAt),
+    lastResponseNote: textValue(source.lastResponseNote ?? source.responseNote) || null,
+    resolutionNote: textValue(source.resolutionNote) || null,
+  } as SafetyIncident;
 }
 
 function normalizeCommissionReport(value: unknown): TodaCommissionReport {
@@ -568,29 +728,48 @@ export const adminApi = {
   async todas(): Promise<Toda[]> {
     return (await call<{ items: Toda[] }>('adminListTodas', {})).items;
   },
-  driverPage: (cursor?: string | null, search = '') =>
-    call<PageResult<Driver>>('adminListDrivers', {
+  async driverPage(cursor?: string | null, search = ''): Promise<PageResult<Driver>> {
+    const result = await call<{ items?: unknown[]; nextCursor?: unknown }>('adminListDrivers', {
       cursor: cursor || '',
       search,
       pageSize: 25,
-    }),
+    });
+    return {
+      items: Array.isArray(result.items)
+        ? result.items.map(normalizeDriver).filter((item) => Boolean(item.uid))
+        : [],
+      nextCursor: textValue(result.nextCursor) || null,
+    };
+  },
   async drivers(_todaId?: string): Promise<Driver[]> {
     return (await adminApi.driverPage()).items;
   },
-  ratingPage: (cursor?: string | null) =>
-    call<PageResult<DriverRatingRecord>>('adminListRatings', {
+  async ratingPage(cursor?: string | null): Promise<PageResult<DriverRatingRecord>> {
+    const result = await call<{ items?: unknown[]; nextCursor?: unknown }>('adminListRatings', {
       cursor: cursor || '',
       pageSize: 50,
-    }),
+    });
+    return {
+      items: Array.isArray(result.items) ? result.items.map(normalizeRating) : [],
+      nextCursor: textValue(result.nextCursor) || null,
+    };
+  },
   async ratings(): Promise<DriverRatingRecord[]> {
     return (await adminApi.ratingPage()).items;
   },
-  reportPage: (cursor?: string | null, search = '') =>
-    call<PageResult<Report>>('adminListReports', {
+  async reportPage(cursor?: string | null, search = ''): Promise<PageResult<Report>> {
+    const result = await call<{ items?: unknown[]; nextCursor?: unknown }>('adminListReports', {
       cursor: cursor || '',
       search,
       pageSize: 25,
-    }),
+    });
+    return {
+      items: Array.isArray(result.items)
+        ? result.items.map(normalizeReport).filter((item) => Boolean(item.id))
+        : [],
+      nextCursor: textValue(result.nextCursor) || null,
+    };
+  },
   async reports(_todaId?: string): Promise<Report[]> {
     return (await adminApi.reportPage()).items;
   },
@@ -609,11 +788,18 @@ export const adminApi = {
         : null,
     };
   },
-  safetyIncidentPage: (cursor?: string | null) =>
-    call<PageResult<SafetyIncident>>('adminListSafetyIncidents', {
+  async safetyIncidentPage(cursor?: string | null): Promise<PageResult<SafetyIncident>> {
+    const result = await call<{ items?: unknown[]; nextCursor?: unknown }>('adminListSafetyIncidents', {
       cursor: cursor || '',
       pageSize: 50,
-    }),
+    });
+    return {
+      items: Array.isArray(result.items)
+        ? result.items.map(normalizeSafetyIncident).filter((item) => Boolean(item.id))
+        : [],
+      nextCursor: textValue(result.nextCursor) || null,
+    };
+  },
   async liveDrivers(): Promise<LiveDriver[]> {
     const result = await call<{ items?: unknown[] }>('adminListLiveDrivers', {});
     return Array.isArray(result.items)

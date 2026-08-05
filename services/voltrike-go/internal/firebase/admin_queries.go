@@ -201,19 +201,173 @@ func (store *Store) adminLiveDrivers(ctx context.Context, actor adminIdentity) (
 	if err != nil {
 		return nil, err
 	}
+	profiles, vehicles, err := store.adminDriverLookups(ctx)
+	if err != nil {
+		return nil, err
+	}
 	locations := map[string]map[string]any{}
 	_ = store.realtime.NewRef("driver_locations").Get(ctx, &locations)
 	items := make([]map[string]any, 0)
 	for _, driver := range drivers {
 		data := driver.Data()
-		if !actor.canAccessToda(text(data, "todaId")) {
+		if !actor.canAccessToda(text(data, "todaId", "ownerTodaId", "driverTodaId")) {
 			continue
 		}
-		item := copyMap(data)
-		item["id"], item["driverId"], item["location"] = driver.Ref.ID, driver.Ref.ID, locations[driver.Ref.ID]
+		if text(data, "driverStatus", "status") != "approved" {
+			continue
+		}
+		location, ok := freshAdminDriverLocation(locations[driver.Ref.ID], time.Now().UTC())
+		if !ok {
+			continue
+		}
+		item := hydrateAdminDriver(data, driver.Ref.ID, profiles[driver.Ref.ID], vehicles[driver.Ref.ID])
+		item["id"], item["driverId"], item["location"] = driver.Ref.ID, driver.Ref.ID, location
 		items = append(items, item)
 	}
 	return map[string]any{"items": items}, nil
+}
+
+func freshAdminDriverLocation(location map[string]any, now time.Time) (map[string]any, bool) {
+	latitude, longitude := number(location, "latitude", "lat"), number(location, "longitude", "lng", "lon")
+	if latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || (latitude == 0 && longitude == 0) {
+		return nil, false
+	}
+	timestamp := number(location, "timestamp", "updatedAt", "lastUpdated")
+	if timestamp > 0 && timestamp < 100000000000 { // legacy RTDB clients reported Unix seconds.
+		timestamp *= 1000
+	}
+	if timestamp <= 0 || now.Sub(time.UnixMilli(int64(timestamp))) > 5*time.Minute {
+		return nil, false
+	}
+	result := copyMap(location)
+	result["latitude"], result["longitude"], result["timestamp"] = latitude, longitude, timestamp
+	return result, true
+}
+
+// adminListDrivers returns a presentation-safe driver record. V2 deliberately
+// keeps account identity, driver eligibility, and vehicle information in their
+// respective collections; legacy admin screens expect those values together.
+func (store *Store) adminListDrivers(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
+	pageSize := integer(payload, "pageSize", "limit")
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 25
+	}
+	documents, err := store.firestore.Collection("drivers").OrderBy(firestore.DocumentID, firestore.Asc).Limit(201).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, err
+	}
+	profiles, vehicles, err := store.adminDriverLookups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cursor, search := text(payload, "cursor"), strings.ToLower(text(payload, "search"))
+	started := cursor == ""
+	items := make([]map[string]any, 0, pageSize)
+	for _, document := range documents {
+		if !started {
+			if document.Ref.ID == cursor {
+				started = true
+			}
+			continue
+		}
+		data := document.Data()
+		if !actor.canAccessToda(text(data, "todaId", "ownerTodaId", "driverTodaId")) {
+			continue
+		}
+		item := hydrateAdminDriver(data, document.Ref.ID, profiles[document.Ref.ID], vehicles[document.Ref.ID])
+		if search != "" && !strings.Contains(strings.ToLower(document.Ref.ID+" "+text(item, "name", "driverName", "email", "todaId", "driverStatus")), search) {
+			continue
+		}
+		item["id"] = document.Ref.ID
+		items = append(items, item)
+		if len(items) == pageSize {
+			break
+		}
+	}
+	next := ""
+	if len(items) == pageSize {
+		next = text(items[len(items)-1], "id")
+	}
+	return map[string]any{"items": items, "nextCursor": next}, nil
+}
+
+func (store *Store) adminDriverLookups(ctx context.Context) (map[string]map[string]any, map[string]map[string]any, error) {
+	userDocuments, err := store.firestore.Collection("users").Limit(2000).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, nil, err
+	}
+	profiles := make(map[string]map[string]any, len(userDocuments))
+	for _, document := range userDocuments {
+		data := document.Data()
+		if text(data, "role") == "driver" || text(data, "driverId", "uid") != "" {
+			profiles[document.Ref.ID] = data
+		}
+	}
+	vehicleDocuments, err := store.firestore.Collection("vehicles").Limit(2000).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, nil, err
+	}
+	vehicles := make(map[string]map[string]any, len(vehicleDocuments))
+	for _, document := range vehicleDocuments {
+		data := copyMap(document.Data())
+		data["id"] = document.Ref.ID
+		if driverID := text(data, "driverId", "uid"); driverID != "" {
+			vehicles[driverID] = data
+		}
+	}
+	return profiles, vehicles, nil
+}
+
+func hydrateAdminDriver(driver map[string]any, uid string, profile, storedVehicle map[string]any) map[string]any {
+	item := copyMap(driver)
+	legacyApplicant, _ := driver["applicant"].(map[string]any)
+	legacyVehicle, _ := driver["vehicle"].(map[string]any)
+	applicant := map[string]any{
+		"firstName":   firstAdminText(legacyApplicant, driver, profile, "firstName", "givenName"),
+		"middleName":  firstAdminText(legacyApplicant, driver, profile, "middleName"),
+		"lastName":    firstAdminText(legacyApplicant, driver, profile, "lastName", "familyName", "surname"),
+		"email":       firstAdminText(legacyApplicant, driver, profile, "email"),
+		"phoneNumber": firstAdminText(legacyApplicant, driver, profile, "phoneNumber", "phone"),
+		"dateOfBirth": firstAdminText(legacyApplicant, driver, profile, "dateOfBirth", "birthDate"),
+	}
+	if photo := firstAdminText(legacyApplicant, driver, profile, "profileImage", "profilePhotoUrl"); photo != "" {
+		applicant["profileImage"] = photo
+	}
+	vehicle := copyMap(storedVehicle)
+	for _, key := range []string{"id", "vehicleNumber", "plateNumber", "model", "color", "capacity", "isVerified"} {
+		if _, exists := vehicle[key]; !exists {
+			if value, ok := legacyVehicle[key]; ok {
+				vehicle[key] = value
+			}
+		}
+	}
+	if len(vehicle) == 0 {
+		vehicle = nil
+	}
+	name := firstAdminText(driver, profile, nil, "name", "driverName", "displayName", "fullName")
+	if name == "" {
+		name = personName(applicant)
+	}
+	item["uid"], item["driverId"], item["applicant"], item["name"], item["driverName"] = uid, uid, applicant, name, name
+	if text(item, "todaId", "ownerTodaId", "driverTodaId") == "" && text(profile, "todaId", "driverTodaId") != "" {
+		item["todaId"] = text(profile, "todaId", "driverTodaId")
+	}
+	if vehicle != nil {
+		item["vehicle"] = vehicle
+		if text(item, "vehicleId") == "" {
+			item["vehicleId"] = text(vehicle, "id")
+		}
+	}
+	return item
+}
+
+func firstAdminText(first, second, third map[string]any, keys ...string) string {
+	for _, source := range []map[string]any{first, second, third} {
+		if value := text(source, keys...); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (store *Store) adminListTodas(ctx context.Context, actor adminIdentity) (map[string]any, error) {

@@ -33,17 +33,34 @@ export const storage = getStorage(app);
 const appCheckSiteKey = String(
   import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY || '',
 ).trim();
-const appCheck = appCheckSiteKey
-  ? initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider(appCheckSiteKey),
-    isTokenAutoRefreshEnabled: true,
-  })
-  : null;
+let appCheck: ReturnType<typeof initializeAppCheck> | null = null;
+if (appCheckSiteKey) {
+  try {
+    appCheck = initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(appCheckSiteKey),
+      // Every Go operation asks for a current token. Avoiding an eager iframe
+      // refresh prevents privacy-focused browsers from attempting third-party
+      // storage access while the administrator is simply viewing the dashboard.
+      isTokenAutoRefreshEnabled: false,
+    });
+  } catch {
+    // App Check remains a request enhancement until enforcement is enabled.
+    // A failed provider must never prevent Firebase Auth or the admin shell
+    // from loading; protected V2 operations will return their normal error.
+    appCheck = null;
+  }
+}
 
 export async function firebaseAppCheckToken(): Promise<string | null> {
   if (!appCheck) return null;
-  const result = await getToken(appCheck, false);
-  return result.token || null;
+  try {
+    const result = await getToken(appCheck, false);
+    return result.token || null;
+  } catch {
+    // Browser privacy controls can reject reCAPTCHA's iframe storage request.
+    // Do not turn that browser-level warning into an uncaught admin crash.
+    return null;
+  }
 }
 
 if (isFirebaseEmulator) {
