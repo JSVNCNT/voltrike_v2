@@ -1,6 +1,7 @@
 # VolTrike Full Rewrite Transition
 
-> Status: architecture decision complete; implementation has not started.
+> Status: core V2 authority slice implemented; remaining feature parity is in
+> progress and is tracked explicitly below.
 >
 > Last updated: 2026-08-05.
 >
@@ -886,11 +887,9 @@ Requirements:
 - Use Firebase only for authentication, App Check, approved read-only live
   projections, and web-push token acquisition.
 - Remove five-second full-page reloads.
-- Choose Firebase Hosting as the sole admin deployment owner for this rewrite.
-- Remove Render manifests only after Firebase Hosting and the API route work.
-- Configure a Firebase Hosting /api/** rewrite to voltrike-api-v2 before the
-  existing SPA catch-all rewrite. Flutter may use the direct API origin;
-  browser Admin uses the same-origin Hosting route.
+- Keep the existing Render Static Site as the sole Admin deployment owner.
+- Configure Render's SPA rewrite and inject the public V2 API origin at build
+  time. Flutter and Admin both call the public API origin directly.
 - Split App.tsx by feature only after functional API cutover; it is not a
   blocker for the first vertical slice.
 
@@ -917,8 +916,8 @@ Implementation should happen on one rewrite branch in this order.
 - [x] Stop tracking the production Functions environment file while preserving
   each developer's ignored local copy.
 - [ ] Rotate any committed secret-like value and move it to Secret Manager.
-- [ ] Choose and document local emulator environment values.
-- [ ] Add minimal CI for Go, Node, Rust, Admin, and Flutter static/unit gates.
+- [x] Choose and document local emulator environment values.
+- [x] Add minimal CI for Go, Node, Rust, Admin, and Flutter static/unit gates.
 
 Checkpoint: repository is clean apart from intentional rewrite files and no
 secret value is introduced into documentation or logs.
@@ -926,11 +925,11 @@ secret value is introduced into documentation or logs.
 ### Phase 1 — contracts
 
 - [x] Create contracts/openapi.yaml.
-- [ ] Define the command, response, and error envelopes.
-- [ ] Freeze booking status and transition fixtures.
-- [ ] Freeze fare, dispatch, restriction, and settlement fixtures.
-- [ ] Define V2 Firestore and RTDB documents.
-- [ ] Define Firebase ID token, App Check, and role semantics.
+- [x] Define the command, response, and error envelopes.
+- [x] Freeze booking status and transition fixtures.
+- [x] Freeze fare, dispatch, restriction, and settlement fixtures.
+- [x] Define V2 Firestore and RTDB documents.
+- [x] Define Firebase ID token, App Check, and role semantics.
 - [ ] Configure Android, Apple, and web App Check providers plus local debug
   tokens; client token acquisition is implemented, while Firebase Console
   registration/debug-token setup remains an operator task.
@@ -948,7 +947,7 @@ Checkpoint: Go, Dart, and TypeScript can compile against the same contract.
 - [x] Port authoritative fare and quote creation through /api/v2/quotes.
 - [x] Port coverage/restriction validation required by quoting and booking.
 - [x] Port booking creation and core lifecycle transactions.
-- [ ] Port core cash completion and settlement snapshot calculation.
+- [x] Port core cash completion and settlement snapshot calculation.
 - [x] Implement idempotency receipts and aggregate revisions for the V2
   booking/session slice.
 - [x] Implement driver sessions, heartbeat, takeover, and session-scoped
@@ -1007,7 +1006,8 @@ Go.
 - [ ] Replace N+1 and scan-based reads with Go queries.
 - [ ] Replace polling with projection reads or scoped refresh.
 - [ ] Route defense-critical admin mutations through Go.
-- [ ] Build and deploy from Firebase Hosting configuration.
+- [x] Keep the existing Render Static Site deployment configuration while
+  preserving the Admin UI.
 
 Checkpoint: the full admin defense flow works without authoritative browser
 writes.
@@ -1311,7 +1311,9 @@ contract and covered by an emulator scenario.
 
 - Current phase: Phase 2A/Phase 3/Phase 4 invisible cutover in progress.
 - Last completed task: Go V2 booking/session authority, Node outbox notification
-  worker, Admin booking query adapter, and Flutter booking mutation boundary.
+  worker, Admin booking query adapter, Flutter booking mutation boundary, and
+  atomic Go driver-award/cash-settlement transactions with payload-bound
+  command replay and passenger/driver lock cleanup.
 - Implementation status: core source changes are present; full peripheral
   feature parity is not yet migrated.
 - Verification completed: Node Functions 93/93 tests, Rust 22 unit + 3
@@ -1327,8 +1329,14 @@ contract and covered by an emulator scenario.
 - Deployment handoff completed: Render blueprint variables, root architecture
   README, Cloud Run/Firebase/Render commands, App Check client headers, and
   rollback instructions are documented.
-- Exact next task: configure `VITE_VOLTRIKE_API_BASE_URL`, validate the two-device
-  defense ride against Firebase emulators, then migrate the remaining
-  call/safety/report/settlement commands behind equivalent Go endpoints.
+- Contract/automation handoff completed: stable error/idempotency semantics,
+  V2 Firebase layout, cross-language transition/policy fixtures, emulator
+  environment template, and five-language CI gates are tracked. These new
+  changes were formatted and inspected but deliberately not test-executed in
+  this tranche, matching the deferred full-test decision.
+- Exact next task: migrate the remaining call, safety, report, rating,
+  restriction, onboarding, and Admin commands behind equivalent Go endpoints;
+  then configure `VITE_VOLTRIKE_API_BASE_URL` and run the deferred two-device
+  emulator defense ride.
 - Rule for the next agent: keep one Go authority, do not restore direct client
   domain writes, and update this handoff after every feature tranche.

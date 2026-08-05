@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "statuses": [
+    "pending",
+    "driverAssigned",
+    "driverArriving",
+    "passengerOnBoard",
+    "paymentConfirmation",
+    "completed",
+    "cancelled"
+  ],
+  "transitions": {
+    "accept": { "from": ["pending"], "to": "driverAssigned" },
+    "arrived": { "from": ["driverAssigned"], "to": "driverArriving" },
+    "start": { "from": ["driverArriving"], "to": "passengerOnBoard" },
+    "payment": { "from": ["passengerOnBoard"], "to": "paymentConfirmation" },
+    "complete": { "from": ["paymentConfirmation"], "to": "completed" },
+    "cancel": {
+      "from": ["pending", "driverAssigned", "driverArriving"],
+      "to": "cancelled"
+    }
+  },
+  "sideEffectOnlyActions": ["decline", "dispute", "receipt"]
+}

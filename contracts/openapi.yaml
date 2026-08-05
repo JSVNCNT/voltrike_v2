@@ -7,6 +7,7 @@ servers:
   - url: https://voltrike-api-v2.example.invalid
 security:
   - firebaseAuth: []
+x-app-check-header: X-Firebase-AppCheck
 paths:
   /healthz:
     get:
@@ -41,6 +42,8 @@ paths:
       responses:
         "200":
           description: Signed, short-lived quote.
+        default:
+          $ref: "#/components/responses/Error"
   /api/v2/bookings:
     post:
       requestBody:
@@ -52,6 +55,8 @@ paths:
       responses:
         "201":
           description: Created booking.
+        default:
+          $ref: "#/components/responses/Error"
   /api/v2/bookings/{bookingId}:
     get:
       parameters:
@@ -59,6 +64,8 @@ paths:
       responses:
         "200":
           description: Booking projection.
+        default:
+          $ref: "#/components/responses/Error"
   /api/v2/bookings/{bookingId}/commands:
     post:
       parameters:
@@ -72,6 +79,10 @@ paths:
       responses:
         "200":
           description: Transitioned booking.
+        "412":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v2/admin/bookings:
     get:
       operationId: listAdminBookings
@@ -123,6 +134,13 @@ paths:
         "202":
           description: Accepted location sample.
 components:
+  responses:
+    Error:
+      description: Stable API error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
   securitySchemes:
     firebaseAuth:
       type: http
@@ -142,6 +160,19 @@ components:
       schema:
         type: string
   schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_argument, unauthenticated, permission_denied, not_found, conflict, failed_precondition, unavailable, internal]
+            message: {type: string}
+            requestId: {type: string}
     Coordinate:
       type: object
       required: [latitude, longitude]
@@ -186,7 +217,7 @@ components:
           properties:
             action:
               type: string
-              enum: [accept, arrived, start, payment, complete, cancel, decline, dispute, receipt]
+              enum: [accept, arrived, start, payment, complete, cancel, noShow, decline, dispute, receipt]
             reasonCode: {type: string}
             reasonDetail: {type: string}
     CreateSessionCommand:

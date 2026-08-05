@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "fare": {
+    "currency": "PHP",
+    "calculation": "integer_minor_units",
+    "projectionStorage": "decimal_pesos_for_existing_UI_compatibility",
+    "additionalPassengers": { "minimum": 0, "maximum": 3 },
+    "baggageCount": { "minimum": 0, "maximum": 1 }
+  },
+  "dispatch": {
+    "radiusMeters": 5000,
+    "maximumResults": 40,
+    "filterBeforeTruncate": true
+  },
+  "restriction": {
+    "geometryTypes": ["polygon", "corridor"],
+    "serverDecisionWins": true
+  },
+  "settlement": {
+    "snapshotAtCompletion": true,
+    "fields": ["grossFareMinor", "commissionMinor", "driverNetMinor", "currency", "policyRevision"]
+  }
+}
