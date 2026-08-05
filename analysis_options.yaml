@@ -8,6 +8,11 @@
 # The following line activates a set of recommended lints for Flutter apps,
 # packages, and plugins designed to encourage good coding practices.
 analyzer:
+  # Flutter/Cargokit generates temporary Dart launchers below the root build
+  # directory. They belong to nested generated packages, not this app's
+  # analysis context, so VS Code cannot resolve their package imports.
+  exclude:
+    - build/**
   errors:
     always_use_package_imports: ignore
     strict_top_level_inference: ignore
