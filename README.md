@@ -36,10 +36,12 @@ retained while the application authority moves to the Go V2 API.
 Do not copy secret values into source control. Deploy the Go API with its
 runtime service account and Secret Manager values, deploy Node Functions and
 Firebase rules separately, then deploy Admin through Render with public build
-variables only. The command sequence and required console settings are in
+variables only. The mobile capstone is not published to an app store: start
+each passenger/driver phone with `flutter run`, the Cloud Run API URL, and its
+registered App Check debug token. The command sequence and console settings are in
 [services/voltrike-go/DEPLOYMENT.md](services/voltrike-go/DEPLOYMENT.md).
 
 Before a cutover, review every unchecked validation/operator item in
 [transition.md](transition.md). There is no V1 runtime fallback: deploy the Go
-API, integration manifest, rules, Admin artifact, and Flutter build as one
-versioned release after the emulator defense flow passes.
+API, integration manifest, rules, Admin artifact, and matching Flutter source
+checkpoint as one versioned environment after the defense flow passes.

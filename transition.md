@@ -179,7 +179,7 @@ service. Before any real deployment:
 The old private voltrike-go service is not a compatible V2 API rollback: its
 routes and IAM model differ. Initial-cutover rollback requires the entire
 baseline set: Functions, rules/indexes, Admin artifact/hosting configuration,
-Flutter artifact, and compatible seeded/data snapshot.
+the matching Flutter source checkpoint, and compatible seeded/data snapshot.
 
 No destructive Firebase reset is authorized by this document alone.
 
@@ -1214,7 +1214,8 @@ Only then:
 3. Deploy Firestore indexes/rules plus RTDB and Storage rules.
 4. Configure the existing Render Admin service with the public V2 API origin
    and App Check reCAPTCHA site key; retain its SPA rewrite.
-5. Build fresh Flutter artifacts with the V2 API origin.
+5. Start each capstone phone with `flutter run` and the V2 API origin; register
+   each device's App Check debug token. There is no store/mobile release.
 6. Verify health, readiness, auth rejection, App Check rejection, and the
    explicit cutover configuration before serving the new release.
 
@@ -1228,7 +1229,8 @@ If deployment fails:
 - For a post-cutover V2 failure, route traffic only to a known compatible V2
   revision.
 - For initial V1-to-V2 rollback, redeploy the baseline Functions,
-  rules/indexes, Hosting/Admin artifact, and Flutter artifact together.
+  rules/indexes, Hosting/Admin artifact, and run the matching Flutter source
+  checkpoint together.
 - Restore emulator/test data from seed scripts or the recorded export.
 - Switch source back to main.
 
@@ -1345,9 +1347,11 @@ unchecked operator and full scenario items above.
   configuration parsing all pass. Go race instrumentation requires a
   CGO-enabled Linux/macOS runner. Emulator-rule and real two-device scenarios
   remain the intentionally separate pre-production validation session.
-- Deployment handoff: deploy Go first, configure App Check and secrets, deploy
-  Firebase rules/integration Functions, deploy the existing Render Admin, then
-  build Flutter with the V2 origin. Exact commands are in
+- Deployment handoff: deploy Go first, configure debug App Check tokens and
+  secrets, deploy Firebase rules/integration Functions, deploy the existing
+  Render Admin, then start passenger/driver phones with `flutter run` and the
+  V2 origin. No Play Store or release build is part of the capstone. Commands
+  are in
   `services/voltrike-go/DEPLOYMENT.md`.
 - Rule for the next session: do not restore any direct domain writer or V1
   callable. Run the required registration/booking/call/safety scenarios before

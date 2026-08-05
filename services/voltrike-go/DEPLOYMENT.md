@@ -1,12 +1,31 @@
-# VolTrike V2 deployment
+# VolTrike capstone deployment (`flutter run` mobile clients)
 
-This runbook deploys the public Go V2 API, Firebase integration workers, and
-the existing Render-hosted Admin. The API is network-invokable because Flutter
-and Admin present Firebase ID and App Check tokens directly; authorization is
-enforced by Go, not Cloud Run IAM.
+There is no Play Store or mobile release in this deployment model. Deploy only
+the shared services that must be reachable by multiple phones:
 
-Do not run the production commands until the V2 cutover features required for
-your release are implemented and reviewed in `../../transition.md`.
+- Go V2 API: Google Cloud Run.
+- Auth, Firestore, RTDB, Storage, rules, indexes, and integration Functions:
+  Firebase.
+- React/TypeScript Admin: the existing Render Static Site.
+- Voice infrastructure: LiveKit Cloud or an equivalent LiveKit server.
+
+The passenger and driver apps remain normal debug sessions started with
+`flutter run`. Each phone talks to the same Cloud Run and Firebase resources,
+so multi-phone testing works without publishing an APK, AAB, or store release.
+
+This is a shared capstone environment, not a public production release. It can
+still incur cloud/provider usage, so configure budgets and never commit secret
+values or App Check debug tokens.
+
+```text
+flutter run on passenger phone ─┐
+flutter run on driver phone ────┼─> Cloud Run Go API ─> Firebase
+Render Admin ───────────────────┘             └───────> LiveKit
+Firebase Functions <──────────── Go transactional outbox
+```
+
+The Firebase project must support second-generation Functions and Cloud Run-
+backed resources. Authenticate the `gcloud` and Firebase CLIs before starting.
 
 ## 1. Select the project and deployment values
 
@@ -112,17 +131,39 @@ curl.exe "$apiUrl/healthz"
 curl.exe "$apiUrl/readyz"
 ```
 
-## 4. Configure Firebase App Check and Render
+## 4. Configure App Check for `flutter run`
 
 In Firebase Console:
 
-1. **Security → App Check:** register Android with Play Integrity, Apple with
-   App Attest/DeviceCheck fallback, and the Render Admin web app with your
-   reCAPTCHA v3 site key.
-2. **Authentication → Settings → Authorized domains:** add the Render Admin
-   hostname.
-3. Do not enable Firebase-product enforcement until the new builds have sent
-   valid tokens and the validation pass is complete.
+1. Open **Build/Security → App Check** and register the Android Firebase app.
+   A normal `flutter run` automatically uses the Android debug provider, so
+   Play Integrity and Play Console are not required for this capstone.
+2. Run the app once on every emulator or physical phone. Copy the App Check
+   debug secret printed by `DebugAppCheckProvider` in the Flutter/Android log.
+3. For the Android app in App Check, open **Manage debug tokens** and register
+   each token with a label such as `passenger-phone` or `driver-phone`.
+4. Register the Admin web app with reCAPTCHA v3, allow the Render hostname, and
+   save its public site key for the Render configuration below.
+5. Under **Authentication → Settings → Authorized domains**, add the Render
+   Admin hostname.
+6. Firebase-product enforcement can remain disabled during initial setup. Go
+   still validates App Check on protected V2 requests, and the retained
+   callable integration Functions enforce it as well.
+
+If the capstone later runs from an Apple device or simulator, register the
+Apple Firebase app and its debug token in the same App Check screen. Building
+that client still requires macOS/Xcode; it does not require App Store release.
+
+If the Android debug token is not visible in `flutter run`, inspect logcat:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" logcat -d | Select-String -Pattern "DebugAppCheckProvider|debug secret"
+```
+
+Debug tokens grant unverified-device access. Never commit or share them, and
+revoke a token in Firebase Console if it is exposed.
+
+## 5. Configure the existing Render Admin
 
 In Render, open the existing `voltrike-admin` Static Site and set these build
 environment variables:
@@ -134,10 +175,16 @@ VITE_MAPBOX_ACCESS_TOKEN=<public URL-restricted Mapbox token>
 VITE_FIREBASE_VAPID_KEY=<public Firebase web-push key>
 ```
 
+Push the checkpoint, then choose **Save, rebuild, and deploy** in Render:
+
+```powershell
+git push origin main
+```
+
 Render uses `render.yaml`: build command `npm ci && npm run build`, publish
 directory `admin/dist`, and SPA rewrite `/* -> /index.html`.
 
-## 5. Deploy Firebase integration infrastructure
+## 6. Deploy Firebase integration infrastructure
 
 Deploy rules, indexes, and the integration-only Functions manifest. Configure
 the scheduled integration hook with the same internal key used by Cloud Run;
@@ -148,24 +195,44 @@ firebase functions:secrets:set GO_LOCAL_INTERNAL_KEY --project $projectId
 firebase functions:secrets:set BREVO_SMTP_LOGIN --project $projectId
 firebase functions:secrets:set BREVO_SMTP_KEY --project $projectId
 firebase functions:secrets:set BREVO_SENDER_EMAIL --project $projectId
-firebase deploy --only "firestore:rules,firestore:indexes,database,storage,functions" --project $projectId
+firebase deploy --only "firestore,database,storage,functions" --project $projectId
 ```
 
 When Firebase prompts for the `VOLTRIKE_API_BASE_URL` parameter, enter the
 printed `$apiUrl`. Firebase Hosting is not deployed; Render remains the only
 Admin frontend host.
 
-## 6. Build clients
+## 7. Run the final capstone mobile clients
 
-Admin builds in Render. For Flutter production builds, pass the public API
-origin and the web App Check key only for web targets:
+There is no mobile deployment command. In each new PowerShell terminal, load
+the Cloud Run URL and start the chosen device with a normal debug run:
 
 ```powershell
-flutter build appbundle --dart-define=VOLTRIKE_API_BASE_URL=$apiUrl
-flutter build web --dart-define=VOLTRIKE_API_BASE_URL=$apiUrl --dart-define=FIREBASE_APP_CHECK_WEB_SITE_KEY=YOUR_PUBLIC_RECAPTCHA_SITE_KEY
+$projectId = "voltrike-v2"
+$region = "asia-southeast1"
+$service = "voltrike-api-v2"
+$apiUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
+
+flutter devices
+flutter run -d DEVICE_ID --dart-define=VOLTRIKE_API_BASE_URL=$apiUrl
 ```
 
-Do not use emulator defines in a release build.
+For passenger and driver phones simultaneously, open two terminals and run the
+last command once per device ID. Register the App Check debug token from each
+device before testing registration or booking. Stopping `flutter run` stops
+only that phone client; Cloud Run, Firebase, Functions, and Render stay online.
+
+Do not add `--release`. This capstone deliberately uses the debug App Check
+provider for its `flutter run` lifecycle.
+
+## 8. What must be redeployed after a change
+
+- Flutter/Dart-only change: hot reload/restart, or run `flutter run` again.
+- Go change: repeat the Cloud Run deploy command in section 3.
+- Rules, indexes, or Node integration change: repeat section 6.
+- Admin change: push Git; Render auto-deploys, or use **Manual Deploy**.
+- Rust device-kernel change: rebuild through `flutter run`; it is part of the
+  local Flutter application, not a separately hosted server.
 
 ## Rollback
 
