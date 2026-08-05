@@ -157,4 +157,17 @@ class AppRoutes {
   static const String userManagement = '/admin/users';
 
   static const String reports = '/admin/reports';
+
+  /// Produces a restorable route whose aggregate identity survives process
+  /// death, deep links, and browser refreshes. `extra` may still carry
+  /// ephemeral presentation hints, but is never the only source of identity.
+  static String withBookingId(String route, String bookingId) => Uri(
+    path: route,
+    queryParameters: <String, String>{'bookingId': bookingId},
+  ).toString();
+
+  static String withDriverId(String route, String driverId) => Uri(
+    path: route,
+    queryParameters: <String, String>{'driverId': driverId},
+  ).toString();
 }

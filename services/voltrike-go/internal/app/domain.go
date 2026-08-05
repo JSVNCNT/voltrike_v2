@@ -106,6 +106,10 @@ type OperationStore interface {
 	ExecuteOperation(context.Context, Principal, OperationCommand) (map[string]any, error)
 }
 
+type BookingDispatchStore interface {
+	PublishBookingOffers(context.Context, string, []DispatchCandidate, time.Time) error
+}
+
 func (service *Service) ExecuteOperation(ctx context.Context, principal Principal, command OperationCommand) (map[string]any, error) {
 	if strings.TrimSpace(principal.UID) == "" || strings.TrimSpace(command.Name) == "" {
 		return nil, fmt.Errorf("%w: authenticated user and operation are required", ErrInvalidArgument)
@@ -167,7 +171,27 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 	if err != nil {
 		return BookingRecord{}, err
 	}
-	return store.CreateBooking(ctx, principal, command, quote)
+	record, err := store.CreateBooking(ctx, principal, command, quote)
+	if err != nil {
+		return BookingRecord{}, err
+	}
+	dispatchStore, ok := service.store.(BookingDispatchStore)
+	if !ok {
+		return BookingRecord{}, fmt.Errorf("%w: booking dispatch store is not configured", ErrUnavailable)
+	}
+	candidates, err := service.DispatchCandidates(ctx, DispatchRequest{
+		Pickup: command.Pickup, PrimaryTodaIDs: quote.Coverage.PrimaryTodaIDs,
+		SecondaryTodaIDs: quote.Coverage.SecondaryTodaIDs, AllowAnyActiveToda: quote.Coverage.AllowAnyActiveToda,
+		MaximumResults: 5,
+		RequiredSeats:  command.AdditionalPassengers + 1,
+	})
+	if err == nil {
+		// Booking creation is already committed at this point. Dispatch is a
+		// retryable projection and must never turn a successful idempotent create
+		// into a client-visible failure that encourages a second booking.
+		_ = dispatchStore.PublishBookingOffers(ctx, command.BookingID, candidates, time.Now().UTC().Add(55*time.Second))
+	}
+	return record, nil
 }
 
 func (service *Service) GetBooking(ctx context.Context, principal Principal, bookingID string) (BookingRecord, error) {

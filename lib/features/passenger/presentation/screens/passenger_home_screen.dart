@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/services/fare_service.dart';
-import '../../../../core/services/go_service_bridge.dart';
+import '../../../../core/services/booking_quote_service.dart';
 import '../../../../core/services/places_service.dart';
 import '../../../../core/services/polyline_service.dart';
 import '../../../../core/services/route_restriction_service.dart';
@@ -180,7 +180,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     );
 
     try {
-      final goQuote = await GoServiceBridge.instance.tryBookingQuote(
+      final goQuote = await BookingQuoteService.instance.tryBookingQuote(
         pickup: pickup,
         destination: destination,
         additionalPassengers: previousSession.additionalPassengers,
@@ -251,8 +251,16 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       ).showSnackBar(SnackBar(content: Text(error.message)));
       return;
     } on FormatException {
-      // A malformed bridge route is treated as unavailable. The existing
-      // client path below remains the safe compatibility path.
+      if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+        return;
+      }
+      ref.read(bookingProvider.notifier).reset();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The server route was invalid. Please retry.'),
+        ),
+      );
+      return;
     }
 
     final TodaCoverageDecision coverage;
@@ -741,7 +749,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
           .read(bookingProvider.notifier)
           .update(PassengerBookingState.searchingDriver);
 
-      context.go(AppRoutes.searchingDriver, extra: creation.bookingId);
+      context.go(
+        AppRoutes.withBookingId(AppRoutes.searchingDriver, creation.bookingId),
+        extra: creation.bookingId,
+      );
     } catch (e) {
       if (!mounted) {
         return;

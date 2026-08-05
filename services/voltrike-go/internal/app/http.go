@@ -21,6 +21,10 @@ type HTTPServer struct {
 	verifier IdentityVerifier
 }
 
+type ReadinessVerifier interface {
+	Ready(context.Context) error
+}
+
 func NewHTTPServer(cfg config.Config, service *Service, verifiers ...IdentityVerifier) *http.Server {
 	handler := &HTTPServer{cfg: cfg, service: service}
 	if len(verifiers) > 0 {
@@ -41,13 +45,22 @@ func (server *HTTPServer) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "service": "voltrike-api-v2", "version": 2})
 	})
-	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, request *http.Request) {
+		if verifier, ok := server.verifier.(ReadinessVerifier); ok {
+			ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+			defer cancel()
+			if err := verifier.Ready(ctx); err != nil {
+				writeJSON(writer, http.StatusServiceUnavailable, map[string]any{"status": "not_ready", "service": "voltrike-api-v2", "version": 2})
+				return
+			}
+		}
 		writeJSON(writer, http.StatusOK, map[string]any{"status": "ready", "service": "voltrike-api-v2", "version": 2})
 	})
 	mux.HandleFunc("POST /v1/quotes/compute", server.handleQuote)
 	mux.HandleFunc("POST /v1/quotes/consume", server.handleConsumeQuote)
 	mux.HandleFunc("POST /v1/policy/invalidate", server.handleInvalidatePolicy)
 	mux.HandleFunc("POST /v1/dispatch/candidates", server.handleDispatch)
+	mux.HandleFunc("POST /v1/maintenance/run", server.handleMaintenance)
 	v2 := http.NewServeMux()
 	v2.HandleFunc("GET /api/v2/capabilities", server.handleV2Capabilities)
 	v2.HandleFunc("GET /api/v2/me", server.handleV2Me)
@@ -112,6 +125,17 @@ func (server *HTTPServer) handleDispatch(writer http.ResponseWriter, request *ht
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"candidates": result})
+}
+
+func (server *HTTPServer) handleMaintenance(writer http.ResponseWriter, request *http.Request) {
+	ctx, cancel := context.WithTimeout(request.Context(), 30*time.Second)
+	defer cancel()
+	result, err := server.service.RunMaintenance(ctx)
+	if err != nil {
+		writeServiceError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"data": result})
 }
 
 func (server *HTTPServer) decode(writer http.ResponseWriter, request *http.Request, target any) bool {

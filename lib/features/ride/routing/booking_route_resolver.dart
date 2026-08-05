@@ -23,36 +23,45 @@ class BookingRouteResolver {
     return switch ((role, status)) {
       (BookingParticipantRole.passenger, BookingStatus.pending) =>
         BookingRouteDecision(
-          location: AppRoutes.searchingDriver,
+          location: AppRoutes.withBookingId(
+            AppRoutes.searchingDriver,
+            bookingId,
+          ),
           bookingId: bookingId,
         ),
       (
         BookingParticipantRole.passenger,
-            BookingStatus.driverAssigned ||
+        BookingStatus.driverAssigned ||
             BookingStatus.driverArriving ||
             BookingStatus.passengerOnBoard ||
             BookingStatus.paymentConfirmation,
       ) =>
         BookingRouteDecision(
-          location: AppRoutes.driverTracking,
+          location: AppRoutes.withBookingId(
+            AppRoutes.driverTracking,
+            bookingId,
+          ),
           bookingId: bookingId,
         ),
       (BookingParticipantRole.passenger, BookingStatus.completed) =>
         BookingRouteDecision(
-          location: AppRoutes.rateDriver,
+          location: AppRoutes.withBookingId(AppRoutes.rateDriver, bookingId),
           bookingId: bookingId,
         ),
       (BookingParticipantRole.passenger, BookingStatus.cancelled) =>
         const BookingRouteDecision(location: AppRoutes.passengerHome),
       (
         BookingParticipantRole.driver,
-            BookingStatus.driverAssigned ||
+        BookingStatus.driverAssigned ||
             BookingStatus.driverArriving ||
             BookingStatus.passengerOnBoard ||
             BookingStatus.paymentConfirmation,
       ) =>
         BookingRouteDecision(
-          location: AppRoutes.driverBookingTracking,
+          location: AppRoutes.withBookingId(
+            AppRoutes.driverBookingTracking,
+            bookingId,
+          ),
           bookingId: bookingId,
         ),
       (

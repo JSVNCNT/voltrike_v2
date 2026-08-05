@@ -1,7 +1,6 @@
-import 'package:cloud_functions/cloud_functions.dart';
-
 import '../../app/app_config.dart';
 import '../errors/domain_error_mapper.dart';
+import 'voltrike_api.dart';
 
 class SystemDiagnostics {
   const SystemDiagnostics({
@@ -20,24 +19,21 @@ class SystemDiagnostics {
 }
 
 class SystemDiagnosticsService {
-  SystemDiagnosticsService({FirebaseFunctions? functions})
-      : _functions = functions ??
-            FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+  SystemDiagnosticsService({VoltrikeApi? api})
+    : _api = api ?? VoltrikeApi.instance;
 
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
 
   Future<SystemDiagnostics> check() async {
     try {
-      final result = await _functions
-          .httpsCallable('getSystemDiagnostics')
-          .call<Map<Object?, Object?>>();
-      final data = result.data;
+      final data = await _api.operation('getSystemDiagnostics', const {});
       final functionsVersion =
           (data['functionsProtocolVersion'] as num?)?.toInt() ?? 0;
       final minimumClient =
           (data['minimumClientProtocolVersion'] as num?)?.toInt() ?? 999;
       final schema = (data['bookingSchemaVersion'] as num?)?.toInt() ?? 0;
-      final compatible = data['compatible'] == true &&
+      final compatible =
+          data['compatible'] == true &&
           AppConfig.clientProtocolVersion >= minimumClient &&
           functionsVersion == AppConfig.expectedFunctionsProtocolVersion &&
           schema == AppConfig.bookingSchemaVersion;

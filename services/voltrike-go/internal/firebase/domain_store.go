@@ -131,18 +131,6 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 	if err != nil {
 		return app.BookingRecord{}, err
 	}
-	passengerID := text(result.Data, "passengerId", "passengerID")
-	driverID := text(result.Data, "driverId", "driverID")
-	if command.Action == "accept" && passengerID != "" && driverID != "" {
-		if err := store.realtime.NewRef("driver_tracking_access/"+passengerID+"/"+driverID).Set(ctx, map[string]any{"bookingId": command.BookingID, "grantedAt": time.Now().UnixMilli()}); err != nil {
-			return app.BookingRecord{}, fmt.Errorf("write tracking access projection: %w", err)
-		}
-	}
-	if (text(result.Data, "status") == "completed" || text(result.Data, "status") == "cancelled") && passengerID != "" && driverID != "" {
-		if err := store.realtime.NewRef("driver_tracking_access/" + passengerID + "/" + driverID).Delete(ctx); err != nil {
-			return app.BookingRecord{}, fmt.Errorf("remove tracking access projection: %w", err)
-		}
-	}
 	return result, nil
 }
 
@@ -489,6 +477,18 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 	if err != nil {
 		return app.BookingRecord{}, err
 	}
+	passengerID := text(result.Data, "passengerId", "passengerID")
+	driverID := text(result.Data, "driverId", "driverID")
+	if command.Action == "accept" && passengerID != "" && driverID != "" {
+		if err := store.realtime.NewRef("driver_tracking_access/"+passengerID+"/"+driverID).Set(ctx, map[string]any{"bookingId": command.BookingID, "grantedAt": time.Now().UnixMilli()}); err != nil {
+			return app.BookingRecord{}, fmt.Errorf("write tracking access projection: %w", err)
+		}
+	}
+	if (text(result.Data, "status") == "completed" || text(result.Data, "status") == "cancelled") && passengerID != "" && driverID != "" {
+		if err := store.realtime.NewRef("driver_tracking_access/" + passengerID + "/" + driverID).Delete(ctx); err != nil {
+			return app.BookingRecord{}, fmt.Errorf("remove tracking access projection: %w", err)
+		}
+	}
 	return result, nil
 }
 
@@ -775,5 +775,5 @@ func jsonMap(value any) map[string]any {
 
 func adminPrincipal(principal app.Principal) bool {
 	role, _ := principal.Claims["role"].(string)
-	return role == "admin" || role == "developer" || principal.Claims["admin"] == true
+	return role == "admin" || role == "developer" || role == "developer_admin" || role == "toda_admin" || principal.Claims["admin"] == true
 }

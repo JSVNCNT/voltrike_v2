@@ -62,12 +62,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
             break;
 
           case SplashDestination.passengerActiveBooking:
-            context.go(AppRoutes.driverTracking, extra: recovery.bookingId);
+            context.go(
+              AppRoutes.withBookingId(
+                AppRoutes.driverTracking,
+                recovery.bookingId!,
+              ),
+              extra: recovery.bookingId,
+            );
             break;
 
           case SplashDestination.driverActiveBooking:
             context.go(
-              AppRoutes.driverBookingTracking,
+              AppRoutes.withBookingId(
+                AppRoutes.driverBookingTracking,
+                recovery.bookingId!,
+              ),
               extra: recovery.bookingId,
             );
             break;

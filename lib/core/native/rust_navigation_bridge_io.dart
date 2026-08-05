@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'generated/api/navigation.dart' as navigation_api;
+import 'native_rust_platform.dart';
 import 'rust_bridge_runtime.dart';
 import 'rust_navigation_bridge_contract.dart';
 
@@ -9,7 +8,7 @@ RustNavigationBridge createRustNavigationBridge() =>
 
 class GeneratedRustNavigationBridge implements RustNavigationBridge {
   @override
-  bool get isSupported => Platform.isAndroid;
+  bool get isSupported => supportsNativeRust;
 
   @override
   Future<ActiveRouteInstallResponse> installRoute(

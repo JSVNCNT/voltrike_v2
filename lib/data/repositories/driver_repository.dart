@@ -1,7 +1,5 @@
 import 'dart:io';
 
-import 'package:cloud_functions/cloud_functions.dart';
-
 import '../../core/constants/firestore_constants.dart';
 import '../models/driver.dart';
 import '../services/firestore_service.dart';
@@ -11,27 +9,20 @@ class DriverRepository {
   DriverRepository({
     FirestoreService? firestoreService,
     StorageRepository? storageRepository,
-    FirebaseFunctions? functions,
   }) : _firestoreService = firestoreService ?? FirestoreService.instance,
-       _storageRepository = storageRepository ?? StorageRepository(),
-       _functions =
-           functions ??
-           FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+       _storageRepository = storageRepository ?? StorageRepository();
 
   final FirestoreService _firestoreService;
 
   final StorageRepository _storageRepository;
-  final FirebaseFunctions _functions;
 
   //==========================================================================
   // Create Driver
   //==========================================================================
 
   Future<void> createDriver(Driver driver) {
-    return _firestoreService.setDocument(
-      collection: FirestoreConstants.drivers,
-      documentId: driver.uid,
-      data: driver.toMap(),
+    throw UnsupportedError(
+      'Driver creation is owned by Go registration authority.',
     );
   }
 
@@ -40,11 +31,7 @@ class DriverRepository {
   //==========================================================================
 
   Future<void> updateDriver(Driver driver) {
-    return _firestoreService.updateDocument(
-      collection: FirestoreConstants.drivers,
-      documentId: driver.uid,
-      data: driver.toMap(),
-    );
+    throw UnsupportedError('Driver mutations are owned by Go authority.');
   }
 
   //==========================================================================
@@ -52,10 +39,7 @@ class DriverRepository {
   //==========================================================================
 
   Future<void> deleteDriver(String uid) {
-    return _firestoreService.deleteDocument(
-      collection: FirestoreConstants.drivers,
-      documentId: uid,
-    );
+    throw UnsupportedError('Driver records are retained by Go authority.');
   }
 
   //==========================================================================
@@ -117,15 +101,15 @@ class DriverRepository {
   //==========================================================================
 
   Future<void> goOnline(String uid) async {
-    await _functions.httpsCallable('setDriverOnlineStatus').call<void>({
-      'isOnline': true,
-    });
+    throw UnsupportedError(
+      'Driver online state is owned by the session lease controller.',
+    );
   }
 
   Future<void> goOffline(String uid) async {
-    await _functions.httpsCallable('setDriverOnlineStatus').call<void>({
-      'isOnline': false,
-    });
+    throw UnsupportedError(
+      'Driver online state is owned by the session lease controller.',
+    );
   }
 
   //==========================================================================

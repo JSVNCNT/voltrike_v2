@@ -60,6 +60,18 @@ Widget _publicLight(Widget child) {
   return FixedLightTheme(child: child);
 }
 
+String? _routeId(GoRouterState state, String name) {
+  final fromQuery = state.uri.queryParameters[name];
+  if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
+  final extra = state.extra;
+  if (extra is String && extra.isNotEmpty) return extra;
+  if (extra is Map) {
+    final value = extra[name];
+    if (value is String && value.isNotEmpty) return value;
+  }
+  return null;
+}
+
 final GoRouter appRouter = GoRouter(
   initialLocation: AppRoutes.splash,
   debugLogDiagnostics: true,
@@ -231,7 +243,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.searchingDriver,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final bookingId = _routeId(state, 'bookingId');
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
@@ -243,7 +255,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.driverTracking,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final bookingId = _routeId(state, 'bookingId');
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
@@ -255,7 +267,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.passengerTrip,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final bookingId = _routeId(state, 'bookingId');
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
@@ -267,7 +279,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.rateDriver,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final bookingId = _routeId(state, 'bookingId');
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
@@ -279,7 +291,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.passengerReceipt,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final bookingId = _routeId(state, 'bookingId');
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }
@@ -373,7 +385,8 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.driverEarnings,
       builder: (context, state) {
-        final driverId = state.extra as String;
+        final driverId = _routeId(state, 'driverId');
+        if (driverId == null) return const DriverShellScreen();
 
         return DriverEarningsScreen(driverId: driverId);
       },
@@ -382,14 +395,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.driverBookingTracking,
       builder: (context, state) => _driverGate(
-        DriverBookingTrackingScreen(bookingId: state.extra as String?),
+        DriverBookingTrackingScreen(bookingId: _routeId(state, 'bookingId')),
       ),
     ),
 
     GoRoute(
       path: AppRoutes.driverReceipt,
       builder: (context, state) {
-        final bookingId = state.extra as String?;
+        final bookingId = _routeId(state, 'bookingId');
         if (bookingId == null || bookingId.isEmpty) {
           return const DriverShellScreen();
         }
@@ -408,9 +421,10 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.bookingChat,
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>?;
-        final bookingId = extra?['bookingId'] as String?;
-        final members = (extra?['members'] as List?)?.cast<String>();
-        if (bookingId == null || members == null) {
+        final bookingId = _routeId(state, 'bookingId');
+        final members =
+            (extra?['members'] as List?)?.cast<String>() ?? const <String>[];
+        if (bookingId == null) {
           return const PassengerShellScreen();
         }
         return BookingChatScreen(bookingId: bookingId, members: members);
@@ -422,10 +436,10 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) {
         final extra = state.extra;
         final details = extra is Map<String, dynamic> ? extra : null;
-        final bookingId = extra is String
-            ? extra
-            : details?['bookingId'] as String?;
-        final callId = details?['callId'] as String?;
+        final bookingId = _routeId(state, 'bookingId');
+        final callId =
+            state.uri.queryParameters['callId'] ??
+            details?['callId'] as String?;
         final serverUrl = details?['serverUrl'] as String?;
         final credentials = details?['credentials'];
         final outgoing = extra is String || details?['outgoing'] != false;
@@ -449,10 +463,10 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) {
         final extra = state.extra;
         final details = extra is Map<String, dynamic> ? extra : null;
-        final bookingId = extra is String
-            ? extra
-            : details?['bookingId'] as String?;
-        final callId = details?['callId'] as String?;
+        final bookingId = _routeId(state, 'bookingId');
+        final callId =
+            state.uri.queryParameters['callId'] ??
+            details?['callId'] as String?;
         if (bookingId == null || bookingId.isEmpty) {
           return const PassengerShellScreen();
         }

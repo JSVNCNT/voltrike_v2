@@ -40,6 +40,10 @@ type Store interface {
 	ReadDispatchCell(context.Context, string) (map[string]DispatchPresence, error)
 }
 
+type DispatchEligibilityStore interface {
+	FilterEligibleDispatch(context.Context, []DispatchCandidate, DispatchRequest) ([]DispatchCandidate, error)
+}
+
 type RoutesClient interface {
 	Routes(context.Context, core.Coordinate, core.Coordinate) ([]ProviderRoute, error)
 }
@@ -125,6 +129,7 @@ type DispatchRequest struct {
 	SecondaryTodaIDs   []string        `json:"secondaryTodaIds"`
 	AllowAnyActiveToda bool            `json:"allowAnyActiveToda"`
 	MaximumResults     int             `json:"maximumResults"`
+	RequiredSeats      int             `json:"requiredSeats"`
 }
 
 type DispatchCandidate struct {
@@ -323,6 +328,13 @@ func (service *Service) DispatchCandidates(ctx context.Context, request Dispatch
 			continue
 		}
 		result = append(result, DispatchCandidate{DriverID: presence.DriverID, DistanceMeters: int(math.Round(distance))})
+	}
+	if eligibility, ok := service.store.(DispatchEligibilityStore); ok {
+		filtered, err := eligibility.FilterEligibleDispatch(ctx, result, request)
+		if err != nil {
+			return nil, fmt.Errorf("%w: filter dispatch eligibility: %v", ErrUnavailable, err)
+		}
+		result = filtered
 	}
 	sort.Slice(result, func(left, right int) bool { return compareCandidate(result[left], result[right]) < 0 })
 	if len(result) > limit {

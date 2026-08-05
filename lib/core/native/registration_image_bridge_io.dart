@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'generated/api/registration_image.dart' as image_api;
+import 'native_rust_platform.dart';
 import 'registration_image_bridge_contract.dart';
 import 'rust_bridge_runtime.dart';
 
@@ -10,7 +9,7 @@ NativeRegistrationImageBridge createNativeRegistrationImageBridge() =>
 class GeneratedNativeRegistrationImageBridge
     implements NativeRegistrationImageBridge {
   @override
-  bool get isSupported => Platform.isAndroid;
+  bool get isSupported => supportsNativeRust;
 
   @override
   Future<NativeRegistrationImageResult> prepare(
@@ -18,7 +17,7 @@ class GeneratedNativeRegistrationImageBridge
   ) async {
     if (!isSupported) {
       throw UnsupportedError(
-        'The VolTrike Rust image bridge is supported on Android only.',
+        'The VolTrike Rust image bridge is unavailable on this platform.',
       );
     }
     await RustBridgeRuntime.ensureInitialized();

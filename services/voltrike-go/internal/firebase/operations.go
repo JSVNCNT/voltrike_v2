@@ -54,7 +54,22 @@ func (store *Store) ExecuteOperation(ctx context.Context, principal app.Principa
 		return store.sendDriverViolationMessage(ctx, principal, command)
 	case "markDriverViolationMessagesRead":
 		return store.markDriverViolationMessagesRead(ctx, principal, command.Payload)
+	case "createPassengerRegistration":
+		return store.createPassengerRegistration(ctx, principal, command.Payload)
+	case "createDriverRegistration":
+		return store.createDriverRegistration(ctx, principal, command.Payload)
+	case "getSystemDiagnostics":
+		return map[string]any{"compatible": true, "functionsProtocolVersion": 2, "minimumClientProtocolVersion": 1, "bookingSchemaVersion": 2, "region": "asia-southeast1", "projectId": store.cfg.ProjectID}, nil
+	case "finalizeMedia":
+		return store.finalizeMedia(ctx, principal, command.Payload)
+	case "updateMyProfileImage":
+		return store.updateMyProfileImage(ctx, principal, command.Payload)
+	case "deleteMyFinalizedMedia":
+		return store.deleteMyFinalizedMedia(ctx, principal, command.Payload)
 	default:
+		if strings.HasPrefix(command.Name, "admin") || command.Name == "bootstrapDeveloperAdmin" || command.Name == "registerToda" || command.Name == "attachTodaRegistrationDocuments" {
+			return store.executeAdminOperation(ctx, principal, command)
+		}
 		return nil, fmt.Errorf("%w: unsupported operation %q", app.ErrInvalidArgument, command.Name)
 	}
 }
@@ -621,6 +636,192 @@ func (store *Store) setRideChatTyping(ctx context.Context, principal app.Princip
 	}
 	_, err := store.firestore.Collection("chat").Doc(bookingID).Collection("typing").Doc(principal.UID).Set(ctx, map[string]any{"isTyping": booleanDefault(payload, false, "isTyping"), "updatedAt": time.Now().UTC()}, firestore.MergeAll)
 	return map[string]any{"updated": err == nil}, err
+}
+
+func (store *Store) createPassengerRegistration(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {
+	rawUser, userOK := payload["user"].(map[string]any)
+	_, passengerOK := payload["passenger"].(map[string]any)
+	if !userOK || !passengerOK {
+		return nil, fmt.Errorf("%w: user and passenger profiles are required", app.ErrInvalidArgument)
+	}
+	if err := validateRegistrationIdentity(rawUser); err != nil {
+		return nil, err
+	}
+	profileImage := strings.TrimSpace(text(rawUser, "profileImage"))
+	if profileImage != "" {
+		if err := store.validateFinalizedAccountMedia(ctx, profileImage, principal.UID, "profiles"); err != nil {
+			return nil, fmt.Errorf("%w: profile image was not finalized for this account", app.ErrInvalidArgument)
+		}
+	}
+	now := time.Now().UTC()
+	user := registrationUser(rawUser, principal.UID, "passenger", "", profileImage, now)
+	passenger := map[string]any{
+		"uid": principal.UID, "favoriteLocations": []string{}, "totalTrips": 0,
+		"rating": 0.0, "schemaVersion": 2, "createdAt": now, "updatedAt": now,
+	}
+	userRef := store.firestore.Collection("users").Doc(principal.UID)
+	passengerRef := store.firestore.Collection("passengers").Doc(principal.UID)
+	created := false
+	err := store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		existingUser, userErr := tx.Get(userRef)
+		existingPassenger, passengerErr := tx.Get(passengerRef)
+		if userErr == nil && text(existingUser.Data(), "role") != "passenger" {
+			return fmt.Errorf("%w: account already has another role", app.ErrPrecondition)
+		}
+		if userErr != nil && !isNotFound(userErr) {
+			return userErr
+		}
+		if passengerErr != nil && !isNotFound(passengerErr) {
+			return passengerErr
+		}
+		if userErr == nil && passengerErr == nil && existingPassenger.Exists() {
+			return nil
+		}
+		if isNotFound(userErr) {
+			tx.Create(userRef, user)
+		}
+		if isNotFound(passengerErr) {
+			tx.Create(passengerRef, passenger)
+		}
+		created = true
+		return nil
+	})
+	if err == nil {
+		err = store.auth.SetCustomUserClaims(ctx, principal.UID, map[string]any{"role": "passenger"})
+	}
+	return map[string]any{"created": created, "idempotent": !created}, err
+}
+
+func (store *Store) createDriverRegistration(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {
+	rawUser, userOK := payload["user"].(map[string]any)
+	rawDriver, driverOK := payload["driver"].(map[string]any)
+	rawVehicle, vehicleOK := payload["vehicle"].(map[string]any)
+	if !userOK || !driverOK || !vehicleOK {
+		return nil, fmt.Errorf("%w: user, driver, and vehicle profiles are required", app.ErrInvalidArgument)
+	}
+	if err := validateRegistrationIdentity(rawUser); err != nil {
+		return nil, err
+	}
+	todaID := strings.TrimSpace(text(rawDriver, "todaId"))
+	vehicleID := safeObjectSegment(text(rawVehicle, "id", "vehicleId"))
+	if vehicleID == "" {
+		vehicleID = "vehicle_" + principal.UID
+	}
+	if todaID == "" || safeObjectSegment(todaID) == "" {
+		return nil, fmt.Errorf("%w: a valid TODA is required", app.ErrInvalidArgument)
+	}
+	documentFields := []string{"profilePhotoUrl", "driverLicenseFrontUrl", "driverLicenseBackUrl", "governmentIdUrl", "orDocumentUrl", "crDocumentUrl", "vehiclePhotoUrl"}
+	for _, field := range documentFields {
+		mediaURL := strings.TrimSpace(text(rawDriver, field))
+		root := "drivers"
+		if field == "profilePhotoUrl" {
+			root = "profiles"
+		}
+		if mediaURL == "" || store.validateFinalizedAccountMedia(ctx, mediaURL, principal.UID, root) != nil {
+			return nil, fmt.Errorf("%w: %s was not finalized for this account", app.ErrInvalidArgument, field)
+		}
+	}
+	now := time.Now().UTC()
+	profileImage := strings.TrimSpace(text(rawDriver, "profilePhotoUrl"))
+	user := registrationUser(rawUser, principal.UID, "driver", todaID, profileImage, now)
+	driver := map[string]any{
+		"uid": principal.UID, "driverId": principal.UID, "todaId": todaID, "vehicleId": vehicleID,
+		"licenseNumber": "", "licenseExpiry": time.Unix(0, 0).UTC(),
+		"profilePhotoUrl":       profileImage,
+		"driverLicenseFrontUrl": text(rawDriver, "driverLicenseFrontUrl"), "driverLicenseBackUrl": text(rawDriver, "driverLicenseBackUrl"),
+		"governmentIdUrl": text(rawDriver, "governmentIdUrl"), "orDocumentUrl": text(rawDriver, "orDocumentUrl"),
+		"crDocumentUrl": text(rawDriver, "crDocumentUrl"), "vehiclePhotoUrl": text(rawDriver, "vehiclePhotoUrl"),
+		"driverStatus": "pending", "isOnline": false, "isAvailable": false, "currentBookingId": nil,
+		"currentLatitude": nil, "currentLongitude": nil, "rating": 0.0, "ratingCount": 0,
+		"completedTrips": 0, "totalEarnings": 0.0, "approvedAt": nil, "approvedBy": nil,
+		"revision": 1, "schemaVersion": 2, "createdAt": now, "updatedAt": now,
+	}
+	capacity := integer(rawVehicle, "capacity")
+	if capacity < 1 || capacity > 20 {
+		return nil, fmt.Errorf("%w: vehicle capacity must be between 1 and 20", app.ErrInvalidArgument)
+	}
+	vehicle := map[string]any{
+		"id": vehicleID, "driverId": principal.UID, "plateNumber": truncate(text(rawVehicle, "plateNumber"), 40),
+		"vehicleNumber": truncate(text(rawVehicle, "vehicleNumber"), 80), "model": truncate(text(rawVehicle, "model"), 120),
+		"color": truncate(text(rawVehicle, "color"), 40), "capacity": capacity, "isVerified": false,
+		"schemaVersion": 2, "createdAt": now, "updatedAt": now,
+	}
+	if text(vehicle, "plateNumber") == "" || text(vehicle, "model") == "" {
+		return nil, fmt.Errorf("%w: vehicle plate and model are required", app.ErrInvalidArgument)
+	}
+	userRef := store.firestore.Collection("users").Doc(principal.UID)
+	driverRef := store.firestore.Collection("drivers").Doc(principal.UID)
+	vehicleRef := store.firestore.Collection("vehicles").Doc(vehicleID)
+	todaRef := store.firestore.Collection("todas").Doc(todaID)
+	created := false
+	err := store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		todaSnapshot, todaErr := tx.Get(todaRef)
+		existingUser, userErr := tx.Get(userRef)
+		existingDriver, driverErr := tx.Get(driverRef)
+		existingVehicle, vehicleErr := tx.Get(vehicleRef)
+		if todaErr != nil || !booleanDefault(todaSnapshot.Data(), false, "isActive") {
+			return fmt.Errorf("%w: selected TODA is not active", app.ErrPrecondition)
+		}
+		if userErr == nil && text(existingUser.Data(), "role") != "driver" {
+			return fmt.Errorf("%w: account already has another role", app.ErrPrecondition)
+		}
+		for _, readErr := range []error{userErr, driverErr, vehicleErr} {
+			if readErr != nil && !isNotFound(readErr) {
+				return readErr
+			}
+		}
+		if driverErr == nil && text(existingDriver.Data(), "vehicleId") != vehicleID {
+			return fmt.Errorf("%w: registration already uses another vehicle", app.ErrPrecondition)
+		}
+		if vehicleErr == nil && text(existingVehicle.Data(), "driverId") != principal.UID {
+			return fmt.Errorf("%w: vehicle identifier is already in use", app.ErrPrecondition)
+		}
+		if userErr == nil && driverErr == nil && vehicleErr == nil {
+			return nil
+		}
+		if isNotFound(userErr) {
+			tx.Create(userRef, user)
+		}
+		if isNotFound(vehicleErr) {
+			tx.Create(vehicleRef, vehicle)
+		}
+		if isNotFound(driverErr) {
+			tx.Create(driverRef, driver)
+		}
+		created = true
+		return nil
+	})
+	if err == nil {
+		err = store.auth.SetCustomUserClaims(ctx, principal.UID, map[string]any{"role": "driver"})
+	}
+	return map[string]any{"created": created, "idempotent": !created}, err
+}
+
+func validateRegistrationIdentity(user map[string]any) error {
+	if strings.TrimSpace(text(user, "email")) == "" || strings.TrimSpace(text(user, "firstName")) == "" ||
+		strings.TrimSpace(text(user, "lastName")) == "" || strings.TrimSpace(text(user, "phoneNumber")) == "" {
+		return fmt.Errorf("%w: email, name, and phone number are required", app.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func registrationUser(source map[string]any, uid, role, todaID, profileImage string, now time.Time) map[string]any {
+	return map[string]any{
+		"uid": uid, "email": truncate(text(source, "email"), 320), "firstName": truncate(text(source, "firstName"), 100),
+		"middleName": truncate(text(source, "middleName"), 100), "lastName": truncate(text(source, "lastName"), 100),
+		"phoneNumber": truncate(text(source, "phoneNumber"), 40), "role": role, "todaId": valueOrNil(todaID),
+		"dateOfBirth": source["dateOfBirth"], "termsAcceptedAt": source["termsAcceptedAt"], "privacyAcceptedAt": source["privacyAcceptedAt"],
+		"termsVersion": truncate(text(source, "termsVersion"), 40), "privacyVersion": truncate(text(source, "privacyVersion"), 40),
+		"profileImage": profileImage, "emailVerified": false, "isActive": true,
+		"schemaVersion": 2, "createdAt": now, "updatedAt": now,
+	}
+}
+
+func valueOrNil(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func (store *Store) reportRestrictionPosition(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {

@@ -1,7 +1,7 @@
 # VolTrike Full Rewrite Transition
 
-> Status: core V2 authority slice implemented; remaining feature parity is in
-> progress and is tracked explicitly below.
+> Status: V2 implementation cutover complete; deployment and full two-device
+> scenario validation remain intentionally gated below.
 >
 > Last updated: 2026-08-05.
 >
@@ -138,6 +138,22 @@ Before this document was written:
   unverified rather than failed.
 - A full Go test run previously exceeded a short timeout; targeted packages
   passed and the full suite remains a rewrite gate.
+
+### Final implementation verification evidence
+
+After the invisible V2 source cutover:
+
+- Go `go test ./...`, `go vet ./...`, and `go build .` pass, including media
+  ownership and registration authority tests. The Windows toolchain has CGO
+  disabled, so `go test -race ./...` remains a Linux/macOS CI gate rather than
+  a reported failure.
+- Node integration-only Functions: 90 tests pass; manifest load and syntax
+  checks pass.
+- Rust: 22 unit tests and 3 integration tests pass; formatting and Clippy with
+  warnings denied pass.
+- Flutter: all 206 tests pass; changed Dart sources analyze without issues.
+- Admin: TypeScript and the production Vite build pass.
+- `firebase.json` and `database.rules.json` parse successfully.
 
 ### Cloud rollback is separate
 
@@ -933,17 +949,18 @@ secret value is introduced into documentation or logs.
 - [ ] Configure Android, Apple, and web App Check providers plus local debug
   tokens; client token acquisition is implemented, while Firebase Console
   registration/debug-token setup remains an operator task.
-- [ ] Generate or implement typed Dart and TypeScript clients.
+- [x] Implement the shared-envelope Dart and TypeScript V2 clients.
 
 Checkpoint: Go, Dart, and TypeScript can compile against the same contract.
 
 ### Phase 2A — Go defense vertical slice
 
-- [ ] Reorganize the Go service by domain/application/adapter layers.
+- [x] Reorganize the Go modular monolith into application/core and Firebase
+  adapter boundaries with one composition root.
 - [x] Add public authenticated API middleware.
-- [ ] Add Firebase Auth and App Check verification tests, including rejection
+- [x] Add Firebase Auth and App Check verification tests, including rejection
   and local-emulator-only bypass tests.
-- [ ] Implement durable policy revisions.
+- [x] Implement durable policy revisions.
 - [x] Port authoritative fare and quote creation through /api/v2/quotes.
 - [x] Port coverage/restriction validation required by quoting and booking.
 - [x] Port booking creation and core lifecycle transactions.
@@ -953,9 +970,8 @@ Checkpoint: Go, Dart, and TypeScript can compile against the same contract.
 - [x] Implement driver sessions, heartbeat, takeover, and session-scoped
   location.
 - [x] Fix dispatch filtering before candidate truncation.
-- [x] Implement the minimal admin booking query needed to inspect the defense
-  ride through `/api/v2/admin/bookings` (with an invisible callable fallback
-  until the API base URL is configured).
+- [x] Implement the admin booking query through `/api/v2/admin/bookings` with
+  no callable fallback.
 - [x] Write transactional booking outbox events.
 - [x] Add readiness and public API health endpoints.
 
@@ -967,14 +983,14 @@ authority. This is the hours-scale vertical slice.
 
 - [x] Create small integration modules.
 - [x] Consume and deduplicate booking outbox events.
-- [x] Add `GO_V2_AUTHORITY=on` notification cutover guard; it disables the
-  legacy booking lifecycle notifier while preserving the existing dispatch
-  compatibility path until Go dispatch is migrated.
-- [ ] Send FCM, web push, and branded email.
-- [ ] Preserve required chat and Storage hooks.
-- [ ] Route scheduled domain work to authenticated Go endpoints.
-- [ ] Verify Node cannot mutate booking/domain state.
-- [ ] Reduce functions/index.js to an export manifest.
+- [x] Remove the temporary `GO_V2_AUTHORITY` guard and all legacy booking and
+  dispatch exports.
+- [x] Send FCM, web push, and branded email.
+- [x] Preserve chat notification and media integration behavior through the
+  outbox and Go media finalization.
+- [x] Route scheduled domain work to the internal authenticated Go endpoint.
+- [x] Verify Node is integration-only and cannot decide domain state.
+- [x] Reduce functions/index.js to an export manifest.
 
 Checkpoint: integration effects are produced from Go events, claims are
 recoverable after worker failure, and replay cannot duplicate domain state.
@@ -987,13 +1003,13 @@ Provider deliveries are at-least-once and duplicate tolerant.
   location mutations.
 - [x] Route booking offer decline, settlement dispute, and driver receipt
   acknowledgement through the Go command endpoint.
-- [ ] Make Firebase domain listeners read-only.
+- [x] Make Firebase domain listeners read-only.
 - [x] Add device/session lease lifecycle.
 - [x] Make locations session-scoped.
 - [x] Route driver online/offline and logout cleanup through the session
   controller without changing the existing driver screens.
-- [ ] Add durable command replay.
-- [ ] Replace in-memory-only route inputs with IDs.
+- [x] Add encrypted UID/device-bound durable command replay.
+- [x] Replace in-memory-only route inputs with restorable IDs.
 - [x] Preserve current passenger and driver screens; the cutover is transport
   and authority-only.
 
@@ -1002,10 +1018,11 @@ Go.
 
 ### Phase 5 — Admin switch
 
-- [ ] Add the typed Go API client.
-- [ ] Replace N+1 and scan-based reads with Go queries.
-- [ ] Replace polling with projection reads or scoped refresh.
-- [ ] Route defense-critical admin mutations through Go.
+- [x] Add the typed Go API client.
+- [x] Replace browser N+1 and scan-based reads with bounded Go queries.
+- [x] Replace five-second page polling with read-only projections and
+  focus/visibility-scoped refresh.
+- [x] Route all retained admin mutations through Go.
 - [x] Keep the existing Render Static Site deployment configuration while
   preserving the Admin UI.
 
@@ -1014,48 +1031,52 @@ writes.
 
 ### Phase 6 — Rust portability and useful activation
 
-- [ ] Consolidate coarse geometry/navigation/restriction APIs.
-- [ ] Add GPS filtering and trace batching.
-- [ ] Keep image processing file-to-file.
-- [ ] Enable and verify Android release builds.
+- [x] Consolidate coarse geometry/navigation/restriction APIs.
+- [x] Add GPS filtering and trace batching.
+- [x] Keep image processing file-to-file.
+- [x] Enable Android native release targets (final artifact validation remains
+  in the scenario gate).
 - [ ] Prepare iOS source/configuration and validate it through macOS CI or a
   device environment.
-- [ ] Prepare desktop targets.
-- [ ] Decide whether WASM adds enough capstone value.
-- [ ] Retain target-specific Dart fallback only where necessary.
+- [x] Prepare desktop native targets.
+- [x] Decide that WASM is not required for the capstone Admin/web target.
+- [x] Retain target-specific Dart fallback only where native artifacts are not
+  packaged.
 
 Checkpoint: Rust is required for meaningful native work, not included merely
 as a demo health call.
 
 ### Phase 7 — remaining feature parity
 
-- [ ] Port restriction and violation authority to Go.
-- [ ] Port settlement, commission, and dispute authority to Go.
+- [x] Port restriction and violation authority to Go.
+- [x] Port settlement, commission, and dispute authority to Go.
 - [x] Port safety incidents, reports, and ratings to Go.
 - [x] Port call lifecycle and synchronous LiveKit authorization to Go.
 - [x] Route chat sends/read acknowledgements through Go and notify through the
   outbox; Firestore listeners remain read-only projections.
-- [ ] Complete onboarding, driver/TODA applications, and role reconciliation.
-- [ ] Complete admin search, pagination, commands, and projections.
+- [x] Complete onboarding, driver/TODA applications, and role reconciliation.
+- [x] Complete admin search, pagination, commands, and projections.
 - [ ] Split App.tsx by feature after the functional cutover.
-- [ ] Complete notification, email, and web-push integration coverage.
+- [x] Complete notification, email, and web-push integration coverage.
 
 Checkpoint: every retained feature has one Go authority and the full
 passenger/driver/admin defense run passes.
 
 ### Phase 8 — rules, cleanup, and end-to-end verification
 
-- [ ] Lock client writes to authoritative Firestore collections.
-- [ ] Lock RTDB location writes behind the chosen Go path.
-- [ ] Update Storage staging/finalization rules.
-- [ ] Delete legacy Node domain code.
-- [ ] Delete Node-to-Go proxy modes.
-- [ ] Delete legacy Flutter callable bridges.
-- [ ] Delete stale schema parsers and duplicate admin code.
+- [x] Lock client writes to authoritative Firestore collections.
+- [x] Lock RTDB location writes behind the Go session path.
+- [x] Update Storage staging/finalization rules.
+- [x] Delete legacy Node domain runtime code.
+- [x] Delete Node-to-Go proxy modes.
+- [x] Delete legacy Flutter domain callable bridges; retained Auth callables
+  are integration-only email delivery.
+- [x] Delete stale schema parsers and duplicate admin code.
 - [x] Replace the generic root README with a project overview.
 - [x] Update deployment documents for Cloud Run, Firebase, Render, Flutter,
   App Check, and rollback.
-- [ ] Update transition.md with final evidence.
+- [x] Update transition.md with implementation evidence; scenario evidence is
+  recorded after the deployment-gated validation session.
 
 Checkpoint: all definition-of-done items pass and the source tree contains one
 authority for each concern.
@@ -1276,12 +1297,10 @@ hours-scale and capstone-relevant.
 
 Accepted. Flutter and Admin presentation are adapted, not rebuilt.
 
-### D-007 — Controlled compatibility fallback
+### D-007 — Source rollback only
 
 Accepted. The Git baseline and cloud revision history are the rollback. The
-new Go runtime is the target authority; the Admin booking adapter may use its
-legacy callable only when `VITE_VOLTRIKE_API_BASE_URL` is unset. Remove that
-fallback after emulator cutover verification.
+new runtime has no callable compatibility fallback or dual writer.
 
 ### D-008 — Admin hosting
 
@@ -1299,49 +1318,37 @@ need to serve the Admin bundle. Configure the Render rewrite rule
 | Flutter quote/create/lifecycle | Go `/api/v2` + Firestore transaction | Complete for core ride path | None |
 | Flutter driver online/location/logout | Go driver-session lease API | Complete | None |
 | Flutter decline/dispute/receipt | Go booking command API | Complete | None |
-| Admin booking inspection | Go `/api/v2/admin/bookings` with callable fallback | Complete for first admin slice | None |
-| Node booking notifications | Go outbox consumer with dedupe | Implemented; enable with cutover config | None |
-| Node dispatch scheduler | Existing compatibility Functions path | Not yet replaced | None |
-| Admin TODA, safety, violations, reports, settlement actions | Existing callable authority | Not yet replaced | None |
-| Flutter safety, reports, ratings, calls, settlement | Existing callable authority | Not yet replaced | None |
+| Admin booking inspection | Go V2 bounded queries | Complete | None |
+| Node booking notifications | Go outbox consumer with dedupe | Complete | None |
+| Scheduled dispatch/expiry/escalation | Authenticated Go maintenance endpoint | Complete | None |
+| Admin TODA, safety, violations, reports, settlement actions | Go V2 operations | Complete | None |
+| Flutter safety, reports, ratings, calls, settlement | Go V2 operations | Complete | None |
 | Rust geometry/navigation/media | Existing native compute boundary | Retained and tested | None |
 | Flutter reports/ratings/SOS/earnings | Go V2 operations + outbox | Complete | None |
 | Flutter call lifecycle/LiveKit authorization | Go V2 operations | Complete | None |
 | Flutter chat writes/read acknowledgements | Go V2 operations + read-only listener | Complete | None |
-| Driver restriction observations/messages | Go session GPS + Firestore transactions | Complete for driver surface; Admin migration pending | None |
+| Driver restriction observations/messages | Go session GPS + Firestore transactions | Complete | None |
+| Media uploads | UID-scoped Storage staging + Go immutable finalization | Complete | None |
+| Offline commands and route restore | Encrypted Dart outbox + ID query routes | Complete | None |
 
-The remaining rows are deliberately explicit: they are not silently marked
-complete. The screens remain unchanged while each row is moved behind the Go
-contract and covered by an emulator scenario.
+The invisible source cutover is complete. Deployment remains gated by the
+unchecked operator and full scenario items above.
 
-- Current phase: Phase 2A/Phase 3/Phase 4 invisible cutover in progress.
-- Last completed task: Go V2 booking/session authority, Node outbox notification
-  worker, Admin booking query adapter, Flutter booking mutation boundary, and
-  atomic Go driver-award/cash-settlement transactions with payload-bound
-  command replay and passenger/driver lock cleanup.
-- Implementation status: core source changes are present; full peripheral
-  feature parity is not yet migrated.
-- Verification completed: Node Functions 93/93 tests, Rust 22 unit + 3
-  integration tests, Admin production build, and targeted Go app/core/Firebase
-  tests all pass. An earlier `go vet ./...` and `go build .` pass is recorded;
-  the final rerun exceeded the local 120-second tool window. The Dart
-  null-aware map lint in `booking_repository.dart` is fixed and the file
-  formats cleanly.
-- Targeted Flutter verification completed: App Check initialization, the V2
-  HTTP client, and `booking_repository.dart` analyze with no issues. Full
-  registration/booking/call/safety scenario testing is deliberately deferred
-  to the next validation session.
-- Deployment handoff completed: Render blueprint variables, root architecture
-  README, Cloud Run/Firebase/Render commands, App Check client headers, and
-  rollback instructions are documented.
-- Contract/automation handoff completed: stable error/idempotency semantics,
-  V2 Firebase layout, cross-language transition/policy fixtures, emulator
-  environment template, and five-language CI gates are tracked. These new
-  changes were formatted and inspected but deliberately not test-executed in
-  this tranche, matching the deferred full-test decision.
-- Exact next task: migrate the remaining call, safety, report, rating,
-  restriction, onboarding, and Admin commands behind equivalent Go endpoints;
-  then configure `VITE_VOLTRIKE_API_BASE_URL` and run the deferred two-device
-  emulator defense ride.
-- Rule for the next agent: keep one Go authority, do not restore direct client
-  domain writes, and update this handoff after every feature tranche.
+- Current phase: Phase 8 implementation complete; validation/deployment gate.
+- Last completed task: removed the legacy Node domain runtime, added Go
+  maintenance/media/admin authority, encrypted Flutter command replay,
+  restorable aggregate routes, integration-only notification/email workers,
+  and deny-by-default Firebase domain write rules.
+- Verification completed in this tranche: Go tests/vet/build, Node 90/90 unit
+  tests and manifest checks, Rust format/Clippy/25 tests, Admin production
+  build, targeted Dart analysis, the full 206-test Flutter suite, and JSON
+  configuration parsing all pass. Go race instrumentation requires a
+  CGO-enabled Linux/macOS runner. Emulator-rule and real two-device scenarios
+  remain the intentionally separate pre-production validation session.
+- Deployment handoff: deploy Go first, configure App Check and secrets, deploy
+  Firebase rules/integration Functions, deploy the existing Render Admin, then
+  build Flutter with the V2 origin. Exact commands are in
+  `services/voltrike-go/DEPLOYMENT.md`.
+- Rule for the next session: do not restore any direct domain writer or V1
+  callable. Run the required registration/booking/call/safety scenarios before
+  production traffic.

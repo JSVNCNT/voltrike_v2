@@ -169,7 +169,13 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
       );
       if (!mounted) return;
       context.pushReplacement(
-        AppRoutes.bookingVoiceCall,
+        Uri(
+          path: AppRoutes.bookingVoiceCall,
+          queryParameters: <String, String>{
+            'bookingId': widget.bookingId,
+            'callId': result.session.callId,
+          },
+        ).toString(),
         extra: {
           'bookingId': widget.bookingId,
           'callId': result.session.callId,

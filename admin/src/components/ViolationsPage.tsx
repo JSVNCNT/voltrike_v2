@@ -251,8 +251,15 @@ export function ViolationsPage({
     hasLoadedMore.current = false;
     setNextCursor(null);
     void refresh(true, false);
-    const timer = window.setInterval(() => void refresh(false, true), 5000);
-    return () => window.clearInterval(timer);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh(false, true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
   }, [refresh]);
 
   async function loadMore() {

@@ -98,8 +98,9 @@ class DriverViolationRepository {
       });
     } on VoltrikeApiException catch (error) {
       // This acknowledgement is optional in contract v1.
-      if (error.code != 'invalid_argument' && error.code != 'not_found')
+      if (error.code != 'invalid_argument' && error.code != 'not_found') {
         rethrow;
+      }
     }
   }
 }

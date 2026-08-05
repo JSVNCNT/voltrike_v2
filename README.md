@@ -24,8 +24,8 @@ retained while the application authority moves to the Go V2 API.
 - `lib/` — Flutter application.
 - `admin/` — React/Vite Admin, deployed as a Render Static Site.
 - `services/voltrike-go/` — V2 API and Firebase adapters.
-- `functions/` — Node integration workers and compatibility paths during the
-  cutover.
+- `functions/` — Node notification, email, web-push, and scheduled integration
+  workers; it contains no domain authority.
 - `rust/` — Flutter Rust Bridge/native compute.
 - `contracts/openapi.yaml` — V2 public API contract.
 - `transition.md` — architecture decisions, migration status, cutover rules,
@@ -39,7 +39,7 @@ Firebase rules separately, then deploy Admin through Render with public build
 variables only. The command sequence and required console settings are in
 [services/voltrike-go/DEPLOYMENT.md](services/voltrike-go/DEPLOYMENT.md).
 
-Before a cutover, review every unchecked item in [transition.md](transition.md).
-The current repository deliberately retains compatibility paths only where a
-V2 feature is not yet ported; do not enable a production authority flag until
-the corresponding feature parity is implemented and validated.
+Before a cutover, review every unchecked validation/operator item in
+[transition.md](transition.md). There is no V1 runtime fallback: deploy the Go
+API, integration manifest, rules, Admin artifact, and Flutter build as one
+versioned release after the emulator defense flow passes.

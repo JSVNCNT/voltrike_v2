@@ -35,23 +35,45 @@ service firebase.storage {
     match /drivers/{uid}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid ||
         fileName == 'profile.jpg' || developerAdmin() || todaAdminForDriver(uid));
-      allow create, update: if signedIn() && request.auth.uid == uid &&
-        isRegistrationImage();
-      allow delete: if signedIn() && request.auth.uid == uid;
+      allow create, update, delete: if false;
     }
 
     match /passengers/{uid}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid || fileName == 'profile.jpg');
-      allow create, update: if signedIn() && request.auth.uid == uid && isImage();
-      allow delete: if signedIn() && request.auth.uid == uid;
+      allow create, update, delete: if false;
     }
 
-    // Legal TODA evidence is visible to the developer reviewer. While an
-    // application is pending, only its own applicant may upload/read it.
+    // V2 clients upload only to their own staging namespace. Go verifies the
+    // object generation/type/hash and copies it to an immutable final path.
+    match /staging/{uid}/{uploadId}/{fileName} {
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        (request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'application/pdf');
+      allow read, update, delete: if false;
+    }
+
+    // Legacy direct TODA paths are read-only during the resettable capstone
+    // cutover. All new legal evidence is finalized by Go under /final.
     match /toda_documents/{todaId}/{fileName} {
       allow read: if developerAdmin() || pendingTodaApplicant(todaId);
-      allow create, update: if (developerAdmin() || pendingTodaApplicant(todaId)) && isTodaDocument();
-      allow delete: if developerAdmin();
+      allow write: if false;
+    }
+
+    match /final/todas/{todaId}/{field}/{fileName} {
+      allow read: if developerAdmin() || pendingTodaApplicant(todaId);
+      allow write: if false;
+    }
+
+    match /final/profiles/{uid}/{field}/{fileName} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /final/drivers/{uid}/{field}/{fileName} {
+      allow read: if signedIn() && (request.auth.uid == uid ||
+        developerAdmin() || todaAdminForDriver(uid));
+      allow write: if false;
     }
 
     // Existing profile URLs created before path standardization remain usable.

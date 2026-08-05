@@ -347,12 +347,15 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   }
 
   void _openCall(Booking booking) {
-    context.push(AppRoutes.bookingVoiceCall, extra: booking.bookingId);
+    context.push(
+      AppRoutes.withBookingId(AppRoutes.bookingVoiceCall, booking.bookingId),
+      extra: booking.bookingId,
+    );
   }
 
   void _openChat(Booking booking) {
     context.push(
-      AppRoutes.bookingChat,
+      AppRoutes.withBookingId(AppRoutes.bookingChat, booking.bookingId),
       extra: {
         'bookingId': booking.bookingId,
         'members': [booking.passengerId, booking.driverId!],
@@ -371,7 +374,13 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
           AppRoutes.passengerProfile,
         ];
         if (index == 0 && activeBooking != null) {
-          context.go(AppRoutes.driverTracking, extra: activeBooking.bookingId);
+          context.go(
+            AppRoutes.withBookingId(
+              AppRoutes.driverTracking,
+              activeBooking.bookingId,
+            ),
+            extra: activeBooking.bookingId,
+          );
           return;
         }
         context.go(routes[index]);

@@ -3,7 +3,7 @@
     "driver_locations": {
       "$driverId": {
         ".read": "auth != null && (auth.uid === $driverId || root.child('driver_tracking_access').child(auth.uid).child($driverId).exists())",
-        ".write": "auth != null && auth.uid === $driverId",
+        ".write": false,
         ".validate": "newData.hasChildren(['latitude', 'longitude', 'accuracy', 'timestamp', 'online'])",
         "latitude": {
           ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
@@ -40,7 +40,7 @@
     "driver_presence": {
       "$driverId": {
         ".read": "auth != null && auth.uid === $driverId",
-        ".write": "auth != null && auth.uid === $driverId",
+        ".write": false,
         ".validate": "newData.hasChildren(['online', 'updatedAt'])",
         "online": {
           ".validate": "newData.isBoolean()"
@@ -50,6 +50,22 @@
         },
         "$other": {
           ".validate": false
+        }
+      }
+    },
+    "driverLocations": {
+      "$driverId": {
+        "$sessionId": {
+          ".read": "auth != null && (auth.uid === $driverId || root.child('driver_tracking_access').child(auth.uid).child($driverId).exists())",
+          ".write": false
+        }
+      }
+    },
+    "driverPresence": {
+      "$driverId": {
+        "$sessionId": {
+          ".read": "auth != null && auth.uid === $driverId",
+          ".write": false
         }
       }
     },

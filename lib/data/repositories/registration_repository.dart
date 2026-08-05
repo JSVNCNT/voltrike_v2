@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/constants/firestore_constants.dart';
+import '../../core/services/voltrike_api.dart';
 import '../models/app_user.dart';
 import '../models/driver.dart';
 import '../models/passenger.dart';
@@ -11,10 +12,12 @@ import '../models/vehicle.dart';
 /// Keeping these writes in one batch prevents an account from ending up with
 /// only some of its required profile documents.
 class RegistrationRepository {
-  RegistrationRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  RegistrationRepository({FirebaseFirestore? firestore, VoltrikeApi? api})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _api = api ?? VoltrikeApi.instance;
 
   final FirebaseFirestore _firestore;
+  final VoltrikeApi _api;
 
   Future<bool> passengerRegistrationExists(String uid) async {
     final snapshot = await _firestore
@@ -35,41 +38,22 @@ class RegistrationRepository {
   Future<void> createPassengerRegistration({
     required AppUser user,
     required Passenger passenger,
-  }) {
-    final batch = _firestore.batch();
-
-    batch.set(
-      _firestore.collection(FirestoreConstants.users).doc(user.uid),
-      user.toMap(),
-    );
-    batch.set(
-      _firestore.collection(FirestoreConstants.passengers).doc(passenger.uid),
-      passenger.toMap(),
-    );
-
-    return batch.commit();
+  }) async {
+    await _api.operation('createPassengerRegistration', {
+      'user': user.toMap(),
+      'passenger': passenger.toMap(),
+    });
   }
 
   Future<void> createDriverRegistration({
     required AppUser user,
     required Driver driver,
     required Vehicle vehicle,
-  }) {
-    final batch = _firestore.batch();
-
-    batch.set(
-      _firestore.collection(FirestoreConstants.users).doc(user.uid),
-      user.toMap(),
-    );
-    batch.set(
-      _firestore.collection(FirestoreConstants.vehicles).doc(vehicle.id),
-      vehicle.toMap(),
-    );
-    batch.set(
-      _firestore.collection(FirestoreConstants.drivers).doc(driver.uid),
-      driver.toMap(),
-    );
-
-    return batch.commit();
+  }) async {
+    await _api.operation('createDriverRegistration', {
+      'user': user.toMap(),
+      'driver': driver.toMap(),
+      'vehicle': vehicle.toMap(),
+    });
   }
 }

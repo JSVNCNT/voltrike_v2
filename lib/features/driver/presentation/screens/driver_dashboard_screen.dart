@@ -179,7 +179,10 @@ class DriverDashboardScreen extends ConsumerWidget {
                             ? null
                             : FilledButton.icon(
                                 onPressed: () => context.push(
-                                  AppRoutes.driverBookingTracking,
+                                  AppRoutes.withBookingId(
+                                    AppRoutes.driverBookingTracking,
+                                    currentBooking.bookingId,
+                                  ),
                                   extra: currentBooking.bookingId,
                                 ),
                                 icon: const Icon(Icons.map_outlined),
@@ -233,7 +236,10 @@ class DriverDashboardScreen extends ConsumerWidget {
                               ),
                               trailing: const Icon(Icons.chevron_right_rounded),
                               onTap: () => context.push(
-                                AppRoutes.driverEarnings,
+                                AppRoutes.withDriverId(
+                                  AppRoutes.driverEarnings,
+                                  driver.uid,
+                                ),
                                 extra: driver.uid,
                               ),
                             ),

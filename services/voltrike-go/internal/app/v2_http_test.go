@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,18 +10,20 @@ import (
 	"github.com/voltrike/voltrike-go/internal/config"
 )
 
-type testIdentityVerifier struct{}
+type testIdentityVerifier struct{ appCheckError error }
 
 func (testIdentityVerifier) VerifyIDToken(context.Context, string) (Principal, error) {
 	return Principal{UID: "test-user"}, nil
 }
 
-func (testIdentityVerifier) VerifyAppCheck(string) error { return nil }
+func (verifier testIdentityVerifier) VerifyAppCheck(string) error {
+	return verifier.appCheckError
+}
 
 func TestV2CapabilitiesRequiresIdentity(t *testing.T) {
 	server := &HTTPServer{
 		cfg: config.Config{
-			MaximumRequestBody:       1024,
+			MaximumRequestBody:        1024,
 			AllowUnauthenticatedLocal: false,
 			RequireAppCheck:           false,
 			AllowedOrigins:            "http://localhost:5173",
@@ -46,10 +49,38 @@ func TestV2CapabilitiesRequiresIdentity(t *testing.T) {
 	}
 }
 
+func TestV2AppCheckFailsClosed(t *testing.T) {
+	server := &HTTPServer{
+		cfg: config.Config{
+			MaximumRequestBody: 1024,
+			RequireAppCheck:    true,
+			AllowedOrigins:     "http://localhost:5173",
+		},
+		service:  &Service{},
+		verifier: testIdentityVerifier{appCheckError: errors.New("invalid app check")},
+	}
+	missing := httptest.NewRequest(http.MethodGet, "/api/v2/capabilities", nil)
+	missing.Header.Set("Authorization", "Bearer test-token")
+	missingResponse := httptest.NewRecorder()
+	server.routes().ServeHTTP(missingResponse, missing)
+	if missingResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("missing App Check status=%d", missingResponse.Code)
+	}
+
+	invalid := httptest.NewRequest(http.MethodGet, "/api/v2/capabilities", nil)
+	invalid.Header.Set("Authorization", "Bearer test-token")
+	invalid.Header.Set("X-Firebase-AppCheck", "invalid-token")
+	invalidResponse := httptest.NewRecorder()
+	server.routes().ServeHTTP(invalidResponse, invalid)
+	if invalidResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid App Check status=%d", invalidResponse.Code)
+	}
+}
+
 func TestV2LocalIdentityRequiresExplicitDemoMode(t *testing.T) {
 	server := &HTTPServer{
 		cfg: config.Config{
-			MaximumRequestBody:       1024,
+			MaximumRequestBody:        1024,
 			AllowUnauthenticatedLocal: true,
 			RequireAppCheck:           false,
 			AllowedOrigins:            "http://localhost:5173",

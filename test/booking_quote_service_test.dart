@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
-import 'package:voltrike_v2/core/services/go_service_bridge.dart';
+import 'package:voltrike_v2/core/services/booking_quote_service.dart';
 
 void main() {
   test('parses an authoritative Go booking quote', () {
@@ -31,8 +31,8 @@ void main() {
 
   test('bridge sends booking options and returns parsed quote', () async {
     late Map<String, dynamic> captured;
-    final bridge = GoServiceBridge(
-      quoteCallable: (input) async {
+    final bridge = BookingQuoteService(
+      quoteRequest: (input) async {
         captured = input;
         return {
           'distanceMeters': 1000,

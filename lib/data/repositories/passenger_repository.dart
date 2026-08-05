@@ -9,12 +9,8 @@ class PassengerRepository {
   PassengerRepository({
     FirestoreService? firestoreService,
     StorageRepository? storageRepository,
-  })  : _firestoreService =
-            firestoreService ??
-                FirestoreService.instance,
-        _storageRepository =
-            storageRepository ??
-                StorageRepository();
+  }) : _firestoreService = firestoreService ?? FirestoreService.instance,
+       _storageRepository = storageRepository ?? StorageRepository();
 
   final FirestoreService _firestoreService;
 
@@ -24,13 +20,9 @@ class PassengerRepository {
   // Create Passenger
   //==========================================================================
 
-  Future<void> createPassenger(
-    Passenger passenger,
-  ) {
-    return _firestoreService.setDocument(
-      collection: FirestoreConstants.passengers,
-      documentId: passenger.uid,
-      data: passenger.toMap(),
+  Future<void> createPassenger(Passenger passenger) {
+    throw UnsupportedError(
+      'Passenger creation is owned by Go registration authority.',
     );
   }
 
@@ -38,38 +30,24 @@ class PassengerRepository {
   // Update Passenger
   //==========================================================================
 
-  Future<void> updatePassenger(
-    Passenger passenger,
-  ) {
-    return _firestoreService.updateDocument(
-      collection: FirestoreConstants.passengers,
-      documentId: passenger.uid,
-      data: passenger.toMap(),
-    );
+  Future<void> updatePassenger(Passenger passenger) {
+    throw UnsupportedError('Passenger mutations are owned by Go authority.');
   }
 
   //==========================================================================
   // Delete Passenger
   //==========================================================================
 
-  Future<void> deletePassenger(
-    String uid,
-  ) {
-    return _firestoreService.deleteDocument(
-      collection: FirestoreConstants.passengers,
-      documentId: uid,
-    );
+  Future<void> deletePassenger(String uid) {
+    throw UnsupportedError('Passenger records are retained by Go authority.');
   }
 
   //==========================================================================
   // Get Passenger
   //==========================================================================
 
-  Future<Passenger?> getPassenger(
-    String uid,
-  ) async {
-    final snapshot =
-        await _firestoreService.getDocument(
+  Future<Passenger?> getPassenger(String uid) async {
+    final snapshot = await _firestoreService.getDocument(
       FirestoreConstants.passengers,
       uid,
     );
@@ -91,29 +69,22 @@ class PassengerRepository {
   // Passenger Stream
   //==========================================================================
 
-  Stream<Passenger?> passengerStream(
-    String uid,
-  ) {
+  Stream<Passenger?> passengerStream(String uid) {
     return _firestoreService
-        .documentStream(
-          FirestoreConstants.passengers,
-          uid,
-        )
-        .map(
-      (snapshot) {
-        if (!snapshot.exists) {
-          return null;
-        }
+        .documentStream(FirestoreConstants.passengers, uid)
+        .map((snapshot) {
+          if (!snapshot.exists) {
+            return null;
+          }
 
-        final data = snapshot.data();
+          final data = snapshot.data();
 
-        if (data == null) {
-          return null;
-        }
+          if (data == null) {
+            return null;
+          }
 
-        return Passenger.fromMap(data);
-      },
-    );
+          return Passenger.fromMap(data);
+        });
   }
 
   //==========================================================================

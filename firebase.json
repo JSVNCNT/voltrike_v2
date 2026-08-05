@@ -39,44 +39,6 @@
       ]
     }
   ],
-  "hosting": {
-    "public": "admin/dist",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ],
-    "headers": [
-      {
-        "source": "/firebase-messaging-sw.js",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
-          },
-          {
-            "key": "Service-Worker-Allowed",
-            "value": "/"
-          }
-        ]
-      },
-      {
-        "source": "/images/**",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "public,max-age=604800"
-          }
-        ]
-      }
-    ]
-  },
   "emulators": {
     "auth": { "host": "127.0.0.1", "port": 9099 },
     "functions": { "host": "127.0.0.1", "port": 5001 },

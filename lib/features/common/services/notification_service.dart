@@ -320,15 +320,24 @@ class NotificationService {
       if (callId != null && callId == _lastOpenedCallId) return;
       _lastOpenedCallId = callId;
       appRouter.push(
-        AppRoutes.incomingBookingCall,
+        Uri(
+          path: AppRoutes.incomingBookingCall,
+          queryParameters: <String, String>{
+            'bookingId': bookingId,
+            'callId': ?callId,
+          },
+        ).toString(),
         extra: {'bookingId': bookingId, 'callId': callId},
       );
       return;
     }
     appRouter.go(
-      target == 'driver'
-          ? AppRoutes.driverBookingTracking
-          : AppRoutes.driverTracking,
+      AppRoutes.withBookingId(
+        target == 'driver'
+            ? AppRoutes.driverBookingTracking
+            : AppRoutes.driverTracking,
+        bookingId,
+      ),
       extra: bookingId,
     );
   }

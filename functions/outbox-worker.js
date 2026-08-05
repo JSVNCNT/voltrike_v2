@@ -3,6 +3,12 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { logger } = require('firebase-functions');
 const admin = require('firebase-admin');
+const { defineSecret } = require('firebase-functions/params');
+const { sendBrevoEmail, validEmail } = require('./brevo-communications');
+
+const brevoSmtpLogin = defineSecret('BREVO_SMTP_LOGIN');
+const brevoSmtpKey = defineSecret('BREVO_SMTP_KEY');
+const brevoSenderEmail = defineSecret('BREVO_SENDER_EMAIL');
 
 const BOOKING_MESSAGES = {
   driverAssigned: ['Driver assigned', 'Your driver accepted the booking.'],
@@ -106,14 +112,101 @@ async function processBookingEvent(eventId, event) {
   };
 }
 
-const processGoOutbox = onDocumentCreated('outbox/{eventId}', async (event) => {
+async function sendToScopedAdmins(title, body, data, todaId = '') {
+  const roles = await firestore().collection('users')
+    .where('role', 'in', ['developer_admin', 'toda_admin'])
+    .where('isActive', '==', true)
+    .limit(100)
+    .get();
+  const recipients = roles.docs.filter((entry) => {
+    const profile = entry.data();
+    return profile.role === 'developer_admin' || !todaId || profile.todaId === todaId;
+  });
+  const deliveries = await Promise.all(recipients.map((entry) =>
+    sendToUser(entry.id, title, body, data)));
+  return deliveries.reduce((summary, delivery) => ({
+    attempted: summary.attempted + delivery.attempted,
+    succeeded: summary.succeeded + delivery.succeeded,
+  }), { attempted: 0, succeeded: 0 });
+}
+
+async function sendTransactionalEmail(uid, title, body) {
+  if (!brevoSmtpLogin.value() || !brevoSmtpKey.value() || !brevoSenderEmail.value()) {
+    return { skipped: true, reason: 'email-not-configured' };
+  }
+  const user = await admin.auth().getUser(uid).catch(() => null);
+  if (!user?.email || !validEmail(user.email)) return { skipped: true, reason: 'no-email' };
+  const result = await sendBrevoEmail({
+    smtpLogin: brevoSmtpLogin.value(), smtpKey: brevoSmtpKey.value(),
+    senderEmail: brevoSenderEmail.value(), senderName: 'VolTrike',
+    to: user.email, name: user.displayName || 'VolTrike user', subject: title,
+    textContent: body,
+    htmlContent: `<p>${String(body).replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</p>`,
+  });
+  return { sent: true, providerMessageId: String(result.messageId || '') };
+}
+
+async function processDomainEvent(eventId, event) {
+  const type = String(event.type || '');
+  const payload = event.payload || {};
+  if (type.startsWith('booking.')) return processBookingEvent(eventId, event);
+  if (type === 'call.ringing' && payload.recipientId) {
+    return sendToUser(payload.recipientId, 'Incoming VolTrike call', 'Your ride participant is calling.', {
+      bookingId: payload.bookingId, callId: payload.callId, type: 'incoming_call',
+    });
+  }
+  if (type === 'chat.message.created') {
+    const booking = await firestore().collection('bookings').doc(payload.bookingId).get();
+    const message = await firestore().collection('chat').doc(payload.bookingId)
+      .collection('messages').doc(payload.messageId).get();
+    if (!booking.exists || !message.exists) return { skipped: true, reason: 'projection-not-found' };
+    const bookingData = booking.data() || {};
+    const recipientId = bookingData.passengerId === payload.senderId
+      ? bookingData.driverId : bookingData.passengerId;
+    return sendToUser(recipientId, 'New ride message', String(message.data()?.text || '').slice(0, 120), {
+      bookingId: payload.bookingId, type: 'chat_message',
+    });
+  }
+  if (type.startsWith('safety.')) {
+    const incident = await firestore().collection('safetyIncidents').doc(event.aggregateId).get();
+    const data = incident.data() || payload;
+    const title = type === 'safety.escalated' ? 'Unacknowledged VolTrike SOS' : 'VolTrike safety alert';
+    const body = `Safety incident for booking ${data.bookingId || 'unknown'} requires review.`;
+    return sendToScopedAdmins(title, body, {
+      type: 'safety_incident', incidentId: event.aggregateId,
+      bookingId: data.bookingId || '', escalationLevel: data.escalationLevel || 0,
+    }, data.todaId || '');
+  }
+  if (type === 'report.created') {
+    const report = await firestore().collection('reports').doc(event.aggregateId).get();
+    const data = report.data() || payload;
+    return sendToScopedAdmins('New ride report', 'A ride report requires administrator review.', {
+      type: 'ride_report', reportId: event.aggregateId, bookingId: data.bookingId || '',
+    }, data.todaId || '');
+  }
+  if (type.startsWith('violation.')) {
+    const violationId = payload.violationId || event.aggregateId;
+    const violation = await firestore().collection('driverViolations').doc(violationId).get();
+    const data = violation.data() || payload;
+    if (type === 'violation.created' && data.driverId) {
+      await sendTransactionalEmail(data.driverId, 'VolTrike route safety case', 'A route restriction case was recorded. Open the driver app for details.');
+    }
+    return sendToScopedAdmins('Route restriction case', 'A driver restriction case has new activity.', {
+      type: 'driver_violation', violationId,
+    }, data.ownerTodaId || data.todaId || '');
+  }
+  return { skipped: true, reason: 'non-notifiable-event' };
+}
+
+const processGoOutbox = onDocumentCreated({
+  document: 'outbox/{eventId}',
+  secrets: [brevoSmtpLogin, brevoSmtpKey, brevoSenderEmail],
+}, async (event) => {
   const eventId = event.params.eventId;
   const claimed = await claim(eventId);
   if (!claimed) return;
   try {
-    const result = String(claimed.type || '').startsWith('booking.')
-      ? await processBookingEvent(eventId, claimed)
-      : { skipped: true, reason: 'unsupported-event' };
+    const result = await processDomainEvent(eventId, claimed);
     await complete(eventId, 'completed', result);
   } catch (error) {
     await complete(eventId, 'failed', { message: error?.message || String(error) });
@@ -125,5 +218,6 @@ const processGoOutbox = onDocumentCreated('outbox/{eventId}', async (event) => {
 module.exports = {
   BOOKING_MESSAGES,
   processBookingEvent,
+  processDomainEvent,
   processGoOutbox,
 };

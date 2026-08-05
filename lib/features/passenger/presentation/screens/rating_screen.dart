@@ -50,7 +50,10 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
             passengerId: user.uid,
           );
       if (alreadyRated && mounted) {
-        context.go(AppRoutes.passengerReceipt, extra: widget.bookingId);
+        context.go(
+          AppRoutes.withBookingId(AppRoutes.passengerReceipt, widget.bookingId),
+          extra: widget.bookingId,
+        );
       }
     } catch (_) {
       // Submission remains safe because the backend operation is idempotent.
@@ -93,7 +96,10 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
         ),
       );
       if (mounted) {
-        context.go(AppRoutes.passengerReceipt, extra: widget.bookingId);
+        context.go(
+          AppRoutes.withBookingId(AppRoutes.passengerReceipt, widget.bookingId),
+          extra: widget.bookingId,
+        );
       }
     } catch (error) {
       if (!mounted) return;
@@ -246,7 +252,10 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
               onPressed: _submitting
                   ? null
                   : () => context.go(
-                      AppRoutes.passengerReceipt,
+                      AppRoutes.withBookingId(
+                        AppRoutes.passengerReceipt,
+                        widget.bookingId,
+                      ),
                       extra: widget.bookingId,
                     ),
               child: const Text('Skip for now'),

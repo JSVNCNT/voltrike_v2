@@ -14,7 +14,10 @@ void main() {
         bookingId: bookingId,
       );
 
-      expect(decision.location, AppRoutes.searchingDriver);
+      expect(
+        decision.location,
+        AppRoutes.withBookingId(AppRoutes.searchingDriver, bookingId),
+      );
       expect(decision.bookingId, bookingId);
     });
 
@@ -31,7 +34,10 @@ void main() {
           bookingId: bookingId,
         );
 
-        expect(decision.location, AppRoutes.driverTracking);
+        expect(
+          decision.location,
+          AppRoutes.withBookingId(AppRoutes.driverTracking, bookingId),
+        );
         expect(decision.bookingId, bookingId);
       }
     });
@@ -48,7 +54,10 @@ void main() {
         bookingId: bookingId,
       );
 
-      expect(completed.location, AppRoutes.rateDriver);
+      expect(
+        completed.location,
+        AppRoutes.withBookingId(AppRoutes.rateDriver, bookingId),
+      );
       expect(completed.bookingId, bookingId);
       expect(cancelled.location, AppRoutes.passengerHome);
       expect(cancelled.carriesBooking, isFalse);
@@ -69,7 +78,10 @@ void main() {
           bookingId: bookingId,
         );
 
-        expect(decision.location, AppRoutes.driverBookingTracking);
+        expect(
+          decision.location,
+          AppRoutes.withBookingId(AppRoutes.driverBookingTracking, bookingId),
+        );
         expect(decision.bookingId, bookingId);
       }
     });

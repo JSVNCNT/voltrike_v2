@@ -1,18 +1,14 @@
 import { httpsCallable } from 'firebase/functions';
 import {
   collection,
-  doc,
-  getDoc,
-  getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
-  where,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db, firebaseAppCheckToken, functions } from './firebase';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
 import type {
   AdminMetrics,
@@ -38,6 +34,9 @@ import type {
 } from './types';
 
 async function call<T>(name: string, data: Record<string, unknown>): Promise<T> {
+  if (name !== 'requestBrandedVerificationEmail') {
+    return goOperation<T>(name, data);
+  }
   try {
     return (await httpsCallable<Record<string, unknown>, T>(functions, name)(data)).data;
   } catch (error) {
@@ -45,48 +44,72 @@ async function call<T>(name: string, data: Record<string, unknown>): Promise<T> 
   }
 }
 
-async function goAdminBookings(
-  cursor = '',
-  search = '',
-): Promise<PageResult<BookingOperation> | null> {
-  const baseUrl = String(import.meta.env.VITE_VOLTRIKE_API_BASE_URL || '').trim().replace(/\/$/, '');
+async function goOperation<T>(
+  name: string,
+  payload: Record<string, unknown>,
+): Promise<T> {
+  const baseUrl = String(import.meta.env.VITE_VOLTRIKE_API_BASE_URL || '')
+    .trim()
+    .replace(/\/$/, '');
   const user = auth.currentUser;
-  if (!baseUrl || !user) return null;
+  if (!baseUrl || !user) {
+    throw new Error('The authenticated VolTrike V2 API is not configured.');
+  }
   const token = await user.getIdToken();
   const appCheckToken = await firebaseAppCheckToken();
-  const url = new URL(`${baseUrl}/api/v2/admin/bookings`);
-  url.searchParams.set('pageSize', '25');
-  if (cursor) url.searchParams.set('cursor', cursor);
-  if (search) url.searchParams.set('search', search);
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+  const response = await fetch(
+    `${baseUrl}/api/v2/operations/${encodeURIComponent(name)}`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
+      },
+      body: JSON.stringify({ commandId: crypto.randomUUID(), payload }),
     },
-  });
-  if (!response.ok) return null;
-  const payload = await response.json() as { items?: unknown[]; nextCursor?: unknown };
-  return {
-    items: (payload.items || []).map((entry) => {
-      const source = asRecord(entry);
-      const id = typeof source.id === 'string'
-        ? source.id
-        : typeof source.bookingId === 'string' ? source.bookingId : '';
-      return { id, ...source } as unknown as BookingOperation;
-    }),
-    nextCursor: typeof payload.nextCursor === 'string' && payload.nextCursor
-      ? payload.nextCursor
-      : null,
+  );
+  const decoded = await response.json().catch(() => ({})) as {
+    data?: unknown;
+    error?: { message?: string };
   };
+  if (!response.ok) {
+    throw new Error(decoded.error?.message || `The ${name} operation failed.`);
+  }
+  return decoded.data as T;
 }
-
-const mapDocument = <T>(id: string, value: unknown) => ({ id, ...(value as object) }) as T;
 
 type UnknownRecord = Record<string, unknown>;
 
 function asRecord(value: unknown): UnknownRecord {
   return value !== null && typeof value === 'object' ? value as UnknownRecord : {};
+}
+
+async function uploadAndFinalizeTodaDocument(
+  todaId: string,
+  field: string,
+  file: File,
+): Promise<string> {
+  const extension = file.name.includes('.')
+    ? file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'bin'
+    : 'bin';
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Sign in before uploading documents.');
+  const stagingPath = `staging/${uid}/${crypto.randomUUID()}/${field}.${extension}`;
+  const uploaded = await uploadBytes(ref(storage, stagingPath), file, {
+    contentType: file.type,
+    customMetadata: { ownerUid: uid, targetType: 'toda_document' },
+  });
+  const finalized = await call<{ downloadUrl: string }>('finalizeMedia', {
+    stagingPath: uploaded.ref.fullPath,
+    generation: Number(uploaded.metadata.generation),
+    targetType: 'toda_document',
+    targetId: todaId,
+    field,
+  });
+  if (!finalized.downloadUrl) throw new Error('Media finalization returned no URL.');
+  return finalized.downloadUrl;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -424,11 +447,8 @@ export const adminApi = {
       {},
     ),
   registerToda: (data: Record<string, unknown>) => call<{ todaId: string }>('registerToda', data),
-  createToda: (data: Record<string, unknown>) => call<{ todaId: string }>('adminCreateToda', data),
   reviewTodaRegistration: (todaId: string, status: 'approved' | 'declined') => call<{ updated: boolean }>('adminReviewTodaRegistration', { todaId, status }),
-  assignTodaAdmin: (uid: string, todaId: string) => call<{ assigned: boolean }>('adminAssignTodaAdmin', { uid, todaId }),
   setTodaStatus: (todaId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetTodaStatus', { todaId, isActive }),
-  attachTodaDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('adminAttachTodaDocuments', { todaId, documents }),
   attachTodaRegistrationDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('attachTodaRegistrationDocuments', { todaId, documents }),
   updateFare: (fare: FareConfig) => call<{ updated: boolean }>('adminUpdateFare', { fare }),
   setDriverStatus: (uid: string, status: string, license?: { number: string; expiry: string }) =>
@@ -448,18 +468,7 @@ export const adminApi = {
   createRouteRestriction: (name: string, type: RouteRestriction['type'], geometryType: 'polygon' | 'corridor', polygon: [number, number][], bufferMeters: number, notes: string, areas?: [number, number][][], minimumAlignedTravelMeters?: number) => call<{ restrictionId: string }>('adminCreateRouteRestriction', { name, type, geometryType, polygon, bufferMeters, notes, areas, minimumAlignedTravelMeters }),
   setRouteRestrictionStatus: (restrictionId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetRouteRestrictionStatus', { restrictionId, isActive }),
   async todas(): Promise<Toda[]> {
-    const snapshot = await getDocs(query(collection(db, 'todas'), orderBy('name')));
-    const todas = snapshot.docs.map((entry) => mapDocument<Toda>(entry.id, entry.data()));
-    return Promise.all(todas.map(async (toda) => {
-      try {
-        const application = await getDoc(doc(db, 'todaApplications', toda.id));
-        return application.exists() ? { ...toda, ...application.data() } as Toda : toda;
-      } catch {
-        // TODA administrators can load the public TODA list but cannot read
-        // legal applications belonging to any TODA.
-        return toda;
-      }
-    }));
+    return (await call<{ items: Toda[] }>('adminListTodas', {})).items;
   },
   driverPage: (cursor?: string | null, search = '') =>
     call<PageResult<Driver>>('adminListDrivers', {
@@ -488,8 +497,6 @@ export const adminApi = {
     return (await adminApi.reportPage()).items;
   },
   async bookingPage(cursor?: string | null, search = '') {
-    const migrated = await goAdminBookings(cursor || '', search);
-    if (migrated) return migrated;
     return call<PageResult<BookingOperation>>('adminListBookings', {
       cursor: cursor || '',
       search,
@@ -615,14 +622,9 @@ export const adminApi = {
     );
   },
   async zones(todaId?: string): Promise<ZoneRequest[]> {
-    const source = collection(db, 'zoneRequests');
-    const snapshot = await getDocs(
-      todaId
-        ? query(source, where('todaId', '==', todaId), limit(500))
-        : query(source, limit(500)),
-    );
-    return snapshot.docs
-      .map((entry) => normalizeZoneRequest(entry.id, entry.data()))
+    const result = await call<{ items: unknown[] }>('adminListZones', { todaId: todaId || '' });
+    return result.items
+      .map((entry) => { const source = asRecord(entry); return normalizeZoneRequest(String(source.id || ''), source); })
       .sort((left, right) => {
         if (left.status === 'pending' && right.status !== 'pending') return -1;
         if (right.status === 'pending' && left.status !== 'pending') return 1;
@@ -630,18 +632,14 @@ export const adminApi = {
       });
   },
   async routeRestrictions(): Promise<RouteRestriction[]> {
-    const snapshot = await getDocs(query(collection(db, 'routeRestrictions'), limit(200)));
-    return snapshot.docs
-      .map((entry) => normalizeRouteRestriction(entry.id, entry.data()))
+    const result = await call<{ items: unknown[] }>('adminListRouteRestrictions', {});
+    return result.items
+      .map((entry) => { const source = asRecord(entry); return normalizeRouteRestriction(String(source.id || ''), source); })
       .sort((left, right) => Number(right.isActive) - Number(left.isActive) || left.name.localeCompare(right.name));
   },
   async fare(): Promise<FareConfig> {
-    const snapshot = await getDoc(doc(db, 'settings', 'fare_config'));
-    const source = snapshot.exists() ? snapshot.data() : {
-      baseFare: 20, includedMeters: 1000, distanceStepMeters: 500,
-      distanceStepPrice: 5, additionalPassengerFee: 40, baggageFee: 20,
-      outsideTodaSurcharge: 20,
-    };
+    const result = await call<{ fare: Record<string, unknown> }>('adminGetFare', {});
+    const source = result.fare;
     return {
       baseFare: Number(source.baseFare ?? 20),
       includedMeters: Number(source.includedMeters ?? 1000),
@@ -652,24 +650,9 @@ export const adminApi = {
       outsideTodaSurcharge: Number(source.outsideTodaSurcharge ?? 20),
     };
   },
-  async uploadTodaDocuments(todaId: string, files: Record<string, File>): Promise<void> {
-    const documents = await Promise.all(Object.entries(files).map(async ([key, file]) => {
-      const extension = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
-      const object = ref(storage, `toda_documents/${todaId}/${key}.${extension}`);
-      await uploadBytes(object, file, { contentType: file.type });
-      return [key, await getDownloadURL(object)] as const;
-    }));
-    await call<{ updated: boolean }>('adminAttachTodaDocuments', {
-      todaId,
-      documents: Object.fromEntries(documents),
-    });
-  },
   async uploadTodaRegistrationDocuments(todaId: string, files: Record<string, File>): Promise<void> {
     const documents = await Promise.all(Object.entries(files).map(async ([key, file]) => {
-      const extension = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
-      const object = ref(storage, `toda_documents/${todaId}/${key}.${extension}`);
-      await uploadBytes(object, file, { contentType: file.type });
-      return [key, await getDownloadURL(object)] as const;
+      return [key, await uploadAndFinalizeTodaDocument(todaId, key, file)] as const;
     }));
     await adminApi.attachTodaRegistrationDocuments(todaId, Object.fromEntries(documents));
   },

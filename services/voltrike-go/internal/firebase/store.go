@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/firestore"
+	"cloud.google.com/go/storage"
 	firebaseadmin "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/appcheck"
 	"firebase.google.com/go/v4/auth"
@@ -22,15 +23,17 @@ import (
 )
 
 type Store struct {
-	firestore *firestore.Client
-	realtime  *db.Client
-	auth      *auth.Client
-	appCheck  *appcheck.Client
-	cfg       config.Config
+	firestore  *firestore.Client
+	realtime   *db.Client
+	auth       *auth.Client
+	appCheck   *appcheck.Client
+	bucket     *storage.BucketHandle
+	bucketName string
+	cfg        config.Config
 }
 
 func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
-	admin, err := firebaseadmin.NewApp(ctx, &firebaseadmin.Config{ProjectID: cfg.ProjectID, DatabaseURL: cfg.DatabaseURL})
+	admin, err := firebaseadmin.NewApp(ctx, &firebaseadmin.Config{ProjectID: cfg.ProjectID, DatabaseURL: cfg.DatabaseURL, StorageBucket: cfg.StorageBucket})
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialize Firebase Admin: %w", err)
 	}
@@ -53,12 +56,24 @@ func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
 		_ = firestoreClient.Close()
 		return nil, nil, fmt.Errorf("initialize Firebase App Check: %w", err)
 	}
+	storageClient, err := admin.Storage(ctx)
+	if err != nil {
+		_ = firestoreClient.Close()
+		return nil, nil, fmt.Errorf("initialize Firebase Storage: %w", err)
+	}
+	bucket, err := storageClient.DefaultBucket()
+	if err != nil {
+		_ = firestoreClient.Close()
+		return nil, nil, fmt.Errorf("initialize default Storage bucket: %w", err)
+	}
 	store := &Store{
-		firestore: firestoreClient,
-		realtime:  realtimeClient,
-		auth:      authClient,
-		appCheck:  appCheckClient,
-		cfg:       cfg,
+		firestore:  firestoreClient,
+		realtime:   realtimeClient,
+		auth:       authClient,
+		appCheck:   appCheckClient,
+		bucket:     bucket,
+		bucketName: cfg.StorageBucket,
+		cfg:        cfg,
 	}
 	return store, func() { _ = firestoreClient.Close() }, nil
 }
@@ -80,6 +95,18 @@ func (store *Store) VerifyAppCheck(token string) error {
 	}
 	_, err := store.appCheck.VerifyToken(token)
 	return err
+}
+
+func (store *Store) Ready(ctx context.Context) error {
+	if store.firestore == nil || store.realtime == nil || store.auth == nil ||
+		store.appCheck == nil || store.bucket == nil || store.cfg.QuoteEncryptionKey == nil {
+		return fmt.Errorf("required Firebase clients or quote key are unavailable")
+	}
+	_, err := store.firestore.Collection("_system").Doc("readiness").Get(ctx)
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("Firestore readiness: %w", err)
+	}
+	return nil
 }
 
 func (store *Store) LoadPolicy(ctx context.Context) (app.Policy, error) {

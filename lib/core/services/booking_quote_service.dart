@@ -3,7 +3,7 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import '../../data/models/route_policy_advisory.dart';
 import 'voltrike_api.dart';
 
-typedef GoQuoteCallable = Future<Object?> Function(Map<String, dynamic> input);
+typedef BookingQuoteRequest = Future<Object?> Function(Map<String, dynamic> input);
 
 class GoQuoteException implements Exception {
   const GoQuoteException(this.message);
@@ -86,15 +86,15 @@ class GoBookingQuote {
   }
 }
 
-class GoServiceBridge {
-  GoServiceBridge({GoQuoteCallable? quoteCallable, VoltrikeApi? api})
-    : _quoteCallable = quoteCallable,
-      _api = api ?? VoltrikeApi.instance;
+class BookingQuoteService {
+  BookingQuoteService({BookingQuoteRequest? quoteRequest, VoltrikeApi? api})
+    : _quoteRequest = quoteRequest,
+      _api = api;
 
-  static final GoServiceBridge instance = GoServiceBridge();
+  static final BookingQuoteService instance = BookingQuoteService();
 
-  final GoQuoteCallable? _quoteCallable;
-  final VoltrikeApi _api;
+  final BookingQuoteRequest? _quoteRequest;
+  final VoltrikeApi? _api;
 
   Future<GoBookingQuote?> tryBookingQuote({
     required LatLng pickup,
@@ -113,10 +113,10 @@ class GoServiceBridge {
     };
     try {
       final Object? response;
-      if (_quoteCallable != null) {
-        response = await _quoteCallable(input);
+      if (_quoteRequest != null) {
+        response = await _quoteRequest(input);
       } else {
-        response = await _api.quote(
+        response = await (_api ?? VoltrikeApi.instance).quote(
           pickup: input['pickup'] as Map<String, dynamic>,
           destination: input['destination'] as Map<String, dynamic>,
           additionalPassengers: additionalPassengers,

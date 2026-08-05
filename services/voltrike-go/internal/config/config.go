@@ -13,6 +13,7 @@ type Config struct {
 	Port                      string
 	ProjectID                 string
 	DatabaseURL               string
+	StorageBucket             string
 	GoogleRoutesAPIKey        string
 	QuoteEncryptionKey        []byte
 	PolicyCacheTTL            time.Duration
@@ -28,6 +29,7 @@ type Config struct {
 	LiveKitServerURL          string
 	LiveKitAPIKey             string
 	LiveKitAPISecret          string
+	DeveloperBootstrapCode    string
 }
 
 func Load() (Config, error) {
@@ -36,6 +38,7 @@ func Load() (Config, error) {
 		Port:                      value("PORT", "8080"),
 		ProjectID:                 projectID,
 		DatabaseURL:               value("FIREBASE_DATABASE_URL", ""),
+		StorageBucket:             value("FIREBASE_STORAGE_BUCKET", projectID+".firebasestorage.app"),
 		GoogleRoutesAPIKey:        value("GOOGLE_ROUTES_API_KEY", ""),
 		PolicyCacheTTL:            duration("POLICY_CACHE_TTL_SECONDS", 60*time.Second),
 		RequestTimeout:            duration("REQUEST_TIMEOUT_SECONDS", 10*time.Second),
@@ -51,6 +54,7 @@ func Load() (Config, error) {
 		LiveKitServerURL:       value("LIVEKIT_SERVER_URL", ""),
 		LiveKitAPIKey:          value("LIVEKIT_API_KEY", ""),
 		LiveKitAPISecret:       value("LIVEKIT_API_SECRET", ""),
+		DeveloperBootstrapCode: value("DEVELOPER_BOOTSTRAP_CODE", ""),
 	}
 	if cfg.ProjectID == "" {
 		return Config{}, fmt.Errorf("GOOGLE_CLOUD_PROJECT is required")

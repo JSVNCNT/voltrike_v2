@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'generated/api/geometry.dart' as geometry_api;
+import 'native_rust_platform.dart';
 import 'rust_bridge_runtime.dart';
 import 'rust_geometry_bridge_contract.dart';
 
@@ -8,7 +7,7 @@ RustGeometryBridge createRustGeometryBridge() => GeneratedRustGeometryBridge();
 
 class GeneratedRustGeometryBridge implements RustGeometryBridge {
   @override
-  bool get isSupported => Platform.isAndroid;
+  bool get isSupported => supportsNativeRust;
 
   @override
   Future<RustRouteConflictResponse> analyzeRouteConflicts(

@@ -8,6 +8,7 @@ import '../models/driver_booking_offer.dart';
 import '../models/model_date_parser.dart';
 import '../models/route_policy_advisory.dart';
 import '../../core/services/voltrike_api.dart';
+import '../../core/services/durable_command_outbox.dart';
 
 class BookingCreationResult {
   const BookingCreationResult({
@@ -110,12 +111,19 @@ class BookingCreationResult {
 /// • Admin Portal
 /// ===========================================================================
 class BookingRepository {
-  BookingRepository({FirebaseFirestore? firestore, VoltrikeApi? api})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _api = api ?? VoltrikeApi.instance;
+  BookingRepository({
+    FirebaseFirestore? firestore,
+    VoltrikeApi? api,
+    DurableCommandOutbox? outbox,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _api = api ?? VoltrikeApi.instance,
+       _outbox = outbox ?? DurableCommandOutbox.instance {
+    unawaited(_outbox.replayForCurrentUser());
+  }
 
   final FirebaseFirestore _firestore;
   final VoltrikeApi _api;
+  final DurableCommandOutbox _outbox;
   final Uuid _uuid = const Uuid();
   static const int _maximumRetainedOperationIds = 32;
   static const Duration _operationIdRetention = Duration(minutes: 10);
@@ -160,7 +168,7 @@ class BookingRepository {
     String operationId,
     String goQuoteToken,
   ) async {
-    final response = await _api.createBooking({
+    final payload = <String, dynamic>{
       'bookingId': booking.bookingId,
       'commandId': operationId,
       'pickup': {
@@ -176,7 +184,15 @@ class BookingRepository {
       'additionalPassengers': booking.additionalPassengers,
       'baggageCount': booking.baggageCount,
       'quoteToken': goQuoteToken,
-    });
+    };
+    final outboxKey = 'booking.create:${booking.bookingId}';
+    await _outbox.enqueue(
+      key: outboxKey,
+      kind: 'booking.create',
+      payload: payload,
+    );
+    final response = await _api.createBooking(payload);
+    await _outbox.complete(outboxKey);
     return BookingCreationResult.fromCallable(response, fallback: booking);
   }
 
@@ -477,7 +493,7 @@ class BookingRepository {
 
   Future<void> declineBookingOffer({required String bookingId}) async {
     await _runVoidOperation('decline:$bookingId', (operationId) async {
-      await _api.transitionBooking(bookingId, {
+      await _sendDurableTransition(bookingId, 'decline', {
         'commandId': operationId,
         'action': 'decline',
         'expectedRevision': await _expectedRevision(bookingId),
@@ -500,7 +516,7 @@ class BookingRepository {
     required String reason,
   }) async {
     await _runVoidOperation('dispute:$bookingId', (operationId) async {
-      await _api.transitionBooking(bookingId, {
+      await _sendDurableTransition(bookingId, 'dispute', {
         'commandId': operationId,
         'action': 'dispute',
         'reasonDetail': reason,
@@ -511,7 +527,7 @@ class BookingRepository {
 
   Future<void> acknowledgeDriverReceipt({required String bookingId}) async {
     await _runVoidOperation('receipt:$bookingId', (operationId) async {
-      await _api.transitionBooking(bookingId, {
+      await _sendDurableTransition(bookingId, 'receipt', {
         'commandId': operationId,
         'action': 'receipt',
         'expectedRevision': await _expectedRevision(bookingId),
@@ -521,7 +537,7 @@ class BookingRepository {
 
   Future<void> _accept(String bookingId) async {
     await _runVoidOperation('accept:$bookingId', (operationId) async {
-      await _api.transitionBooking(bookingId, {
+      await _sendDurableTransition(bookingId, 'accept', {
         'commandId': operationId,
         'action': 'accept',
         'expectedRevision': await _expectedRevision(bookingId),
@@ -536,7 +552,7 @@ class BookingRepository {
     String? reasonDetail,
   }) async {
     await _runVoidOperation('$action:$bookingId', (operationId) async {
-      await _api.transitionBooking(bookingId, {
+      await _sendDurableTransition(bookingId, action, {
         'commandId': operationId,
         'action': action,
         'expectedRevision': await _expectedRevision(bookingId),
@@ -544,6 +560,21 @@ class BookingRepository {
         'reasonDetail': ?reasonDetail,
       });
     });
+  }
+
+  Future<void> _sendDurableTransition(
+    String bookingId,
+    String action,
+    Map<String, dynamic> command,
+  ) async {
+    final outboxKey = 'booking.transition:$action:$bookingId';
+    await _outbox.enqueue(
+      key: outboxKey,
+      kind: 'booking.transition',
+      payload: <String, dynamic>{'bookingId': bookingId, 'command': command},
+    );
+    await _api.transitionBooking(bookingId, command);
+    await _outbox.complete(outboxKey);
   }
 
   Future<int> _expectedRevision(String bookingId) async {

@@ -71,7 +71,13 @@ class _DriverBookingTrackingScreenState
               final completedBookingId = _finishingBookingId;
               if (completedBookingId != null) {
                 _finishingBookingId = null;
-                context.go(AppRoutes.driverReceipt, extra: completedBookingId);
+                context.go(
+                  AppRoutes.withBookingId(
+                    AppRoutes.driverReceipt,
+                    completedBookingId,
+                  ),
+                  extra: completedBookingId,
+                );
               } else {
                 context.go(AppRoutes.driverHome);
               }
@@ -169,7 +175,10 @@ class _DriverBookingTrackingScreenState
         ];
         if (index == 0 && activeBooking != null) {
           context.go(
-            AppRoutes.driverBookingTracking,
+            AppRoutes.withBookingId(
+              AppRoutes.driverBookingTracking,
+              activeBooking.bookingId,
+            ),
             extra: activeBooking.bookingId,
           );
           return;
@@ -373,13 +382,19 @@ class _DriverBookingTrackingScreenState
       builder: (context, snapshot) => RideQuickActions(
         onCall: stage.allowContact
             ? () => context.push(
-                AppRoutes.bookingVoiceCall,
+                AppRoutes.withBookingId(
+                  AppRoutes.bookingVoiceCall,
+                  booking.bookingId,
+                ),
                 extra: booking.bookingId,
               )
             : null,
         onChat: stage.allowContact
             ? () => context.push(
-                AppRoutes.bookingChat,
+                AppRoutes.withBookingId(
+                  AppRoutes.bookingChat,
+                  booking.bookingId,
+                ),
                 extra: {
                   'bookingId': booking.bookingId,
                   'members': [booking.passengerId, booking.driverId!],
@@ -635,7 +650,7 @@ class _DriverBookingTrackingScreenState
       body: RideChatAlertListener(
         bookingId: booking.bookingId,
         onOpenChat: () => context.push(
-          AppRoutes.bookingChat,
+          AppRoutes.withBookingId(AppRoutes.bookingChat, booking.bookingId),
           extra: {
             'bookingId': booking.bookingId,
             'members': [booking.passengerId, booking.driverId!],

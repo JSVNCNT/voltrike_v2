@@ -153,8 +153,10 @@ class PassengerDashboardScreen extends ConsumerWidget {
       return null;
     }
     return FilledButton.icon(
-      onPressed: () =>
-          context.push(AppRoutes.driverTracking, extra: booking.bookingId),
+      onPressed: () => context.push(
+        AppRoutes.withBookingId(AppRoutes.driverTracking, booking.bookingId),
+        extra: booking.bookingId,
+      ),
       icon: const Icon(Icons.map_outlined),
       label: const Text('Open trip'),
     );
@@ -263,7 +265,10 @@ class _PassengerRatingsCard extends StatelessWidget {
                     const SizedBox(height: 16),
                     FilledButton.icon(
                       onPressed: () => context.push(
-                        AppRoutes.rateDriver,
+                        AppRoutes.withBookingId(
+                          AppRoutes.rateDriver,
+                          pending.first.bookingId,
+                        ),
                         extra: pending.first.bookingId,
                       ),
                       icon: const Icon(Icons.star_outline_rounded),

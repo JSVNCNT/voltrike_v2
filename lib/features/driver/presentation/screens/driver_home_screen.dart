@@ -109,7 +109,10 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
         .read(driverRepositoryProvider)
         .getPendingReceiptBookingId(user.uid);
     if (pendingReceipt != null && mounted) {
-      context.go(AppRoutes.driverReceipt, extra: pendingReceipt);
+      context.go(
+        AppRoutes.withBookingId(AppRoutes.driverReceipt, pendingReceipt),
+        extra: pendingReceipt,
+      );
       return;
     }
     if (!driver.isOnline) return;
@@ -209,7 +212,13 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
       // Remove the pending booking only after the backend transaction commits.
       ref.read(driverIncomingBookingProvider.notifier).clearBooking();
       if (mounted) {
-        context.go(AppRoutes.driverBookingTracking, extra: booking.bookingId);
+        context.go(
+          AppRoutes.withBookingId(
+            AppRoutes.driverBookingTracking,
+            booking.bookingId,
+          ),
+          extra: booking.bookingId,
+        );
       }
     } catch (error) {
       if (!mounted) return;

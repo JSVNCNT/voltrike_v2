@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import '../services/psgc_index_metadata.g.dart';
 import '../services/psgc_index_types.dart';
 import 'generated/api/psgc.dart' as psgc_api;
+import 'native_rust_platform.dart';
 import 'psgc_index_bridge_contract.dart';
 import 'rust_bridge_runtime.dart';
 
@@ -13,13 +13,13 @@ class GeneratedPsgcIndexBridge implements PsgcIndexBridge {
   bool _ready = false;
 
   @override
-  bool get isSupported => Platform.isAndroid;
+  bool get isSupported => supportsNativeRust;
 
   @override
   Future<PsgcArtifactMetadata> initialize(Uint8List artifact) async {
     if (!isSupported) {
       throw UnsupportedError(
-        'The VolTrike Rust PSGC bridge is supported on Android only.',
+        'The VolTrike Rust PSGC bridge is unavailable on this platform.',
       );
     }
     await RustBridgeRuntime.ensureInitialized();
