@@ -1,5 +1,10 @@
 .git
 .gitignore
 .gocache
+.tmp_go_cache
 coverage.out
 README.md
+voltrike-go
+voltrike-go.exe
+.env
+.env.*
