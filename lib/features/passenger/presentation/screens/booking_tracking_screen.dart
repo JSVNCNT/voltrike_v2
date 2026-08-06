@@ -11,6 +11,7 @@ import '../../../../core/native/rust_navigation_bridge.dart';
 import '../../../../core/services/navigation_service.dart';
 import '../../../../core/services/polyline_service.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
+import '../../../../core/utils/trip_location_label.dart';
 import '../../../../app/routes.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -686,8 +687,14 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                 ),
                 const SizedBox(height: 10),
                 TripInformationCard(
-                  pickup: booking.pickupAddress,
-                  destination: booking.destinationAddress,
+                  pickup: tripLocationLabel(
+                    booking.pickupName,
+                    booking.pickupAddress,
+                  ),
+                  destination: tripLocationLabel(
+                    booking.destinationName,
+                    booking.destinationAddress,
+                  ),
                   distance:
                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                   duration: _eta ?? 'Updating…',
@@ -875,8 +882,14 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                                 const SizedBox(height: 16),
 
                                 TripInformationCard(
-                                  pickup: booking.pickupAddress,
-                                  destination: booking.destinationAddress,
+                                  pickup: tripLocationLabel(
+                                    booking.pickupName,
+                                    booking.pickupAddress,
+                                  ),
+                                  destination: tripLocationLabel(
+                                    booking.destinationName,
+                                    booking.destinationAddress,
+                                  ),
                                   distance:
                                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                                   duration: _eta ?? '--',

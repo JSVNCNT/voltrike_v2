@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:voltrike_v2/core/config/navigation_config.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
+import 'package:voltrike_v2/core/utils/trip_location_label.dart';
 import 'package:voltrike_v2/features/driver/providers/driver_location_provider.dart';
 
 import '../../../../data/models/booking.dart';
@@ -554,8 +555,14 @@ class _DriverBookingTrackingScreenState
                 ],
                 const SizedBox(height: 10),
                 TripInformationCard(
-                  pickup: booking.pickupAddress,
-                  destination: booking.destinationAddress,
+                  pickup: tripLocationLabel(
+                    booking.pickupName,
+                    booking.pickupAddress,
+                  ),
+                  destination: tripLocationLabel(
+                    booking.destinationName,
+                    booking.destinationAddress,
+                  ),
                   distance:
                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                   duration: navigation.duration ?? 'Updating…',
@@ -779,8 +786,14 @@ class _DriverBookingTrackingScreenState
                       const SizedBox(height: 16),
 
                       TripInformationCard(
-                        pickup: booking.pickupAddress,
-                        destination: booking.destinationAddress,
+                        pickup: tripLocationLabel(
+                          booking.pickupName,
+                          booking.pickupAddress,
+                        ),
+                        destination: tripLocationLabel(
+                          booking.destinationName,
+                          booking.destinationAddress,
+                        ),
                         distance:
                             '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                         duration: navigation.duration ?? '--',

@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 typedef VoltrikeTokenProvider = Future<String?> Function();
@@ -43,7 +42,10 @@ class VoltrikeApi {
   static String _configuredBaseUrl() {
     const configured = String.fromEnvironment('VOLTRIKE_API_BASE_URL');
     if (configured.trim().isNotEmpty) return configured.trim();
-    return kIsWeb ? 'http://127.0.0.1:8080' : 'http://10.0.2.2:8080';
+    // The installed capstone app talks to the deployed authority by default.
+    // Local API development remains opt-in via --dart-define; falling back to
+    // 10.0.2.2 makes a physical phone silently unable to obtain a quote.
+    return 'https://voltrike-api-v2-327670792817.asia-southeast1.run.app';
   }
 
   Future<Map<String, dynamic>> quote({

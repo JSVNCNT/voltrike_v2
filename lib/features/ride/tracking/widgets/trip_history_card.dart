@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_radius.dart';
 import '../../../../core/theme/app_semantic_colors.dart';
+import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/booking_state_machine.dart';
 
@@ -38,7 +39,8 @@ class TripHistoryCard extends StatelessWidget {
       button: true,
       label:
           '$statusLabel trip with $otherPartyLabel, '
-          '${booking.pickupAddress} to ${booking.destinationAddress}, '
+          '${tripLocationLabel(booking.pickupName, booking.pickupAddress)} to '
+          '${tripLocationLabel(booking.destinationName, booking.destinationAddress)}, '
           '${DateFormat('MMM d, yyyy h:mm a').format(terminalDate)}',
       child: Card(
         clipBehavior: Clip.antiAlias,
@@ -94,7 +96,10 @@ class TripHistoryCard extends StatelessWidget {
                 _RouteLine(
                   icon: Icons.trip_origin_rounded,
                   iconColor: colors.primary,
-                  address: booking.pickupAddress,
+                  address: tripLocationLabel(
+                    booking.pickupName,
+                    booking.pickupAddress,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(left: 9),
@@ -107,7 +112,10 @@ class TripHistoryCard extends StatelessWidget {
                 _RouteLine(
                   icon: Icons.location_on_rounded,
                   iconColor: colors.secondary,
-                  address: booking.destinationAddress,
+                  address: tripLocationLabel(
+                    booking.destinationName,
+                    booking.destinationAddress,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 const Divider(),

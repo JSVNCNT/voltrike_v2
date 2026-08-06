@@ -2,6 +2,7 @@ package firebase
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -72,22 +73,74 @@ func (store *Store) FilterEligibleDispatch(ctx context.Context, candidates []app
 		}
 		candidate := byID[id]
 		candidate.TodaID = text(data, "todaId")
+		candidate.ServicePriority = dispatchServicePriority(candidate.TodaID, request)
 		result = append(result, candidate)
 	}
 	return result, nil
 }
 
+// dispatchServicePriority preserves TODA service preference without preventing
+// a nearby verified active driver from serving a booking outside configured
+// coverage.  Lower values sort first.
+func dispatchServicePriority(todaID string, request app.DispatchRequest) int {
+	if contains(request.PrimaryTodaIDs, todaID) {
+		return 0
+	}
+	if contains(request.SecondaryTodaIDs, todaID) {
+		return 1
+	}
+	if request.AllowAnyActiveToda {
+		return 2
+	}
+	return 3
+}
+
 func (store *Store) PublishBookingOffers(ctx context.Context, bookingID string, candidates []app.DispatchCandidate, expiresAt time.Time) error {
 	bookingRef := store.firestore.Collection("bookings").Doc(bookingID)
+	bookingSnapshot, err := bookingRef.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("read booking offer snapshot: %w", err)
+	}
+	if !bookingSnapshot.Exists() {
+		return fmt.Errorf("booking offer snapshot does not exist")
+	}
+	bookingData := bookingSnapshot.Data()
 	batch := store.firestore.Batch()
 	ids := make([]string, 0, len(candidates))
 	now := time.Now().UTC()
 	for _, candidate := range candidates {
 		ids = append(ids, candidate.DriverID)
 		offer := store.firestore.Collection("drivers").Doc(candidate.DriverID).Collection("bookingOffers").Doc(bookingID)
-		batch.Set(offer, map[string]any{"bookingId": bookingID, "driverId": candidate.DriverID, "todaId": candidate.TodaID, "status": "offered", "offerRound": 1, "distanceMeters": candidate.DistanceMeters, "servicePriority": candidate.ServicePriority, "dispatchPolicyVersion": 3, "expiresAt": expiresAt, "createdAt": now, "updatedAt": now})
+		payload := bookingOfferSnapshot(bookingData)
+		payload["bookingId"], payload["driverId"], payload["todaId"] = bookingID, candidate.DriverID, candidate.TodaID
+		payload["status"], payload["offerRound"] = "offered", integer(bookingData, "offerRound")+1
+		payload["distanceMeters"], payload["servicePriority"] = candidate.DistanceMeters, candidate.ServicePriority
+		payload["dispatchPolicyVersion"], payload["expiresAt"] = 3, expiresAt
+		payload["createdAt"], payload["updatedAt"] = now, now
+		batch.Set(offer, payload)
 	}
 	batch.Set(bookingRef, map[string]any{"offerRound": 1, "currentOfferDriverIds": ids, "offeredDriverIds": ids, "nextDispatchAt": expiresAt, "updatedAt": now}, firestore.MergeAll)
-	_, err := batch.Commit(ctx)
+	_, err = batch.Commit(ctx)
 	return err
+}
+
+// bookingOfferSnapshot gives an offered driver everything required to render a
+// request from the offer's Firestore event. It contains only the immutable,
+// server-owned booking fields needed before acceptance.
+func bookingOfferSnapshot(booking map[string]any) map[string]any {
+	payload := map[string]any{"bookingStatus": text(booking, "status")}
+	for _, field := range []string{
+		"schemaVersion", "passengerId", "passengerName", "passengerPhotoUrl",
+		"pickup", "destination", "pickupName", "destinationName", "pickupAddress", "destinationAddress",
+		"estimatedFare", "amountDue", "distanceMeters", "additionalPassengers", "baggageCount",
+		"isOutsideToda", "routePolicy", "highwayRouteAdvisory", "createdAt", "updatedAt",
+	} {
+		if value, ok := booking[field]; ok {
+			payload[field] = value
+		}
+	}
+	if value, ok := booking["createdAt"]; ok {
+		payload["bookingCreatedAt"] = value
+	}
+	return payload
 }

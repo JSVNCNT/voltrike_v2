@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'booking.dart';
 import 'route_policy_advisory.dart';
 
 class DriverBookingOffer {
@@ -12,6 +13,7 @@ class DriverBookingOffer {
     this.bookingCreatedAt,
     this.createdAt,
     this.stableId = '',
+    this.bookingSnapshot = const <String, dynamic>{},
     this.routePolicy = const RoutePolicyAdvisory(),
   });
 
@@ -23,6 +25,7 @@ class DriverBookingOffer {
   final DateTime? bookingCreatedAt;
   final DateTime? createdAt;
   final String stableId;
+  final Map<String, dynamic> bookingSnapshot;
   final RoutePolicyAdvisory routePolicy;
 
   DateTime get effectiveQueueTime =>
@@ -52,6 +55,7 @@ class DriverBookingOffer {
       bookingCreatedAt: _date(data['bookingCreatedAt']),
       createdAt: _date(data['createdAt']),
       stableId: _string(data['offerId']) ?? bookingId,
+      bookingSnapshot: Map<String, dynamic>.from(data),
       routePolicy:
           RoutePolicyAdvisory.fromMap(
             data['highwayRouteAdvisory'] ?? data['routeAdvisory'],
@@ -64,6 +68,24 @@ class DriverBookingOffer {
   }
 
   bool get isExpired => !expiresAt.isAfter(DateTime.now());
+
+  /// New Go dispatch records include a bounded server-owned booking snapshot.
+  /// Legacy offer records fall back to a normal booking read.
+  Booking? toBooking() {
+    if (_string(bookingSnapshot['bookingStatus']) != 'pending') return null;
+    if (bookingSnapshot['pickup'] is! Map ||
+        bookingSnapshot['destination'] is! Map ||
+        _string(bookingSnapshot['passengerId']) == null) {
+      return null;
+    }
+    return Booking.fromMap(
+      bookingId: bookingId,
+      data: <String, dynamic>{
+        ...bookingSnapshot,
+        'status': bookingSnapshot['bookingStatus'],
+      },
+    );
+  }
 
   /// Oldest passenger queue entry wins UI position, followed by the
   /// server-owned service tier, pickup distance, and a stable server ID.

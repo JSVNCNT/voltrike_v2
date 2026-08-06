@@ -66,6 +66,8 @@ class Booking {
 
     required this.pickup,
     required this.destination,
+    this.pickupName,
+    this.destinationName,
     required this.pickupAddress,
     required this.destinationAddress,
     required this.distanceMeters,
@@ -150,6 +152,10 @@ class Booking {
   final LatLng pickup;
 
   final LatLng destination;
+
+  final String? pickupName;
+
+  final String? destinationName;
 
   final String pickupAddress;
 
@@ -267,6 +273,8 @@ class Booking {
 
       pickup: pickup,
       destination: destination,
+      pickupName: _asNullableString(data['pickupName']),
+      destinationName: _asNullableString(data['destinationName']),
       pickupAddress: _firstReadable([
         data['pickupAddress'],
         data['pickupName'],
@@ -375,6 +383,8 @@ class Booking {
         'latitude': destination.latitude,
         'longitude': destination.longitude,
       },
+      'pickupName': pickupName,
+      'destinationName': destinationName,
       'pickupAddress': pickupAddress,
       'destinationAddress': destinationAddress,
       'distanceMeters': distanceMeters,
@@ -462,6 +472,8 @@ class Booking {
     //======================================================================
     LatLng? pickup,
     LatLng? destination,
+    String? pickupName,
+    String? destinationName,
     String? pickupAddress,
     String? destinationAddress,
     int? distanceMeters,
@@ -531,6 +543,8 @@ class Booking {
       //====================================================================
       pickup: pickup ?? this.pickup,
       destination: destination ?? this.destination,
+      pickupName: pickupName ?? this.pickupName,
+      destinationName: destinationName ?? this.destinationName,
       pickupAddress: pickupAddress ?? this.pickupAddress,
       destinationAddress: destinationAddress ?? this.destinationAddress,
       distanceMeters: distanceMeters ?? this.distanceMeters,

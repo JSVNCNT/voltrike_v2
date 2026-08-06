@@ -209,6 +209,8 @@ export interface BookingOperation {
   plateNumber?: string | null;
   todaId?: string | null;
   todaName?: string | null;
+  pickupName?: string | null;
+  destinationName?: string | null;
   pickupAddress: string;
   destinationAddress: string;
   amountDue: number;

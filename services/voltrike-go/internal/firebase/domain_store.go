@@ -21,6 +21,7 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 	}
 	ref := store.firestore.Collection("bookings").Doc(command.BookingID)
 	lockRef := store.firestore.Collection("activePassengerBookings").Doc(principal.UID)
+	passengerRef := store.firestore.Collection("users").Doc(principal.UID)
 	commandPayload, _ := json.Marshal(command)
 	commandPayloadHash := fmt.Sprintf("%x", sha256.Sum256(commandPayload))
 	quoteReceiptRef := store.firestore.Collection("quote_receipts").Doc(fmt.Sprintf("%x", sha256.Sum256([]byte(command.QuoteToken))))
@@ -41,6 +42,14 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 		if !isNotFound(err) {
 			return fmt.Errorf("read booking: %w", err)
 		}
+		passengerSnapshot, passengerErr := tx.Get(passengerRef)
+		if passengerErr != nil && !isNotFound(passengerErr) {
+			return fmt.Errorf("read passenger profile: %w", passengerErr)
+		}
+		passenger := map[string]any{}
+		if passengerErr == nil && passengerSnapshot.Exists() {
+			passenger = passengerSnapshot.Data()
+		}
 		activeLock, lockErr := tx.Get(lockRef)
 		if lockErr == nil && activeLock.Exists() && text(activeLock.Data(), "bookingId") != command.BookingID {
 			return fmt.Errorf("%w: passenger already has an active booking", app.ErrPrecondition)
@@ -56,7 +65,12 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 			return fmt.Errorf("read quote receipt: %w", err)
 		}
 		now := time.Now().UTC()
-		searchExpiresAt := now.Add(time.Minute)
+		// Dispatch is retried by the scheduled maintenance worker. A one-minute
+		// search window can expire before a nearby driver finishes coming online,
+		// especially while GPS/App Check starts on a cold app launch. Keep a
+		// short but practical retry window so a newly available driver can still
+		// receive the passenger's pending request.
+		searchExpiresAt := now.Add(5 * time.Minute)
 		fareSnapshot := jsonMap(quote.FareSnapshot)
 		fareBreakdown := jsonMap(quote.FareBreakdown)
 		booking := map[string]any{
@@ -65,8 +79,13 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 			"revision":                   1,
 			"status":                     "pending",
 			"passengerId":                principal.UID,
+			"passengerName":              passengerDisplayName(passenger),
+			"passengerPhone":             text(passenger, "phoneNumber", "phone"),
+			"passengerPhotoUrl":          firstText(passenger, nil, "profileImage", "profilePhotoUrl"),
 			"pickup":                     map[string]float64{"latitude": command.Pickup.Latitude, "longitude": command.Pickup.Longitude},
 			"destination":                map[string]float64{"latitude": command.Destination.Latitude, "longitude": command.Destination.Longitude},
+			"pickupName":                 strings.TrimSpace(command.PickupName),
+			"destinationName":            strings.TrimSpace(command.DestinationName),
 			"pickupAddress":              strings.TrimSpace(command.PickupAddress),
 			"destinationAddress":         strings.TrimSpace(command.DestinationAddress),
 			"distanceMeters":             quote.DistanceMeters,
@@ -254,7 +273,7 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 					return fmt.Errorf("%w: driver vehicle or TODA is unavailable", app.ErrPrecondition)
 				}
 				acceptingVehicle, acceptingToda = vehicleSnapshot.Data(), todaSnapshot.Data()
-				if !booleanDefault(acceptingVehicle, false, "isVerified") || !vehicleCanServe(acceptingVehicle, integer(data, "additionalPassengers")+1) || !booleanDefault(acceptingToda, false, "isActive") || text(acceptingDriver, "licenseNumber") == "" || !futureTime(acceptingDriver["licenseExpiry"], time.Now().UTC().Add(-24*time.Hour)) {
+				if !booleanDefault(acceptingVehicle, false, "isVerified") || !vehicleCanServe(acceptingVehicle, integer(data, "additionalPassengers")+1) || !booleanDefault(acceptingToda, false, "isActive") || text(acceptingDriver, "licenseNumber") == "" || !futureTime(acceptingDriver["licenseExpiry"], time.Now().UTC()) {
 					return fmt.Errorf("%w: driver vehicle, TODA, or license is not eligible", app.ErrPrecondition)
 				}
 			}
@@ -292,7 +311,10 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 			if current == "passengerOnBoard" {
 				next = "paymentConfirmation"
 			} else {
-				next = current
+				// The driver's single cash-confirmation action is the receipt.
+				// It atomically records receipt and completes the ride so the UI
+				// never asks for an impossible second confirmation.
+				next = "completed"
 			}
 		case "complete":
 			if current != "paymentConfirmation" {
@@ -348,6 +370,9 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		}
 		now := time.Now().UTC()
 		updates := map[string]any{"status": next, "revision": revision + 1, "updatedAt": now}
+		if command.Action == "payment" && current == "paymentConfirmation" {
+			updates["driverReceivedAt"] = now
+		}
 		if driver != "" {
 			updates["driverId"] = driver
 		}
@@ -380,17 +405,6 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 			updates["driverNetEarnings"] = settlement["driverNetEarnings"]
 			tx.Set(store.firestore.Collection("settlements").Doc(command.BookingID), settlement, firestore.MergeAll)
 		}
-		if command.Action == "payment" && current == "paymentConfirmation" {
-			updates["driverReceivedAt"] = now
-			updates["settlementStatus"] = "awaiting_confirmation"
-			tx.Set(store.firestore.Collection("settlements").Doc(command.BookingID), map[string]any{
-				"bookingId": command.BookingID, "passengerId": owner, "driverId": driver,
-				"todaId": text(data, "todaId", "driverTodaId"), "paymentMethod": "cash",
-				"amountDue": number(data, "amountDue", "estimatedFare"), "currency": "PHP",
-				"driverReceivedAt": now, "status": "awaiting_confirmation", "adjustmentStatus": "none",
-				"createdAt": now, "updatedAt": now,
-			}, firestore.MergeAll)
-		}
 		if next == "cancelled" {
 			updates["cancelledAt"] = now
 			cancellationCode := command.ReasonCode
@@ -420,8 +434,14 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		if command.Action == "receipt" {
 			updates["driverReceiptAcknowledgedAt"] = now
 			updates["driverReceiptAcknowledgedBy"] = principal.UID
-			if driverRef := store.firestore.Collection("drivers").Doc(principal.UID); driverRef != nil {
-				tx.Set(driverRef, map[string]any{"pendingReceiptBookingId": nil, "updatedAt": now}, firestore.MergeAll)
+			// Clear the assigned driver's durable receipt prompt. Delete the field
+			// rather than storing null so a newly installed app cannot restore an
+			// obsolete receipt from a cached/null-mapped driver record. Use the
+			// booking's driver, not the acting principal, so an authorized admin
+			// acknowledgement is also correct.
+			if driver != "" {
+				driverRef := store.firestore.Collection("drivers").Doc(driver)
+				tx.Set(driverRef, map[string]any{"pendingReceiptBookingId": firestore.Delete, "updatedAt": now}, firestore.MergeAll)
 			}
 		}
 		if command.Action == "decline" {
@@ -548,9 +568,30 @@ func futureTime(value any, after time.Time) bool {
 		return time.UnixMilli(typed).After(after)
 	case float64:
 		return time.UnixMilli(int64(typed)).After(after)
+	case string:
+		value := strings.TrimSpace(typed)
+		if value == "" {
+			return false
+		}
+		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+			return parsed.After(after)
+		}
+		// Some legacy records came from the JavaScript client as a local ISO
+		// datetime (for example, 2027-01-31T00:00:00.000) without an offset.
+		// Firestore timestamp values are UTC, so retain that historical meaning.
+		if parsed, err := time.Parse("2006-01-02T15:04:05.999999999", value); err == nil {
+			return parsed.After(after)
+		}
+		// Licence dates entered by administrators are calendar dates.  Treat
+		// them as valid through the end of that date, rather than midnight at
+		// its beginning.  Older registrations persist this format as a string.
+		if parsed, err := time.Parse("2006-01-02", value); err == nil {
+			return parsed.AddDate(0, 0, 1).After(after)
+		}
 	default:
 		return false
 	}
+	return false
 }
 
 func bookingAllowsToda(booking map[string]any, todaID string) bool {
@@ -617,6 +658,17 @@ func personName(profile map[string]any) string {
 		return email
 	}
 	return "Driver"
+}
+
+func passengerDisplayName(profile map[string]any) string {
+	if name := text(profile, "displayName", "fullName", "name", "passengerName"); name != "" {
+		return name
+	}
+	name := personName(profile)
+	if name == "Driver" {
+		return "Passenger"
+	}
+	return name
 }
 
 func firstText(primary, secondary map[string]any, keys ...string) string {
@@ -720,6 +772,29 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 	if command.ObservedAt.IsZero() {
 		command.ObservedAt = now
 	}
+	// Realtime Database is the fast spatial index, but dispatch eligibility is
+	// deliberately checked again from Firestore. Keep those projections in sync
+	// here so a driver that just went online can actually receive an offer.
+	// TODA membership and busy state are server-owned; never accept either from
+	// a location payload supplied by a phone.
+	driverRef := store.firestore.Collection("drivers").Doc(principal.UID)
+	driverSnapshot, err := driverRef.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: driver profile not found", app.ErrPrecondition)
+	}
+	driver := driverSnapshot.Data()
+	todaID := text(driver, "todaId")
+	available := command.Online && command.Available && text(driver, "currentBookingId") == ""
+	if _, err = driverRef.Set(ctx, map[string]any{
+		"isOnline":          command.Online,
+		"isAvailable":       available,
+		"currentLatitude":   command.Latitude,
+		"currentLongitude":  command.Longitude,
+		"locationUpdatedAt": now,
+		"updatedAt":         now,
+	}, firestore.MergeAll); err != nil {
+		return fmt.Errorf("update driver dispatch availability: %w", err)
+	}
 	updates := map[string]any{
 		"driverId":        principal.UID,
 		"sessionId":       command.SessionID,
@@ -730,8 +805,8 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		"accuracy":        command.Accuracy,
 		"timestamp":       command.ObservedAt.UnixMilli(),
 		"online":          command.Online,
-		"available":       command.Available,
-		"todaId":          command.TodaID,
+		"available":       available,
+		"todaId":          todaID,
 		"receivedAt":      now.UnixMilli(),
 	}
 	cell := dispatchCell(command.Latitude, command.Longitude)

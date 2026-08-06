@@ -7,6 +7,7 @@ import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:voltrike_v2/app/routes.dart';
 
 import '../../../../core/services/navigation_service.dart';
+import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../../data/models/booking.dart';
 
 import '../../../common/presentation/widgets/app_app_bar.dart';
@@ -44,6 +45,7 @@ class DriverHomeScreen extends ConsumerStatefulWidget {
 
 class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
   bool _isAcceptingBooking = false;
+  bool _isChangingAvailability = false;
 
   Future<void> _cancelTrip() async {
     final booking = ref.read(driverCurrentBookingProvider);
@@ -105,17 +107,14 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
     final driver = await ref.read(driverRepositoryProvider).getDriver(user.uid);
     if (driver == null) return;
-    final pendingReceipt = await ref
-        .read(driverRepositoryProvider)
-        .getPendingReceiptBookingId(user.uid);
-    if (pendingReceipt != null && mounted) {
-      context.go(
-        AppRoutes.withBookingId(AppRoutes.driverReceipt, pendingReceipt),
-        extra: pendingReceipt,
-      );
+    // A completed receipt belongs in trip history, never in the active-driver
+    // recovery path. In particular, a delayed acknowledgement must not trap a
+    // driver in an old receipt after they selected "Back to Home", restarted,
+    // or signed in on a new device.
+    if (!driver.isOnline) {
+      ref.read(driverStatusProvider.notifier).goOffline();
       return;
     }
-    if (!driver.isOnline) return;
 
     final hasActiveBooking = driver.currentBookingId?.isNotEmpty == true;
     final status = ref.read(driverStatusProvider.notifier);
@@ -131,8 +130,11 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
         ref.read(driverBookingListenerProvider).startListening();
       }
     } catch (_) {
-      // The online state remains backend-authoritative. The toggle can retry
-      // GPS setup after the driver grants a missing location permission.
+      // Do not leave the idle switch claiming that the driver is available
+      // when a fresh session or location publication could not be started.
+      if (!hasActiveBooking) {
+        status.goOffline();
+      }
     }
   }
 
@@ -141,38 +143,42 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
   //==========================================================================
 
   Future<void> _toggleOnline(bool online) async {
+    if (_isChangingAvailability) return;
+    setState(() => _isChangingAvailability = true);
     final statusNotifier = ref.read(driverStatusProvider.notifier);
 
     final bookingController = ref.read(
       driverBookingControllerProvider.notifier,
     );
 
-    final locationController = ref.read(
-      driverLocationControllerProvider.notifier,
-    );
-
     final bookingListener = ref.read(driverBookingListenerProvider);
 
-    if (online) {
-      await bookingController.goOnline();
-
-      statusNotifier.goOnline();
-
-      await locationController.startTracking();
-
-      bookingListener.startListening();
-    } else {
-      await bookingController.goOffline();
-
-      await bookingListener.stopListening();
-
-      await locationController.stopTracking();
-
-      statusNotifier.goOffline();
-
-      setState(() {
-        _routePoints.clear();
-      });
+    try {
+      if (online) {
+        // goOnline creates the server session and starts location tracking.
+        // Only show "online" after that complete operation succeeds.
+        await bookingController.goOnline();
+        statusNotifier.goOnline();
+        bookingListener.startListening();
+      } else {
+        // goOffline stops the same tracking session and publishes offline.
+        await bookingController.goOffline();
+        await bookingListener.stopListening();
+        statusNotifier.goOffline();
+        if (mounted) setState(() => _routePoints.clear());
+      }
+    } catch (error) {
+      if (online) {
+        await bookingListener.stopListening();
+        statusNotifier.goOffline();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(DomainErrorMapper.message(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isChangingAvailability = false);
     }
   }
 
@@ -502,7 +508,9 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
                 child: BookingRequestCard(
                   passengerName: incomingBooking.passengerName ?? 'Passenger',
                   passengerPhotoUrl: incomingBooking.passengerPhotoUrl,
+                  pickupName: incomingBooking.pickupName,
                   pickupAddress: incomingBooking.pickupAddress,
+                  destinationName: incomingBooking.destinationName,
                   destinationAddress: incomingBooking.destinationAddress,
                   estimatedFare:
                       '₱${incomingBooking.estimatedFare.toStringAsFixed(2)}',
@@ -551,7 +559,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
                 bookingStatus: activeBooking?.status,
 
-                onOnlineChanged: _toggleOnline,
+                onOnlineChanged: _isChangingAvailability ? null : _toggleOnline,
 
                 onAcceptBooking: canRespondToOffer ? _acceptBooking : null,
 

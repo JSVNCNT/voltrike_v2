@@ -234,6 +234,8 @@ function normalizeBookingOperation(value: unknown): BookingOperation {
     plateNumber: textValue(source.plateNumber) || null,
     todaId: textValue(source.todaId ?? source.driverTodaId) || null,
     todaName: textValue(source.todaName) || null,
+    pickupName: textValue(source.pickupName) || null,
+    destinationName: textValue(source.destinationName) || null,
     pickupAddress: textValue(source.pickupAddress, 'Pickup unavailable'),
     destinationAddress: textValue(source.destinationAddress, 'Destination unavailable'),
     amountDue: finiteNumber(source.amountDue ?? source.totalFare) ?? 0,

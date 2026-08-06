@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../core/errors/domain_error_mapper.dart';
+import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/booking_repository.dart';
 import '../../../driver/providers/driver_current_booking_provider.dart';
@@ -255,13 +259,19 @@ class _ReceiptBody extends ConsumerWidget {
                       _ReceiptRow(
                         icon: Icons.trip_origin_rounded,
                         label: 'Pickup',
-                        value: booking.pickupAddress,
+                        value: tripLocationLabel(
+                          booking.pickupName,
+                          booking.pickupAddress,
+                        ),
                       ),
                       const Divider(),
                       _ReceiptRow(
                         icon: Icons.location_on_rounded,
                         label: 'Destination',
-                        value: booking.destinationAddress,
+                        value: tripLocationLabel(
+                          booking.destinationName,
+                          booking.destinationAddress,
+                        ),
                       ),
                       const Divider(),
                       _ReceiptRow(
@@ -360,39 +370,40 @@ class _ReceiptHomeButton extends ConsumerStatefulWidget {
 class _ReceiptHomeButtonState extends ConsumerState<_ReceiptHomeButton> {
   bool _isReturningHome = false;
 
+  void _acknowledgeDriverReceiptInBackground() {
+    // Receipt acknowledgement is bookkeeping only. It must never prevent a
+    // completed driver from returning to idle and receiving their next offer.
+    unawaited(
+      BookingRepository()
+          .acknowledgeDriverReceipt(bookingId: widget.bookingId)
+          .timeout(const Duration(seconds: 8))
+          .catchError((Object error, StackTrace stackTrace) {
+            developer.log(
+              'Driver receipt acknowledgement did not complete.',
+              name: 'TripReceiptScreen',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }),
+    );
+  }
+
   Future<void> _returnHome() async {
     if (_isReturningHome) return;
     setState(() => _isReturningHome = true);
 
-    try {
-      if (widget.driverView) {
-        await BookingRepository().acknowledgeDriverReceipt(
-          bookingId: widget.bookingId,
-        );
-      }
-      if (!mounted) return;
-
-      if (widget.driverView) {
-        ref.read(driverCurrentBookingProvider.notifier).clearBooking();
-        ref.read(driverIncomingBookingProvider.notifier).clearBooking();
-      } else if (widget.completionFlow) {
-        ref.read(bookingSessionProvider.notifier).reset();
-        ref.read(bookingProvider.notifier).reset();
-      }
-      context.go(
-        widget.driverView ? AppRoutes.driverHome : AppRoutes.passengerHome,
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not return home: ${DomainErrorMapper.message(error)}',
-          ),
-        ),
-      );
-      setState(() => _isReturningHome = false);
+    if (widget.driverView) {
+      _acknowledgeDriverReceiptInBackground();
+      ref.read(driverCurrentBookingProvider.notifier).clearBooking();
+      ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+    } else if (widget.completionFlow) {
+      ref.read(bookingSessionProvider.notifier).reset();
+      ref.read(bookingProvider.notifier).reset();
     }
+    if (!mounted) return;
+    context.go(
+      widget.driverView ? AppRoutes.driverHome : AppRoutes.passengerHome,
+    );
   }
 
   @override

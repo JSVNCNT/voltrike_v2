@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_semantic_colors.dart';
+import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/booking_state_machine.dart';
 import '../widgets/trip_history_card.dart';
@@ -111,13 +112,19 @@ class TripHistoryDetailScreen extends StatelessWidget {
                 _InformationRow(
                   icon: Icons.trip_origin_rounded,
                   label: 'Pickup',
-                  value: booking.pickupAddress,
+                  value: tripLocationLabel(
+                    booking.pickupName,
+                    booking.pickupAddress,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 _InformationRow(
                   icon: Icons.location_on_rounded,
                   label: 'Destination',
-                  value: booking.destinationAddress,
+                  value: tripLocationLabel(
+                    booking.destinationName,
+                    booking.destinationAddress,
+                  ),
                 ),
               ],
             ),

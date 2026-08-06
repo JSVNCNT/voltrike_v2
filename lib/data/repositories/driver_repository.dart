@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../core/constants/firestore_constants.dart';
 import '../models/driver.dart';
 import '../services/firestore_service.dart';
@@ -66,12 +68,24 @@ class DriverRepository {
   }
 
   Future<String?> getPendingReceiptBookingId(String uid) async {
-    final snapshot = await _firestoreService.getDocument(
-      FirestoreConstants.drivers,
-      uid,
-    );
-    final value = snapshot.data()?['pendingReceiptBookingId'];
-    return value is String && value.isNotEmpty ? value : null;
+    try {
+      // This controls a redirect on the driver's home screen. It must not use
+      // a locally persisted document from before the driver acknowledged a
+      // receipt, otherwise the app can immediately reopen that receipt after
+      // the user presses "Back to Home".
+      final snapshot = await _firestoreService.getDocument(
+        FirestoreConstants.drivers,
+        uid,
+        options: const GetOptions(source: Source.server),
+      );
+      final value = snapshot.data()?['pendingReceiptBookingId'];
+      return value is String && value.isNotEmpty ? value : null;
+    } on FirebaseException {
+      // A receipt must never trap the driver on an old cached value when the
+      // network is unavailable. The server field restores the receipt prompt
+      // on a later connected launch if it genuinely remains unacknowledged.
+      return null;
+    }
   }
 
   //==========================================================================

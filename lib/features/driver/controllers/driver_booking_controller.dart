@@ -247,12 +247,7 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
         throw Exception('No authenticated driver.');
       }
 
-      // Complete booking.
-      await _bookingRepository.transitionStatus(
-        bookingId: booking.bookingId,
-        allowedCurrentStatuses: const {BookingStatus.paymentConfirmation},
-        nextStatus: BookingStatus.completed,
-      );
+      await _bookingRepository.confirmCashReceived(booking.bookingId);
 
       // Stop listening to the booking.
       await _currentBookingListener.stopListening();

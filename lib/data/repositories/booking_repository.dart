@@ -179,6 +179,8 @@ class BookingRepository {
         'latitude': booking.destination.latitude,
         'longitude': booking.destination.longitude,
       },
+      'pickupName': booking.pickupName,
+      'destinationName': booking.destinationName,
       'pickupAddress': booking.pickupAddress,
       'destinationAddress': booking.destinationAddress,
       'additionalPassengers': booking.additionalPassengers,
@@ -292,7 +294,11 @@ class BookingRepository {
                   .toList()
                 ..sort(DriverBookingOffer.compareForDisplay);
           final bookings = await Future.wait(
-            offers.map((offer) => getBooking(offer.bookingId)),
+            offers.map(
+              (offer) => Future.value(
+                offer.toBooking() ?? getBooking(offer.bookingId),
+              ),
+            ),
           );
           return bookings
               .whereType<Booking>()
@@ -455,6 +461,12 @@ class BookingRepository {
 
   Future<void> completeBooking(String bookingId) async {
     await _transition(bookingId: bookingId, action: 'complete');
+  }
+
+  /// The driver's cash swipe is intentionally a single durable operation:
+  /// record receipt and close the trip on the server.
+  Future<void> confirmCashReceived(String bookingId) async {
+    await _transition(bookingId: bookingId, action: 'payment');
   }
 
   /// Atomically advances a booking only from an allowed current state.

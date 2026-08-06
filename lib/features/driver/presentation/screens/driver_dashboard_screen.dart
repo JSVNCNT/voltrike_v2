@@ -18,7 +18,6 @@ import '../../../common/presentation/widgets/dashboard_widgets.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../providers/driver_booking_listener_provider.dart';
 import '../../providers/driver_booking_provider.dart';
-import '../../providers/driver_location_controller_provider.dart';
 import '../../providers/driver_status_provider.dart';
 import '../../services/driver_session_shutdown.dart';
 
@@ -263,31 +262,33 @@ class DriverDashboardScreen extends ConsumerWidget {
                               ),
                               value: driver.isOnline,
                               onChanged: (online) async {
+                                final bookingController = ref.read(
+                                  driverBookingControllerProvider.notifier,
+                                );
+                                final statusController = ref.read(
+                                  driverStatusProvider.notifier,
+                                );
+                                final listener = ref.read(
+                                  driverBookingListenerProvider,
+                                );
                                 try {
-                                  final bookingController = ref.read(
-                                    driverBookingControllerProvider.notifier,
-                                  );
-                                  final locationController = ref.read(
-                                    driverLocationControllerProvider.notifier,
-                                  );
-                                  final statusController = ref.read(
-                                    driverStatusProvider.notifier,
-                                  );
-                                  final listener = ref.read(
-                                    driverBookingListenerProvider,
-                                  );
                                   if (online) {
+                                    // goOnline owns session creation and GPS
+                                    // tracking. Do not report availability
+                                    // until that operation succeeds.
                                     await bookingController.goOnline();
                                     statusController.goOnline();
-                                    await locationController.startTracking();
                                     listener.startListening();
                                   } else {
                                     await bookingController.goOffline();
                                     await listener.stopListening();
-                                    await locationController.stopTracking();
                                     statusController.goOffline();
                                   }
                                 } catch (error) {
+                                  if (online) {
+                                    await listener.stopListening();
+                                    statusController.goOffline();
+                                  }
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(

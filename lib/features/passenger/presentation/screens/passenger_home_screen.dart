@@ -261,6 +261,21 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         ),
       );
       return;
+    } catch (_) {
+      if (!mounted || calculationGeneration != _routeCalculationGeneration) {
+        return;
+      }
+      // Do not leave the sheet permanently disabled in estimatingFare when a
+      // transport-level error occurs before the Go quote client can map it.
+      ref.read(bookingProvider.notifier).reset();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to calculate the fare right now. Check your connection and try again.',
+          ),
+        ),
+      );
+      return;
     }
 
     final TodaCoverageDecision coverage;

@@ -891,7 +891,7 @@ function OperationsPage({ session }: { session: AdminSession }) {
     {error && <div className="notice">{error}</div>}
     <div className="table">
       {items.map((booking) => <div className="row operation" key={booking.bookingId}>
-        <span><b>{booking.passengerName}</b><small>{booking.pickupAddress} → {booking.destinationAddress}</small><small className="technical-id">Booking: {booking.bookingId}</small></span>
+        <span><b>{booking.passengerName}</b><small>{booking.pickupName || booking.pickupAddress} → {booking.destinationName || booking.destinationAddress}</small><small className="muted">{booking.pickupName && booking.pickupAddress !== booking.pickupName ? booking.pickupAddress : ''}{booking.pickupName && booking.destinationName ? ' → ' : ''}{booking.destinationName && booking.destinationAddress !== booking.destinationName ? booking.destinationAddress : ''}</small><small className="technical-id">Booking: {booking.bookingId}</small></span>
         <span><b>{booking.driverName || 'Searching for driver'}</b><small>{booking.plateNumber || 'No plate assigned'} · {booking.todaName || 'No TODA assigned'}</small></span>
         <span className={booking.status === 'cancelled' ? 'warning' : booking.status === 'completed' ? 'ok' : ''}>{statusLabel(booking.status)}{booking.cancellationCode && <small>{statusLabel(booking.cancellationCode)}</small>}</span>
         <span><b>{peso(booking.amountDue)}</b><small>{booking.paymentMethod} · {statusLabel(booking.settlementStatus)}</small><small>Adjustment: {statusLabel(booking.adjustmentStatus)}</small>{booking.receiptNumber && <small>Receipt: {booking.receiptNumber}</small>}{booking.adjustmentStatus === 'disputed' && <button onClick={() => resolveDispute(booking)}>Resolve dispute</button>}</span>

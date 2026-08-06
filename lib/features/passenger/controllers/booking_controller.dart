@@ -108,6 +108,8 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
             driverId: null,
             pickup: LatLng(pickupLatitude, pickupLongitude),
             destination: session.destination!,
+            pickupName: session.pickupName,
+            destinationName: session.destinationName,
             pickupAddress: pickupAddress,
             destinationAddress: destinationAddress,
             distanceMeters: session.distanceMeters,

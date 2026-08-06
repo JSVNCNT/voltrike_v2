@@ -195,102 +195,102 @@ class _RideConfirmationSliderState extends State<RideConfirmationSlider> {
 
           return SizedBox(
             height: _height,
-            child: Material(
-              color: baseTrackColor,
-              shape: const StadiumBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned.fill(
-                    child: FractionallySizedBox(
-                      widthFactor: _progress,
-                      alignment: Alignment.centerLeft,
-                      child: ColoredBox(color: progressColor),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 64),
-                    child: AnimatedOpacity(
-                      opacity: labelOpacity,
-                      duration: const Duration(milliseconds: 90),
-                      child: Text(
-                        statusLabel,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: widget.enabled
-                              ? colorScheme.onPrimary
-                              : colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: _enabled ? (_) => _startDrag() : null,
+              onHorizontalDragUpdate: _enabled
+                  ? (details) => _drag(details, travel)
+                  : null,
+              onHorizontalDragEnd: _enabled ? (_) => _finishDrag() : null,
+              onHorizontalDragCancel: _enabled ? _cancelDrag : null,
+              child: Material(
+                color: baseTrackColor,
+                shape: const StadiumBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned.fill(
+                      child: FractionallySizedBox(
+                        widthFactor: _progress,
+                        alignment: Alignment.centerLeft,
+                        child: ColoredBox(color: progressColor),
                       ),
                     ),
-                  ),
-                  AnimatedPositioned(
-                    duration: _dragging
-                        ? Duration.zero
-                        : const Duration(milliseconds: 240),
-                    curve: Curves.easeOutCubic,
-                    left: thumbLeft,
-                    top: _inset,
-                    child: GestureDetector(
-                      key: const Key('ride-swipe-thumb'),
-                      behavior: HitTestBehavior.opaque,
-                      onHorizontalDragStart: _enabled
-                          ? (_) => _startDrag()
-                          : null,
-                      onHorizontalDragUpdate: _enabled
-                          ? (details) => _drag(details, travel)
-                          : null,
-                      onHorizontalDragEnd: _enabled
-                          ? (_) => _finishDrag()
-                          : null,
-                      onHorizontalDragCancel: _enabled ? _cancelDrag : null,
-                      child: Material(
-                        color: colorScheme.onPrimary,
-                        elevation: 3,
-                        shape: const CircleBorder(),
-                        child: SizedBox.square(
-                          dimension: _thumbSize,
-                          child: Center(
-                            child: _confirming || widget.isLoading
-                                ? SizedBox.square(
-                                    dimension: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.4,
-                                      color: colorScheme.primary,
-                                    ),
-                                  )
-                                : AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 140),
-                                    transitionBuilder: (child, animation) =>
-                                        ScaleTransition(
-                                          scale: animation,
-                                          child: child,
-                                        ),
-                                    child: Icon(
-                                      _confirmed || _thresholdReached
-                                          ? Icons.check_rounded
-                                          : _failed
-                                          ? Icons.refresh_rounded
-                                          : Icons.arrow_forward_rounded,
-                                      key: ValueKey((
-                                        _confirmed,
-                                        _thresholdReached,
-                                        _failed,
-                                      )),
-                                      color: colorScheme.primary,
-                                      size: 30,
-                                    ),
-                                  ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 64),
+                      child: AnimatedOpacity(
+                        opacity: labelOpacity,
+                        duration: const Duration(milliseconds: 90),
+                        child: Text(
+                          statusLabel,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: widget.enabled
+                                ? colorScheme.onPrimary
+                                : colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    AnimatedPositioned(
+                      duration: _dragging
+                          ? Duration.zero
+                          : const Duration(milliseconds: 240),
+                      curve: Curves.easeOutCubic,
+                      left: thumbLeft,
+                      top: _inset,
+                      child: Semantics(
+                        label: 'Ride confirmation handle',
+                        child: Material(
+                          color: colorScheme.onPrimary,
+                          elevation: 3,
+                          shape: const CircleBorder(),
+                          child: SizedBox.square(
+                            dimension: _thumbSize,
+                            child: Center(
+                              child: _confirming || widget.isLoading
+                                  ? SizedBox.square(
+                                      dimension: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.4,
+                                        color: colorScheme.primary,
+                                      ),
+                                    )
+                                  : AnimatedSwitcher(
+                                      duration: const Duration(
+                                        milliseconds: 140,
+                                      ),
+                                      transitionBuilder: (child, animation) =>
+                                          ScaleTransition(
+                                            scale: animation,
+                                            child: child,
+                                          ),
+                                      child: Icon(
+                                        _confirmed || _thresholdReached
+                                            ? Icons.check_rounded
+                                            : _failed
+                                            ? Icons.refresh_rounded
+                                            : Icons.arrow_forward_rounded,
+                                        key: ValueKey((
+                                          _confirmed,
+                                          _thresholdReached,
+                                          _failed,
+                                        )),
+                                        color: colorScheme.primary,
+                                        size: 30,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );

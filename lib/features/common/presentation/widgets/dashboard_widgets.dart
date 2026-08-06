@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_semantic_colors.dart';
+import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import 'profile_avatar.dart';
 
@@ -303,13 +304,16 @@ class DashboardTripCard extends StatelessWidget {
             _DashboardTripLocation(
               icon: Icons.trip_origin_rounded,
               label: 'Pickup',
-              value: trip.pickupAddress,
+              value: tripLocationLabel(trip.pickupName, trip.pickupAddress),
             ),
             const SizedBox(height: 16),
             _DashboardTripLocation(
               icon: Icons.location_on_rounded,
               label: 'Destination',
-              value: trip.destinationAddress,
+              value: tripLocationLabel(
+                trip.destinationName,
+                trip.destinationAddress,
+              ),
             ),
             const Divider(height: 28),
             Row(

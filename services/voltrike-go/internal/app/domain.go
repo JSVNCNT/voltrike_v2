@@ -48,6 +48,8 @@ type CreateBookingCommand struct {
 	OperationID          string          `json:"commandId"`
 	Pickup               core.Coordinate `json:"pickup"`
 	Destination          core.Coordinate `json:"destination"`
+	PickupName           string          `json:"pickupName"`
+	DestinationName      string          `json:"destinationName"`
 	PickupAddress        string          `json:"pickupAddress"`
 	DestinationAddress   string          `json:"destinationAddress"`
 	AdditionalPassengers int             `json:"additionalPassengers"`

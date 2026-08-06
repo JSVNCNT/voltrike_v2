@@ -15,7 +15,9 @@ class BookingRequestCard extends StatelessWidget {
   const BookingRequestCard({
     super.key,
     required this.passengerName,
+    this.pickupName,
     required this.pickupAddress,
+    this.destinationName,
     required this.destinationAddress,
     required this.estimatedFare,
     required this.distance,
@@ -26,7 +28,9 @@ class BookingRequestCard extends StatelessWidget {
   });
 
   final String passengerName;
+  final String? pickupName;
   final String pickupAddress;
+  final String? destinationName;
   final String destinationAddress;
   final String estimatedFare;
   final String distance;
@@ -132,6 +136,7 @@ class BookingRequestCard extends StatelessWidget {
             _LocationLine(
               icon: Icons.trip_origin,
               label: 'Pickup',
+              name: pickupName,
               address: pickupAddress,
               color: semantic.success,
             ),
@@ -139,6 +144,7 @@ class BookingRequestCard extends StatelessWidget {
             _LocationLine(
               icon: Icons.location_on,
               label: 'Destination',
+              name: destinationName,
               address: destinationAddress,
               color: colorScheme.error,
             ),
@@ -221,12 +227,14 @@ class _LocationLine extends StatelessWidget {
   const _LocationLine({
     required this.icon,
     required this.label,
+    this.name,
     required this.address,
     required this.color,
   });
 
   final IconData icon;
   final String label;
+  final String? name;
   final String address;
   final Color color;
 
@@ -247,6 +255,12 @@ class _LocationLine extends StatelessWidget {
                 text: '$label: ',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
+              if (name?.trim().isNotEmpty == true) ...[
+                TextSpan(
+                  text: '${name!.trim()}\n',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
               TextSpan(text: address),
             ],
           ),
