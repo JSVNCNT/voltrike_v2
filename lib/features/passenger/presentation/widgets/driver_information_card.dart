@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 import '../../../common/presentation/widgets/star_rating.dart';
 
 /// ===========================================================================
@@ -66,13 +67,13 @@ class DriverInformationCard extends StatelessWidget {
                       Row(
                         children: [
                           Flexible(
-                            child: Text(
-                              driverName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
+                            child: AdaptiveParticipantName(
+                              name: driverName,
+                              style:
+                                  theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ) ??
+                                  const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
                           const SizedBox(width: 6),

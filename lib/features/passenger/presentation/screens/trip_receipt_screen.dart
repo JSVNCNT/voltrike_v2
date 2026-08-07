@@ -12,6 +12,7 @@ import '../../../../data/models/booking.dart';
 import '../../../../data/repositories/booking_repository.dart';
 import '../../../driver/providers/driver_current_booking_provider.dart';
 import '../../../driver/providers/driver_incoming_booking_provider.dart';
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../providers/booking_listener_provider.dart';
 import '../../providers/booking_provider.dart';
@@ -285,6 +286,7 @@ class _ReceiptBody extends ConsumerWidget {
                         icon: Icons.person_outline_rounded,
                         label: driverView ? 'Passenger' : 'Driver',
                         value: participantName,
+                        adaptiveValue: true,
                       ),
                       const Divider(),
                       _ReceiptRow(
@@ -429,11 +431,13 @@ class _ReceiptRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.adaptiveValue = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final bool adaptiveValue;
 
   @override
   Widget build(BuildContext context) {
@@ -456,13 +460,23 @@ class _ReceiptRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-            ),
+            child: adaptiveValue
+                ? AdaptiveParticipantName(
+                    name: value,
+                    textAlign: TextAlign.end,
+                    style:
+                        Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ) ??
+                        const TextStyle(fontWeight: FontWeight.w500),
+                  )
+                : Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
           ),
         ],
       ),

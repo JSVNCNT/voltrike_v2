@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'adaptive_participant_name.dart';
+
 class ProfileIdentityHeader extends StatelessWidget {
   const ProfileIdentityHeader({
     super.key,
@@ -40,10 +42,14 @@ class ProfileIdentityHeader extends StatelessWidget {
                     ),
             ),
             const SizedBox(height: 14),
-            Text(
-              name,
+            AdaptiveParticipantName(
+              name: name,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge,
+              style:
+                  Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(height: 1.2) ??
+                  const TextStyle(fontSize: 22, height: 1.2),
             ),
             const SizedBox(height: 4),
             Text(

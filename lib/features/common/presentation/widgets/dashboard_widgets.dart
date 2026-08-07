@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
+import 'adaptive_participant_name.dart';
 import 'profile_avatar.dart';
 
 class DashboardIdentityCard extends StatelessWidget {
@@ -40,11 +41,11 @@ class DashboardIdentityCard extends StatelessWidget {
                 children: [
                   Text(eyebrow, style: Theme.of(context).textTheme.bodyMedium),
                   const SizedBox(height: 3),
-                  Text(
-                    name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge,
+                  AdaptiveParticipantName(
+                    name: name,
+                    style:
+                        Theme.of(context).textTheme.titleLarge ??
+                        const TextStyle(fontSize: 22),
                   ),
                 ],
               ),

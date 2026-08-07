@@ -6,6 +6,7 @@ import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/booking_state_machine.dart';
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 
 /// Compact, non-expanding history row. The entire surface opens trip details.
 class TripHistoryCard extends StatelessWidget {
@@ -72,13 +73,13 @@ class TripHistoryCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            otherPartyLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontSize: 16,
-                            ),
+                          AdaptiveParticipantName(
+                            name: otherPartyLabel,
+                            style:
+                                theme.textTheme.titleMedium?.copyWith(
+                                  fontSize: 16,
+                                ) ??
+                                const TextStyle(fontSize: 16),
                           ),
                           const SizedBox(height: 4),
                           Text(

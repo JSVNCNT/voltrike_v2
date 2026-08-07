@@ -5,6 +5,7 @@ import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/booking_state_machine.dart';
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 import '../widgets/trip_history_card.dart';
 
 class TripHistoryDetailScreen extends StatelessWidget {
@@ -77,9 +78,11 @@ class TripHistoryDetailScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        counterpartName,
-                        style: Theme.of(context).textTheme.titleMedium,
+                      AdaptiveParticipantName(
+                        name: counterpartName,
+                        style:
+                            Theme.of(context).textTheme.titleMedium ??
+                            const TextStyle(fontSize: 16),
                       ),
                       if (!driverView && completed) ...[
                         const SizedBox(height: 3),

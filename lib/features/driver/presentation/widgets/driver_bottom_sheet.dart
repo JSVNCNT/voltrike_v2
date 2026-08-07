@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../data/models/booking.dart';
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 import '../../../ride/tracking/models/ride_action.dart';
 import '../../../ride/tracking/widgets/ride_confirmation_slider.dart';
 
@@ -102,9 +103,11 @@ class DriverBottomSheet extends StatelessWidget {
                     ),
                   )
                 else ...[
-                  Text(
-                    passengerName!,
-                    style: Theme.of(context).textTheme.titleMedium,
+                  AdaptiveParticipantName(
+                    name: passengerName!,
+                    style:
+                        Theme.of(context).textTheme.titleMedium ??
+                        const TextStyle(fontSize: 16),
                   ),
                   const SizedBox(height: 8),
                   Text('Pickup: ${pickupAddress ?? '--'}'),

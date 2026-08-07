@@ -7,6 +7,7 @@ import '../../../../core/errors/domain_error_mapper.dart';
 import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 import '../../../common/presentation/widgets/star_rating.dart';
 import '../../providers/booking_listener_provider.dart';
 import '../../providers/driver_rating_provider.dart';
@@ -177,9 +178,11 @@ class _RatingScreenState extends ConsumerState<RatingScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              booking.driverName ?? 'Your driver',
-                              style: Theme.of(context).textTheme.titleMedium,
+                            AdaptiveParticipantName(
+                              name: booking.driverName ?? 'Your driver',
+                              style:
+                                  Theme.of(context).textTheme.titleMedium ??
+                                  const TextStyle(fontSize: 16),
                             ),
                             const SizedBox(height: 3),
                             Text(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_semantic_colors.dart';
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 
 /// ===========================================================================
 /// Booking Request Card
@@ -86,11 +87,13 @@ class BookingRequestCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    passengerName,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: AdaptiveParticipantName(
+                    name: passengerName,
+                    style:
+                        theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ) ??
+                        const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
                 Icon(

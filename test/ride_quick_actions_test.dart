@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/theme/app_colors.dart';
+import 'package:voltrike_v2/features/common/presentation/widgets/adaptive_participant_name.dart';
 import 'package:voltrike_v2/features/common/presentation/widgets/star_rating.dart';
 import 'package:voltrike_v2/features/driver/presentation/widgets/passenger_information_card.dart';
 import 'package:voltrike_v2/features/passenger/presentation/widgets/driver_information_card.dart';
@@ -152,5 +153,55 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(StarRating), findsOneWidget);
     expect(find.text('5.0'), findsOneWidget);
+  });
+
+  testWidgets('full participant names adapt on narrow phones', (tester) async {
+    const driverName = 'Alexandria Montgomery Villanueva';
+    const passengerName = 'Christopher Emmanuel Dela Cruz';
+    final actions = RideQuickActions(onCall: () {}, onChat: () {});
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SizedBox(
+              width: 280,
+              child: Column(
+                children: [
+                  DriverInformationCard(
+                    driverName: driverName,
+                    vehicleNumber: 'E-Trike 12',
+                    plateNumber: 'ABC-123',
+                    todaName: 'Central TODA',
+                    compact: true,
+                    actions: actions,
+                  ),
+                  PassengerInformationCard(
+                    passengerName: passengerName,
+                    compact: true,
+                    actions: actions,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(driverName), findsOneWidget);
+    expect(find.text(passengerName), findsOneWidget);
+    expect(find.byType(AdaptiveParticipantName), findsNWidgets(2));
+
+    for (final text in tester.widgetList<Text>(
+      find.descendant(
+        of: find.byType(AdaptiveParticipantName),
+        matching: find.byType(Text),
+      ),
+    )) {
+      expect(text.overflow, TextOverflow.visible);
+      expect(text.style?.fontSize, greaterThanOrEqualTo(12));
+    }
   });
 }

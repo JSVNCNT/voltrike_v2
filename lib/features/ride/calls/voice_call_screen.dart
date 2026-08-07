@@ -10,6 +10,7 @@ import '../../../data/models/booking.dart';
 import '../../../data/models/booking_call_session.dart';
 import '../../../data/repositories/booking_repository.dart';
 import '../../../data/repositories/booking_voice_call_repository.dart';
+import '../../common/presentation/widgets/adaptive_participant_name.dart';
 import '../../common/services/ringtone_service.dart';
 import 'call_participant_identity.dart';
 import 'microphone_permission.dart';
@@ -502,14 +503,20 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                             children: [
                               CallParticipantAvatar(identity: _participant),
                               const SizedBox(height: 24),
-                              Text(
-                                _participant.name,
+                              AdaptiveParticipantName(
+                                name: _participant.name,
                                 textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
+                                minimumFontSize: 16,
+                                style:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.headlineMedium?.copyWith(
                                       color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ) ??
+                                    const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 28,
                                       fontWeight: FontWeight.w600,
                                     ),
                               ),
@@ -748,7 +755,13 @@ class _CallAudioState extends StatelessWidget {
             size: 17,
           ),
           const SizedBox(width: 7),
-          Text(label, style: const TextStyle(color: Colors.white70)),
+          Flexible(
+            child: AdaptiveParticipantName(
+              name: label,
+              minimumFontSize: 11,
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          ),
         ],
       ),
     );

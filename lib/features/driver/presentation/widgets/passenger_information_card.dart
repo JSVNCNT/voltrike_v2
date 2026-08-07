@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../common/presentation/widgets/adaptive_participant_name.dart';
+
 /// ===========================================================================
 /// Passenger Information Card
 ///
@@ -57,13 +59,13 @@ class PassengerInformationCard extends StatelessWidget {
                   Row(
                     children: [
                       Flexible(
-                        child: Text(
-                          passengerName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        child: AdaptiveParticipantName(
+                          name: passengerName,
+                          style:
+                              theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ) ??
+                              const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
                       const SizedBox(width: 6),
