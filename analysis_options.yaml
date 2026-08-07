@@ -13,6 +13,9 @@ analyzer:
   # analysis context, so VS Code cannot resolve their package imports.
   exclude:
     - build/**
+    # Vendored Cargokit is a standalone Dart package with its own pubspec.
+    # The app-level analyzer must not resolve it with the app package config.
+    - rust_builder/cargokit/**
   errors:
     always_use_package_imports: ignore
     strict_top_level_inference: ignore
