@@ -77,16 +77,21 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 		finalRoot = "final/drivers"
 	}
 	finalPath := fmt.Sprintf("%s/%s/%s/%s%s", finalRoot, safeObjectSegment(targetID), field, uuid.NewString(), extension)
-	downloadToken := uuid.NewString()
 	destination := store.bucket.Object(finalPath)
 	copier := destination.CopierFrom(source)
 	copier.ContentType = attrs.ContentType
-	copier.Metadata = map[string]string{
-		"firebaseStorageDownloadTokens": downloadToken,
-		"sha256":                        digest,
-		"ownerUid":                      principal.UID,
-		"finalizedAt":                   time.Now().UTC().Format(time.RFC3339Nano),
+	metadata := map[string]string{
+		"sha256":      digest,
+		"ownerUid":    principal.UID,
+		"finalizedAt": time.Now().UTC().Format(time.RFC3339Nano),
 	}
+	// Legal evidence is private and gets no permanent bearer download token.
+	downloadToken := ""
+	if targetType != "toda_document" {
+		downloadToken = uuid.NewString()
+		metadata["firebaseStorageDownloadTokens"] = downloadToken
+	}
+	copier.Metadata = metadata
 	finalAttrs, err := copier.Run(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("finalize staged object: %w", err)
@@ -95,12 +100,15 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 		// The immutable final object is already valid. A cleanup job may safely
 		// remove an abandoned staging copy later.
 	}
-	downloadURL := fmt.Sprintf(
-		"https://firebasestorage.googleapis.com/v0/b/%s/o/%s?alt=media&token=%s",
-		store.bucketName,
-		url.PathEscape(finalPath),
-		downloadToken,
-	)
+	downloadURL := ""
+	if downloadToken != "" {
+		downloadURL = fmt.Sprintf(
+			"https://firebasestorage.googleapis.com/v0/b/%s/o/%s?alt=media&token=%s",
+			store.bucketName,
+			url.PathEscape(finalPath),
+			downloadToken,
+		)
+	}
 	if targetType == "profile_image" {
 		_, profileErr := store.firestore.Collection("users").Doc(principal.UID).Get(ctx)
 		if profileErr == nil {
@@ -113,6 +121,7 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 	}
 	return map[string]any{
 		"path":        finalPath,
+		"reference":   finalPath,
 		"downloadUrl": downloadURL,
 		"generation":  finalAttrs.Generation,
 		"size":        finalAttrs.Size,

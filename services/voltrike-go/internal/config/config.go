@@ -26,10 +26,15 @@ type Config struct {
 	DispatchCellDegrees       float64
 	DispatchRadiusMeters      float64
 	MaximumDispatchResults    int
+	RateLimitPerMinute        int
 	LiveKitServerURL          string
 	LiveKitAPIKey             string
 	LiveKitAPISecret          string
 	DeveloperBootstrapCode    string
+	SentryDSN                 string
+	SentryEnvironment         string
+	SentryRelease             string
+	SentryTracesSampleRate    float64
 }
 
 func Load() (Config, error) {
@@ -51,16 +56,24 @@ func Load() (Config, error) {
 		DispatchCellDegrees:    0.05,
 		DispatchRadiusMeters:   decimal("DISPATCH_RADIUS_METERS", 5000),
 		MaximumDispatchResults: number("MAX_DISPATCH_RESULTS", 40),
+		RateLimitPerMinute:     number("RATE_LIMIT_PER_MINUTE", 240),
 		LiveKitServerURL:       value("LIVEKIT_SERVER_URL", ""),
 		LiveKitAPIKey:          value("LIVEKIT_API_KEY", ""),
 		LiveKitAPISecret:       value("LIVEKIT_API_SECRET", ""),
 		DeveloperBootstrapCode: value("DEVELOPER_BOOTSTRAP_CODE", ""),
+		SentryDSN:              value("SENTRY_DSN", ""),
+		SentryEnvironment:      value("SENTRY_ENVIRONMENT", "development"),
+		SentryRelease:          value("SENTRY_RELEASE", ""),
+		SentryTracesSampleRate: decimal("SENTRY_TRACES_SAMPLE_RATE", 0.05),
 	}
 	if cfg.ProjectID == "" {
 		return Config{}, fmt.Errorf("GOOGLE_CLOUD_PROJECT is required")
 	}
 	if cfg.AllowUnauthenticatedLocal && cfg.ProjectID != "demo-voltrike" {
 		return Config{}, fmt.Errorf("GO_ALLOW_UNAUTHENTICATED_LOCAL is only allowed for demo-voltrike")
+	}
+	if cfg.ProjectID != "demo-voltrike" && cfg.LocalInternalKey == "" {
+		return Config{}, fmt.Errorf("GO_LOCAL_INTERNAL_KEY is required outside demo-voltrike")
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("FIREBASE_DATABASE_URL is required")
@@ -78,6 +91,9 @@ func Load() (Config, error) {
 		}
 		cfg.QuoteEncryptionKey = key
 	}
+	if cfg.ProjectID != "demo-voltrike" && len(cfg.QuoteEncryptionKey) != 32 {
+		return Config{}, fmt.Errorf("GO_QUOTE_ENCRYPTION_KEY is required outside demo-voltrike")
+	}
 	if cfg.PolicyCacheTTL < time.Second || cfg.PolicyCacheTTL > 10*time.Minute {
 		return Config{}, fmt.Errorf("POLICY_CACHE_TTL_SECONDS must be between 1 and 600")
 	}
@@ -86,6 +102,12 @@ func Load() (Config, error) {
 	}
 	if cfg.DispatchCellDegrees <= 0 || cfg.DispatchCellDegrees > 1 || cfg.DispatchRadiusMeters <= 0 || cfg.MaximumDispatchResults < 1 || cfg.MaximumDispatchResults > 200 {
 		return Config{}, fmt.Errorf("invalid dispatch configuration")
+	}
+	if cfg.RateLimitPerMinute < 30 || cfg.RateLimitPerMinute > 5000 {
+		return Config{}, fmt.Errorf("RATE_LIMIT_PER_MINUTE must be between 30 and 5000")
+	}
+	if cfg.SentryTracesSampleRate < 0 || cfg.SentryTracesSampleRate > 1 {
+		return Config{}, fmt.Errorf("SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1")
 	}
 	return cfg, nil
 }

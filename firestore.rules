@@ -91,6 +91,10 @@ service cloud.firestore {
       allow read: if developerAdmin();
       allow write: if false;
     }
+    match /adminAuditLogs/{auditId} {
+      allow read: if developerAdmin();
+      allow write: if false;
+    }
     match /adminWebPushTokens/{tokenHash} {
       // Browser-token ownership is transferred atomically by trusted callable
       // functions. Raw tokens are never stored in this registry and clients

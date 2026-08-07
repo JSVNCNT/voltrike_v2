@@ -19,6 +19,7 @@ class ChatRepository {
       _conversation(bookingId)
           .collection('messages')
           .orderBy('sentAt', descending: true)
+          .limit(200)
           .snapshots()
           .map(
             (snapshot) => snapshot.docs.map(ChatMessage.fromFirestore).toList(),

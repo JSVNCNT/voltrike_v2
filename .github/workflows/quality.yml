@@ -76,9 +76,29 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.44.8
           cache: true
       - run: flutter pub get
       - name: Configure analyzer API keys
         run: cp lib/core/config/api_keys.example.dart lib/core/config/api_keys.dart
       - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+
+  firebase-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+        working-directory: functions
+      - run: npm install --global firebase-tools@15.24.0
+      - name: Verify Firebase security rules
+        run: firebase emulators:exec --only auth,firestore,database,storage --project demo-voltrike "node functions/emulator/verify-security-rules.js"

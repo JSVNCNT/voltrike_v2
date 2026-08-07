@@ -21,6 +21,10 @@ Future<void> shutdownDriverSession(WidgetRef ref) async {
   if (locationController.isTracking) {
     await _bestEffort(locationController.stopTracking);
   }
+
+  ref.invalidate(driverBookingListenerProvider);
+  ref.invalidate(driverLocationControllerProvider);
+  ref.invalidate(driverStatusProvider);
 }
 
 Future<void> _bestEffort(Future<void> Function() action) async {

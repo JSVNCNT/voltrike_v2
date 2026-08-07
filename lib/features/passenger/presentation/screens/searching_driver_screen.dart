@@ -16,6 +16,7 @@ import '../../../ride/routing/booking_route_resolver.dart';
 import '../models/driver_search_presentation.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_listener_provider.dart';
+import '../../providers/booking_provider.dart';
 import '../../providers/booking_session_provider.dart';
 
 class SearchingDriverScreen extends ConsumerStatefulWidget {
@@ -235,6 +236,7 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
             reasonDetail: 'Passenger cancelled while searching for a driver.',
           );
       if (!mounted) return;
+      ref.read(bookingProvider.notifier).reset();
       context.go(AppRoutes.passengerHome);
     } catch (error) {
       if (!mounted) return;
@@ -246,6 +248,7 @@ class _SearchingDriverScreenState extends ConsumerState<SearchingDriverScreen>
   }
 
   void _returnHome() {
+    ref.read(bookingProvider.notifier).reset();
     context.go(AppRoutes.passengerHome);
   }
 

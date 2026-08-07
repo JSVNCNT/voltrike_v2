@@ -82,7 +82,7 @@ func (store *Store) VerifyIDToken(ctx context.Context, token string) (app.Princi
 	if store.auth == nil {
 		return app.Principal{}, fmt.Errorf("Firebase Auth verifier is unavailable")
 	}
-	decoded, err := store.auth.VerifyIDToken(ctx, token)
+	decoded, err := store.auth.VerifyIDTokenAndCheckRevoked(ctx, token)
 	if err != nil {
 		return app.Principal{}, err
 	}

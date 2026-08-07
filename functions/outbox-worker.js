@@ -53,7 +53,8 @@ function notificationMaxAgeMs(type) {
   if (type === 'safety.sos.safe' || type === 'safety.sos.emergency_call_attempted') {
     return LIVE_NOTIFICATION_MAX_AGE_MS;
   }
-  if (type === 'report.created' || type.startsWith('violation.')) {
+  if (type === 'driver.registration.submitted' ||
+      type === 'report.created' || type.startsWith('violation.')) {
     return ADMIN_NOTIFICATION_MAX_AGE_MS;
   }
   return null;
@@ -143,6 +144,7 @@ async function complete(eventId, status, details = {}) {
       notificationsFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
       notificationsDetails: details,
     },
+    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * 86_400_000),
   }, { merge: true });
 }
 
@@ -352,6 +354,16 @@ async function processDomainEvent(eventId, event) {
     return sendToScopedAdmins('New ride report', 'A ride report requires administrator review.', {
       type: 'ride_report', reportId: event.aggregateId, bookingId: data.bookingId || '',
     }, data.todaId || '');
+  }
+  if (type === 'driver.registration.submitted') {
+    const driverId = String(payload.driverId || event.aggregateId || '');
+    if (!driverId) return { skipped: true, reason: 'missing-driver' };
+    return sendToScopedAdmins(
+      'New driver application',
+      'A driver application is ready for TODA review.',
+      { type: 'driver_registration', driverId },
+      String(payload.todaId || ''),
+    );
   }
   if (type.startsWith('violation.')) {
     const violationId = payload.violationId || event.aggregateId;

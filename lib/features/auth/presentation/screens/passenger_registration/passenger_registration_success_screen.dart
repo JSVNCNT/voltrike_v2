@@ -85,15 +85,16 @@ class _PassengerRegistrationSuccessScreenState
 
             const AuthHeader(
               title: 'Passenger account created',
-              subtitle:
-                  'Verify your email before signing in to request a ride.',
+              subtitle: 'Your private testing account is ready to sign in.',
               textAlign: TextAlign.center,
             ),
 
             const SizedBox(height: AppSpacing.lg),
 
             Text(
-              'A verification email has been sent to your email address.\n\nPlease verify your email before logging in.',
+              'A verification email was requested for account recovery. '
+              'You can sign in now while this private testing build keeps '
+              'email verification optional.',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium,
             ),

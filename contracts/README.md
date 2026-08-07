@@ -1,8 +1,9 @@
 # VolTrike V2 contracts
 
 `openapi.yaml` is the transport source of truth. All protected requests carry
-a Firebase ID token in `Authorization: Bearer <token>` and, outside the local
-demo project, a Firebase App Check token in `X-Firebase-AppCheck`.
+a Firebase ID token in `Authorization: Bearer <token>`. App Check is optional
+for the privately Quick Shared APK and becomes mandatory only when the Go
+deployment enables `GO_REQUIRE_APP_CHECK=true`.
 
 Commands use a caller-generated `commandId`. Aggregate mutations also carry
 `expectedRevision`. Replaying the same command with the same authenticated

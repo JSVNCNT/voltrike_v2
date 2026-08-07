@@ -105,7 +105,7 @@ func (store *Store) participantBooking(ctx context.Context, principal app.Princi
 		return nil, fmt.Errorf("%w: booking not found", app.ErrPrecondition)
 	}
 	data := snapshot.Data()
-	if text(data, "passengerId", "passengerID") != principal.UID && text(data, "driverId", "driverID") != principal.UID && !adminPrincipal(principal) {
+	if text(data, "passengerId", "passengerID") != principal.UID && text(data, "driverId", "driverID") != principal.UID && !store.canAdminAccessToda(ctx, principal, text(data, "todaId", "driverTodaId", "ownerTodaId")) {
 		return nil, fmt.Errorf("%w: user is not a booking participant", app.ErrPrecondition)
 	}
 	return data, nil
@@ -832,6 +832,10 @@ func (store *Store) createDriverRegistration(ctx context.Context, principal app.
 		}
 		if isNotFound(driverErr) {
 			tx.Create(driverRef, driver)
+			writeOutbox(tx, store, "driver.registration.submitted", principal.UID, map[string]any{
+				"driverId": principal.UID,
+				"todaId":   todaID,
+			})
 		}
 		created = true
 		return nil
@@ -847,6 +851,9 @@ func validateRegistrationIdentity(user map[string]any) error {
 		strings.TrimSpace(text(user, "lastName")) == "" || strings.TrimSpace(text(user, "phoneNumber")) == "" {
 		return fmt.Errorf("%w: email, name, and phone number are required", app.ErrInvalidArgument)
 	}
+	if text(user, "termsVersion") != "2026-07-29" || text(user, "privacyVersion") != "2026-07-29" {
+		return fmt.Errorf("%w: current terms and privacy consent are required", app.ErrInvalidArgument)
+	}
 	return nil
 }
 
@@ -855,7 +862,7 @@ func registrationUser(source map[string]any, uid, role, todaID, profileImage str
 		"uid": uid, "email": truncate(text(source, "email"), 320), "firstName": truncate(text(source, "firstName"), 100),
 		"middleName": truncate(text(source, "middleName"), 100), "lastName": truncate(text(source, "lastName"), 100),
 		"phoneNumber": truncate(text(source, "phoneNumber"), 40), "role": role, "todaId": valueOrNil(todaID),
-		"dateOfBirth": source["dateOfBirth"], "termsAcceptedAt": source["termsAcceptedAt"], "privacyAcceptedAt": source["privacyAcceptedAt"],
+		"dateOfBirth": source["dateOfBirth"], "termsAcceptedAt": now, "privacyAcceptedAt": now,
 		"termsVersion": truncate(text(source, "termsVersion"), 40), "privacyVersion": truncate(text(source, "privacyVersion"), 40),
 		"profileImage": profileImage, "emailVerified": false, "isActive": true,
 		"schemaVersion": 2, "createdAt": now, "updatedAt": now,
@@ -999,6 +1006,8 @@ func (store *Store) sendDriverViolationMessage(ctx context.Context, principal ap
 	}
 	violationRef := store.firestore.Collection("driverViolations").Doc(violationID)
 	messageRef := violationRef.Collection("messages").Doc(messageID)
+	adminActor, adminErr := store.loadAdmin(ctx, principal)
+	isAdmin := adminErr == nil
 	idempotent := false
 	err := store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		violation, violationErr := tx.Get(violationRef)
@@ -1007,7 +1016,7 @@ func (store *Store) sendDriverViolationMessage(ctx context.Context, principal ap
 			return fmt.Errorf("%w: violation not found", app.ErrPrecondition)
 		}
 		data := violation.Data()
-		if text(data, "driverId") != principal.UID && !adminPrincipal(principal) {
+		if text(data, "driverId") != principal.UID && (!isAdmin || !adminActor.canAccessToda(text(data, "ownerTodaId", "todaId"))) {
 			return fmt.Errorf("%w: violation is not visible to user", app.ErrPrecondition)
 		}
 		if existingErr == nil {
@@ -1032,7 +1041,11 @@ func (store *Store) sendDriverViolationMessage(ctx context.Context, principal ap
 func (store *Store) markDriverViolationMessagesRead(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {
 	violationID := text(payload, "violationId")
 	violation, err := store.firestore.Collection("driverViolations").Doc(violationID).Get(ctx)
-	if err != nil || text(violation.Data(), "driverId") != principal.UID && !adminPrincipal(principal) {
+	data := map[string]any{}
+	if err == nil {
+		data = violation.Data()
+	}
+	if err != nil || text(data, "driverId") != principal.UID && !store.canAdminAccessToda(ctx, principal, text(data, "ownerTodaId", "todaId")) {
 		return nil, fmt.Errorf("%w: violation not available", app.ErrPrecondition)
 	}
 	documents, err := violation.Ref.Collection("messages").OrderBy("sentAt", firestore.Desc).Limit(100).Documents(ctx).GetAll()

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/voltrike/voltrike-go/internal/config"
 )
 
@@ -19,6 +21,7 @@ type HTTPServer struct {
 	cfg      config.Config
 	service  *Service
 	verifier IdentityVerifier
+	limiter  *principalRateLimiter
 }
 
 type ReadinessVerifier interface {
@@ -26,7 +29,7 @@ type ReadinessVerifier interface {
 }
 
 func NewHTTPServer(cfg config.Config, service *Service, verifiers ...IdentityVerifier) *http.Server {
-	handler := &HTTPServer{cfg: cfg, service: service}
+	handler := &HTTPServer{cfg: cfg, service: service, limiter: newPrincipalRateLimiter(cfg.RateLimitPerMinute)}
 	if len(verifiers) > 0 {
 		handler.verifier = verifiers[0]
 	}
@@ -78,7 +81,11 @@ func (server *HTTPServer) routes() http.Handler {
 	v2.HandleFunc("PUT /api/v2/driver/sessions/{sessionId}/location", server.handleV2Location)
 	v2.HandleFunc("POST /api/v2/operations/{operation}", server.handleV2Operation)
 	mux.Handle("/api/v2/", server.authenticateV2(v2))
-	return server.cors(server.recover(server.authorize(mux)))
+	monitored := sentryhttp.New(sentryhttp.Options{
+		Repanic:         true,
+		WaitForDelivery: false,
+	}).Handle(server.authorize(mux))
+	return server.cors(server.recover(monitored))
 }
 
 func (server *HTTPServer) handleQuote(writer http.ResponseWriter, request *http.Request) {
@@ -163,7 +170,7 @@ func (server *HTTPServer) authorize(next http.Handler) http.Handler {
 			next.ServeHTTP(writer, request)
 			return
 		}
-		if request.URL.Path == "/health" || request.URL.Path == "/healthz" || request.URL.Path == "/ready" || request.URL.Path == "/readyz" || server.cfg.LocalInternalKey == "" {
+		if request.URL.Path == "/health" || request.URL.Path == "/healthz" || request.URL.Path == "/ready" || request.URL.Path == "/readyz" {
 			next.ServeHTTP(writer, request)
 			return
 		}
@@ -211,6 +218,11 @@ func (server *HTTPServer) authenticateV2(next http.Handler) http.Handler {
 				writeJSON(writer, http.StatusUnauthorized, errorBody("unauthenticated", "Firebase App Check is required."))
 				return
 			}
+		}
+		if server.limiter != nil && !server.limiter.allow(principal.UID, time.Now()) {
+			writer.Header().Set("Retry-After", "60")
+			writeJSON(writer, http.StatusTooManyRequests, errorBody("resource_exhausted", "Too many requests. Wait briefly and retry."))
+			return
 		}
 		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), principalContextKey{}, principal)))
 	})
@@ -268,6 +280,7 @@ func writeServiceError(writer http.ResponseWriter, err error) {
 	}
 	if status == http.StatusInternalServerError {
 		slog.Error("Go service request failed", "error", err)
+		sentry.CaptureException(err)
 		message = "Internal service error."
 	}
 	writeJSON(writer, status, errorBody(code, message))

@@ -4,14 +4,15 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../../../../data/models/app_user.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
+import '../../../../core/config/mobile_security_config.dart';
 
 class LoginController extends StateNotifier<AsyncValue<AppUser?>> {
   LoginController({
     required AuthRepository authRepository,
     required UserRepository userRepository,
-  })  : _authRepository = authRepository,
-        _userRepository = userRepository,
-        super(const AsyncData(null));
+  }) : _authRepository = authRepository,
+       _userRepository = userRepository,
+       super(const AsyncData(null));
 
   final AuthRepository _authRepository;
   final UserRepository _userRepository;
@@ -23,34 +24,25 @@ class LoginController extends StateNotifier<AsyncValue<AppUser?>> {
     state = const AsyncLoading();
 
     try {
-      await _authRepository.signIn(
-        email: email,
-        password: password,
-      );
+      await _authRepository.signIn(email: email, password: password);
 
       await _authRepository.reloadUser();
 
-      if (!_authRepository.isEmailVerified) {
-        throw Exception(
-          'Please verify your email before logging in.',
-        );
+      if (MobileSecurityConfig.requireEmailVerification &&
+          !_authRepository.isEmailVerified) {
+        throw Exception('Please verify your email before logging in.');
       }
 
       final firebaseUser = _authRepository.currentUser;
 
       if (firebaseUser == null) {
-        throw Exception(
-          'Unable to retrieve the authenticated user.',
-        );
+        throw Exception('Unable to retrieve the authenticated user.');
       }
 
-      final appUser =
-          await _userRepository.getUser(firebaseUser.uid);
+      final appUser = await _userRepository.getUser(firebaseUser.uid);
 
       if (appUser == null) {
-        throw Exception(
-          'Your account profile could not be found.',
-        );
+        throw Exception('Your account profile could not be found.');
       }
 
       state = AsyncData(appUser);

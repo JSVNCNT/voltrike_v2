@@ -118,7 +118,16 @@ class BookingRepository {
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _api = api ?? VoltrikeApi.instance,
        _outbox = outbox ?? DurableCommandOutbox.instance {
-    unawaited(_outbox.replayForCurrentUser());
+    _startOutboxReplayOnce(_outbox);
+  }
+
+  static Future<void>? _outboxReplay;
+
+  static void _startOutboxReplayOnce(DurableCommandOutbox outbox) {
+    _outboxReplay ??= outbox.replayForCurrentUser().whenComplete(() {
+      _outboxReplay = null;
+    });
+    unawaited(_outboxReplay);
   }
 
   final FirebaseFirestore _firestore;
@@ -233,6 +242,7 @@ class BookingRepository {
   Stream<List<Booking>> watchPendingBookings() {
     return _collection
         .where('status', isEqualTo: BookingStatus.pending.name)
+        .limit(100)
         .snapshots()
         .map((snapshot) {
           return snapshot.docs.map(Booking.fromFirestore).toList();
@@ -244,11 +254,13 @@ class BookingRepository {
   //==========================================================================
 
   Stream<List<Booking>> watchDriverBookings(String driverId) {
-    return _collection.where('driverId', isEqualTo: driverId).snapshots().map((
-      snapshot,
-    ) {
-      return snapshot.docs.map(Booking.fromFirestore).toList();
-    });
+    return _collection
+        .where('driverId', isEqualTo: driverId)
+        .limit(100)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.map(Booking.fromFirestore).toList();
+        });
   }
 
   //==========================================================================
@@ -258,6 +270,7 @@ class BookingRepository {
   Stream<List<Booking>> watchPassengerBookings(String passengerId) {
     return _collection
         .where('passengerId', isEqualTo: passengerId)
+        .limit(100)
         .snapshots()
         .map((snapshot) {
           return snapshot.docs.map(Booking.fromFirestore).toList();
@@ -272,6 +285,7 @@ class BookingRepository {
     return _collection
         .where('passengerId', isEqualTo: passengerId)
         .orderBy('createdAt', descending: true)
+        .limit(100)
         .snapshots()
         .map((snapshot) {
           return snapshot.docs.map(Booking.fromFirestore).toList();
@@ -285,6 +299,7 @@ class BookingRepository {
         .doc(driverId)
         .collection('bookingOffers')
         .where('status', isEqualTo: 'offered')
+        .limit(50)
         .snapshots()
         .asyncMap((snapshot) async {
           final offers =
@@ -398,6 +413,7 @@ class BookingRepository {
     return _collection
         .where('driverId', isEqualTo: driverId)
         .orderBy('createdAt', descending: true)
+        .limit(100)
         .snapshots()
         .map((snapshot) {
           return snapshot.docs.map(Booking.fromFirestore).toList();

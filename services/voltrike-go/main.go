@@ -23,14 +23,18 @@ func main() {
 		slog.Error("invalid service configuration", "error", err)
 		os.Exit(1)
 	}
+	shutdownMonitoring := initializeErrorMonitoring(cfg)
+	defer shutdownMonitoring()
 	store, closeStore, err := firebase.Open(ctx, cfg)
 	if err != nil {
+		captureStartupError("firebase_clients", err)
 		slog.Error("open Firebase clients", "error", err)
 		os.Exit(1)
 	}
 	defer closeStore()
 	service, err := app.NewService(cfg, store)
 	if err != nil {
+		captureStartupError("service", err)
 		slog.Error("create service", "error", err)
 		os.Exit(1)
 	}
@@ -38,6 +42,7 @@ func main() {
 	go func() {
 		slog.Info("VolTrike Go service listening", "port", cfg.Port, "project", cfg.ProjectID)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			captureStartupError("http_server", err)
 			slog.Error("http server stopped", "error", err)
 			stop()
 		}
@@ -46,6 +51,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
+		captureStartupError("graceful_shutdown", err)
 		slog.Error("graceful shutdown failed", "error", err)
 	}
 }

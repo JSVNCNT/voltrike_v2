@@ -2,6 +2,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 
+import '../services/voltrike_api.dart';
+
 class DomainException implements Exception {
   const DomainException(this.message);
   final String message;
@@ -18,6 +20,7 @@ class DomainErrorMapper {
       FirebaseAuthException value => value.code,
       FirebaseException value => value.code,
       PlatformException value => value.code,
+      VoltrikeApiException value => value.code ?? '',
       _ => '',
     };
     return switch (code) {
@@ -47,6 +50,8 @@ class DomainErrorMapper {
         'Service is temporarily unavailable. Check your connection.',
       'invalid-argument' => 'Review the information and try again.',
       'quota-exceeded' => 'The service limit was reached. Try again later.',
+      'resource_exhausted' =>
+        'Too many requests were sent. Wait briefly and try again.',
       'canceled' => 'The operation was canceled. Please try again.',
       _ => 'Something went wrong. Please try again or contact support.',
     };

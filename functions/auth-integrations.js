@@ -30,7 +30,10 @@ function passwordResetMessage(user, link) {
 const options = {
   region: 'asia-southeast1',
   secrets: [smtpLogin, smtpKey, senderEmail],
-  enforceAppCheck: true,
+  // This client is privately distributed by Quick Share. Requiring the debug
+  // provider would make every new phone depend on a manually registered
+  // Firebase Console token. Firebase Auth and the callable's own checks remain.
+  enforceAppCheck: false,
 };
 
 const requestBrandedVerificationEmail = onCall(options, async (request) => {
@@ -121,6 +124,7 @@ async function recordDelivery(uid, purpose, response) {
 }
 
 module.exports = {
+  authCallableOptions: options,
   passwordResetMessage,
   requestBrandedPasswordResetEmail,
   requestBrandedVerificationEmail,

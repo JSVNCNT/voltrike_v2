@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -35,6 +36,7 @@ class NotificationService {
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<BookingCallSession?>? _incomingCallSubscription;
   bool _initialized = false;
+  Future<void>? _initializing;
   String? _userId;
   String? _lastOpenedCallId;
   Map<Object?, Object?>? _pendingIncomingData;
@@ -82,26 +84,62 @@ class NotificationService {
 
   Future<void> initialize() async {
     if (_initialized) return;
-    _initialized = true;
+    final active = _initializing;
+    if (active != null) return active;
+    final initialization = _initialize();
+    _initializing = initialization;
+    try {
+      await initialization;
+      _initialized = true;
+    } finally {
+      _initializing = null;
+    }
+  }
+
+  Future<void> _initialize() async {
     await _initializeLocalNotifications();
     await _messaging.requestPermission(alert: true, badge: true, sound: true);
     _messageSubscription = FirebaseMessaging.onMessage.listen(
-      _showForegroundNotification,
+      (message) => unawaited(
+        _showForegroundNotification(message).catchError((Object error) {
+          debugPrint('Unable to display foreground notification: $error');
+        }),
+      ),
+      onError: (Object error) {
+        debugPrint('Foreground notification stream failed: $error');
+      },
     );
-    _tapSubscription = FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
+    _tapSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+      _handleTap,
+      onError: (Object error) {
+        debugPrint('Notification tap stream failed: $error');
+      },
+    );
     final initial = await _messaging.getInitialMessage();
     if (initial != null) _handleTap(initial);
-    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user == null) {
-        clearUser();
-      } else {
-        syncUser(user.uid);
-      }
-    });
-    _tokenSubscription = _messaging.onTokenRefresh.listen((token) {
-      final userId = _userId;
-      if (userId != null) _saveToken(userId, token);
-    });
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen(
+      (user) => unawaited(
+        (user == null ? clearUser() : syncUser(user.uid)).catchError(
+          (Object error) => debugPrint('Notification user sync failed: $error'),
+        ),
+      ),
+      onError: (Object error) {
+        debugPrint('Notification auth stream failed: $error');
+      },
+    );
+    _tokenSubscription = _messaging.onTokenRefresh.listen(
+      (token) {
+        final userId = _userId;
+        if (userId != null) {
+          unawaited(
+            _saveToken(userId, token).catchError(
+              (Object error) => debugPrint('FCM token sync failed: $error'),
+            ),
+          );
+        }
+      },
+      onError: (Object error) => debugPrint('FCM token stream failed: $error'),
+    );
   }
 
   Future<void> _initializeLocalNotifications() async {
@@ -276,7 +314,7 @@ class NotificationService {
         .doc(token)
         .set({
           'token': token,
-          'platform': 'android',
+          'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
   }

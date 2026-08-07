@@ -240,19 +240,32 @@ class Booking {
     required String bookingId,
     required Map<String, dynamic> data,
   }) {
+    final schemaVersion = _asInt(data['schemaVersion'], fallback: 0);
     final pickup = _parseLatLng(
       data['pickup'],
       latitude: data['pickupLatitude'],
       longitude: data['pickupLongitude'],
+      required: schemaVersion >= currentSchemaVersion,
+      fieldName: 'pickup',
     );
     final destination = _parseLatLng(
       data['destination'],
       latitude: data['destinationLatitude'],
       longitude: data['destinationLongitude'],
+      required: schemaVersion >= currentSchemaVersion,
+      fieldName: 'destination',
     );
+    final createdAt = parseModelDate(data['createdAt']);
+    final updatedAt = parseModelDate(data['updatedAt']);
+    if (schemaVersion >= currentSchemaVersion &&
+        (createdAt == null || updatedAt == null)) {
+      throw const FormatException(
+        'Current booking documents require createdAt and updatedAt.',
+      );
+    }
 
     return Booking(
-      schemaVersion: _asInt(data['schemaVersion'], fallback: 0),
+      schemaVersion: schemaVersion,
       bookingId: bookingId,
       passengerId: _asString(data['passengerId']),
       passengerName: _asNullableString(data['passengerName']),
@@ -338,8 +351,12 @@ class Booking {
             ),
           ),
       status: _parseStatus(data['status']),
-      createdAt: parseModelDate(data['createdAt']) ?? DateTime.now(),
-      updatedAt: parseModelDate(data['updatedAt']) ?? DateTime.now(),
+      createdAt:
+          createdAt ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      updatedAt:
+          updatedAt ??
+          createdAt ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       assignedAt: parseModelDate(data['assignedAt']),
       arrivedAt: parseModelDate(data['arrivedAt']),
       pickupConfirmedAt: parseModelDate(data['pickupConfirmedAt']),
@@ -645,18 +662,43 @@ Map<String, dynamic> _stringKeyedMap(Object? value) {
   });
 }
 
-LatLng _parseLatLng(Object? value, {Object? latitude, Object? longitude}) {
+LatLng _parseLatLng(
+  Object? value, {
+  Object? latitude,
+  Object? longitude,
+  bool required = false,
+  String fieldName = 'coordinate',
+}) {
+  late final double lat;
+  late final double lng;
   if (value is GeoPoint) {
-    return LatLng(value.latitude, value.longitude);
-  }
-  if (value is Map) {
+    lat = value.latitude;
+    lng = value.longitude;
+  } else if (value is Map) {
     final map = Map<Object?, Object?>.from(value);
-    return LatLng(
-      _asDouble(map['latitude'] ?? map['lat']),
-      _asDouble(map['longitude'] ?? map['lng']),
-    );
+    final rawLat = map['latitude'] ?? map['lat'];
+    final rawLng = map['longitude'] ?? map['lng'];
+    if (required && (rawLat == null || rawLng == null)) {
+      throw FormatException('Current booking requires $fieldName coordinates.');
+    }
+    lat = _asDouble(rawLat);
+    lng = _asDouble(rawLng);
+  } else {
+    if (required && (latitude == null || longitude == null)) {
+      throw FormatException('Current booking requires $fieldName coordinates.');
+    }
+    lat = _asDouble(latitude);
+    lng = _asDouble(longitude);
   }
-  return LatLng(_asDouble(latitude), _asDouble(longitude));
+  if (!lat.isFinite ||
+      !lng.isFinite ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180) {
+    throw FormatException('Invalid $fieldName coordinates.');
+  }
+  return LatLng(lat, lng);
 }
 
 List<String> _stringList(Object? value) {

@@ -145,6 +145,70 @@ func (store *Store) ExpireCallsAndEscalateSafety(ctx context.Context, now time.T
 	return map[string]int{"callsExpired": callsExpired, "safetyEscalated": safetyEscalated}, nil
 }
 
+func (store *Store) CleanupOperationalData(ctx context.Context, now time.Time) (map[string]int, error) {
+	updates := map[string]any{}
+	staleDispatchEntries := 0
+	var cells map[string]map[string]map[string]any
+	if err := store.realtime.NewRef("dispatchCells").Get(ctx, &cells); err != nil {
+		return nil, fmt.Errorf("read dispatch cells for cleanup: %w", err)
+	}
+	cutoff := now.Add(-2 * time.Minute).UnixMilli()
+	for cell, drivers := range cells {
+		for driverID, presence := range drivers {
+			if number(presence, "receivedAt", "timestamp") >= float64(cutoff) && booleanDefault(presence, false, "online") {
+				continue
+			}
+			updates["dispatchCells/"+cell+"/"+driverID] = nil
+			staleDispatchEntries++
+		}
+	}
+
+	expiredTrackingGrants := 0
+	var grants map[string]map[string]map[string]any
+	if err := store.realtime.NewRef("driver_tracking_access").Get(ctx, &grants); err != nil {
+		return nil, fmt.Errorf("read tracking grants for cleanup: %w", err)
+	}
+	for passengerID, drivers := range grants {
+		for driverID, grant := range drivers {
+			if number(grant, "expiresAt") > float64(now.UnixMilli()) {
+				continue
+			}
+			updates["driver_tracking_access/"+passengerID+"/"+driverID] = nil
+			expiredTrackingGrants++
+		}
+	}
+	if len(updates) > 0 {
+		if err := store.realtime.NewRef("").Update(ctx, updates); err != nil {
+			return nil, fmt.Errorf("clean realtime operational data: %w", err)
+		}
+	}
+
+	expiredCommandReceipts := 0
+	receipts := store.firestore.Collection("command_receipts").Where("expiresAt", "<=", now).Limit(200).Documents(ctx)
+	defer receipts.Stop()
+	batch := store.firestore.Batch()
+	for {
+		document, err := receipts.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("list expired command receipts: %w", err)
+		}
+		batch.Delete(document.Ref)
+		expiredCommandReceipts++
+	}
+	if expiredCommandReceipts > 0 {
+		if _, err := batch.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("delete expired command receipts: %w", err)
+		}
+	}
+	return map[string]int{
+		"staleDispatchEntries": staleDispatchEntries, "expiredTrackingGrants": expiredTrackingGrants,
+		"expiredCommandReceipts": expiredCommandReceipts,
+	}, nil
+}
+
 func coordinate(value any) core.Coordinate {
 	data, _ := value.(map[string]any)
 	return core.Coordinate{Latitude: number(data, "latitude", "lat"), Longitude: number(data, "longitude", "lng")}

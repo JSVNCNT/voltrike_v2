@@ -2,10 +2,6 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() { return request.auth != null; }
-    function isImage() {
-      return request.resource.contentType.matches('image/.*') &&
-        request.resource.size < 10 * 1024 * 1024;
-    }
     function developerAdmin() {
       return signedIn() && request.auth.token.adminRole == 'developer_admin';
     }
@@ -15,15 +11,6 @@ service firebase.storage {
         firestore.exists(/databases/(default)/documents/drivers/$(uid)) &&
         firestore.get(/databases/(default)/documents/drivers/$(uid)).data.todaId ==
           request.auth.token.todaId;
-    }
-    function isRegistrationImage() {
-      return request.resource.contentType.matches('image/jpeg') &&
-        request.resource.size <= 4 * 1024 * 1024;
-    }
-    function isTodaDocument() {
-      return request.resource.size < 10 * 1024 * 1024 &&
-        (request.resource.contentType.matches('image/.*') ||
-          request.resource.contentType == 'application/pdf');
     }
     function pendingTodaApplicant(todaId) {
       return signedIn() &&

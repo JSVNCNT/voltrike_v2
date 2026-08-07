@@ -214,6 +214,25 @@ export interface AdminMetrics {
   scope: string;
 }
 
+export interface OverviewAnalyticsDay {
+  date: string;
+  bookings: number;
+  completedRides: number;
+  grossFare: number;
+  commissionAmount: number;
+  driverNetEarnings: number;
+}
+
+export interface OverviewAnalytics {
+  startDate: string;
+  endDate: string;
+  timeZone: string;
+  scope: string;
+  generatedAt: string;
+  truncated: boolean;
+  days: OverviewAnalyticsDay[];
+}
+
 export interface BookingOperation {
   bookingId: string;
   schemaVersion: number;

@@ -1,29 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/routes.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../../common/presentation/widgets/settings_view.dart';
+import '../../providers/booking_controller_provider.dart';
+import '../../providers/booking_provider.dart';
+import '../../providers/booking_session_provider.dart';
+import '../../providers/passenger_location_provider.dart';
 
-class PassengerSettingsScreen extends StatelessWidget {
+class PassengerSettingsScreen extends ConsumerWidget {
   const PassengerSettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: const AppAppBar(title: 'Settings'),
       body: VolTrikeSettingsView(
         onEditPhoto: () => context.push(AppRoutes.editPassengerProfile),
-        onLogout: () => _logout(context),
+        onLogout: () => _logout(context, ref),
       ),
     );
   }
 
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout(BuildContext context, WidgetRef ref) async {
     final shouldLogout = await _confirmLogout(context);
     if (!shouldLogout) return;
 
+    await LocationService.instance.stopTracking();
+    ref.invalidate(passengerLocationProvider);
+    ref.invalidate(bookingControllerProvider);
+    ref.read(bookingProvider.notifier).reset();
+    ref.read(bookingSessionProvider.notifier).reset();
     await AuthRepository().signOut();
     if (context.mounted) context.go(AppRoutes.intro);
   }

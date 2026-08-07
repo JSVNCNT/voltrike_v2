@@ -116,6 +116,11 @@ func (service *Service) ExecuteOperation(ctx context.Context, principal Principa
 	if strings.TrimSpace(principal.UID) == "" || strings.TrimSpace(command.Name) == "" {
 		return nil, fmt.Errorf("%w: authenticated user and operation are required", ErrInvalidArgument)
 	}
+	commandID := strings.TrimSpace(command.CommandID)
+	if commandID == "" || len(commandID) > 128 || strings.ContainsAny(commandID, "/\\.#$[]") {
+		return nil, fmt.Errorf("%w: a safe commandId is required", ErrInvalidArgument)
+	}
+	command.CommandID = commandID
 	if command.Payload == nil {
 		command.Payload = map[string]any{}
 	}
