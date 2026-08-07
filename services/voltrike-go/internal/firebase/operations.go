@@ -196,6 +196,29 @@ func (store *Store) submitDriverRating(ctx context.Context, principal app.Princi
 			return fmt.Errorf("%w: driver profile not found", app.ErrPrecondition)
 		}
 		driver := driverSnapshot.Data()
+		driverName := text(booking, "driverName")
+		passengerName := text(booking, "passengerName")
+		driverProfile, driverProfileErr := tx.Get(store.firestore.Collection("users").Doc(driverID))
+		if driverProfileErr != nil && !isNotFound(driverProfileErr) {
+			return driverProfileErr
+		}
+		if driverName == "" && driverProfileErr == nil {
+			driverName = personName(driverProfile.Data())
+		}
+		if driverName == "" || driverName == "Driver" {
+			if applicant, ok := driver["applicant"].(map[string]any); ok {
+				if name := personName(applicant); name != "Driver" {
+					driverName = name
+				}
+			}
+		}
+		passengerProfile, passengerProfileErr := tx.Get(store.firestore.Collection("users").Doc(principal.UID))
+		if passengerProfileErr != nil && !isNotFound(passengerProfileErr) {
+			return passengerProfileErr
+		}
+		if passengerName == "" && passengerProfileErr == nil {
+			passengerName = passengerDisplayName(passengerProfile.Data())
+		}
 		count, average := integer(driver, "ratingCount"), number(driver, "rating")
 		nextCount := count + 1
 		nextAverage := mathRound((average*float64(count)+float64(rating))/float64(nextCount), 2)
@@ -203,7 +226,7 @@ func (store *Store) submitDriverRating(ctx context.Context, principal app.Princi
 		tx.Create(ratingRef, map[string]any{
 			"ratingId": ratingID, "bookingId": bookingID, "driverId": driverID,
 			"passengerId": principal.UID, "todaId": text(booking, "todaId", "driverTodaId"),
-			"driverName": text(booking, "driverName"), "passengerName": text(booking, "passengerName"),
+			"driverName": driverName, "passengerName": passengerName,
 			"rating": rating, "comment": truncate(text(payload, "comment"), 1000), "createdAt": now,
 		})
 		tx.Set(driverRef, map[string]any{"rating": nextAverage, "ratingCount": nextCount, "updatedAt": now}, firestore.MergeAll)

@@ -158,9 +158,19 @@ export interface TodaCommissionReportItem {
   disputeReason?: string | null;
 }
 
+export interface TodaCommissionDriverSummary {
+  driverId: string;
+  driverName: string;
+  completedRides: number;
+  grossFare: number;
+  commissionAmount: number;
+  driverNetEarnings: number;
+}
+
 export interface TodaCommissionReport {
   summary: TodaCommissionReportSummary;
   items: TodaCommissionReportItem[];
+  driverSummaries: TodaCommissionDriverSummary[];
   nextCursor: string | null;
 }
 

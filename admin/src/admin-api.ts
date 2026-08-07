@@ -26,6 +26,7 @@ import type {
   SafetyIncident,
   Toda,
   TodaCommission,
+  TodaCommissionDriverSummary,
   TodaCommissionReport,
   TodaCommissionReportOptions,
   ViolationFilters,
@@ -364,6 +365,9 @@ function normalizeCommissionReport(value: unknown): TodaCommissionReport {
   const source = asRecord(value);
   const summary = asRecord(source.summary);
   const items = Array.isArray(source.items) ? source.items : [];
+  const driverSummaries = Array.isArray(source.driverSummaries)
+    ? source.driverSummaries
+    : [];
   return {
     summary: {
       grossFare: finiteNumber(summary.grossFare) ?? 0,
@@ -391,6 +395,18 @@ function normalizeCommissionReport(value: unknown): TodaCommissionReport {
         disputeReason: textValue(item.disputeReason) || null,
       };
     }).filter((item) => Boolean(item.bookingId)),
+    driverSummaries: driverSummaries.map((value): TodaCommissionDriverSummary => {
+      const item = asRecord(value);
+      const driverId = textValue(item.driverId ?? item.uid);
+      return {
+        driverId,
+        driverName: textValue(item.driverName ?? item.name, 'Registered driver'),
+        completedRides: finiteNumber(item.completedRides ?? item.tripCount) ?? 0,
+        grossFare: finiteNumber(item.grossFare) ?? 0,
+        commissionAmount: finiteNumber(item.commissionAmount) ?? 0,
+        driverNetEarnings: finiteNumber(item.driverNetEarnings) ?? 0,
+      };
+    }).filter((item) => Boolean(item.driverId)),
     nextCursor: textValue(source.nextCursor) || null,
   };
 }

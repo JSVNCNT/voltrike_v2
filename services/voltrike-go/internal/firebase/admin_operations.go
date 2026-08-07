@@ -96,7 +96,7 @@ func (store *Store) executeAdminOperation(ctx context.Context, principal app.Pri
 	case "adminListDrivers":
 		return store.adminListDrivers(ctx, actor, command.Payload)
 	case "adminListRatings":
-		return store.adminList(ctx, actor, "ratings", command.Payload)
+		return store.adminListRatings(ctx, actor, command.Payload)
 	case "adminListReports":
 		return store.adminList(ctx, actor, "reports", command.Payload)
 	case "adminListBookings":

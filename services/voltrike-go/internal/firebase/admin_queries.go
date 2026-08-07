@@ -52,6 +52,76 @@ func (store *Store) adminList(ctx context.Context, actor adminIdentity, collecti
 	return map[string]any{"items": items, "nextCursor": next}, nil
 }
 
+// adminListRatings hydrates immutable rating records with the current readable
+// driver/passenger names. Older rating records were created before all booking
+// name snapshots were enforced, so treating the stored name as the only source
+// made otherwise valid feedback look anonymous in the TODA portal.
+func (store *Store) adminListRatings(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
+	pageSize := integer(payload, "pageSize", "limit")
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 50
+	}
+	documents, err := store.firestore.Collection("ratings").Limit(500).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, err
+	}
+	driverDirectory, err := store.adminDriverDirectory(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := store.adminUserProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	type ratingDocument struct {
+		document *firestore.DocumentSnapshot
+		created  time.Time
+	}
+	ratings := make([]ratingDocument, 0, len(documents))
+	for _, document := range documents {
+		ratings = append(ratings, ratingDocument{document: document, created: reportTimestamp(document.Data())})
+	}
+	sort.Slice(ratings, func(i, j int) bool { return ratings[i].created.After(ratings[j].created) })
+	cursor := text(payload, "cursor")
+	started := cursor == ""
+	items := make([]map[string]any, 0, pageSize)
+	for _, rating := range ratings {
+		if !started {
+			if rating.document.Ref.ID == cursor {
+				started = true
+			}
+			continue
+		}
+		data := copyMap(rating.document.Data())
+		driverID := text(data, "driverId", "driverID")
+		driver := driverDirectory[driverID]
+		todaID := text(data, "todaId", "driverTodaId")
+		if todaID == "" {
+			todaID = text(driver, "todaId", "ownerTodaId", "driverTodaId")
+		}
+		if !actor.canAccessToda(todaID) {
+			continue
+		}
+		if name := text(data, "driverName"); name == "" {
+			data["driverName"] = preferredAdminDriverName(driver, driverID)
+		}
+		passengerID := text(data, "passengerId", "passengerID")
+		if name := text(data, "passengerName"); name == "" {
+			data["passengerName"] = passengerDisplayName(profiles[passengerID])
+		}
+		data["id"], data["driverId"], data["passengerId"], data["todaId"] = rating.document.Ref.ID, driverID, passengerID, todaID
+		items = append(items, data)
+		if len(items) == pageSize {
+			break
+		}
+	}
+	next := ""
+	if len(items) == pageSize {
+		next = text(items[len(items)-1], "id")
+	}
+	return map[string]any{"items": items, "nextCursor": next}, nil
+}
+
 func (store *Store) getTodaCommission(ctx context.Context, actor adminIdentity) (map[string]any, error) {
 	if actor.TodaID == "" {
 		return map[string]any{"percent": 0, "todaId": ""}, nil
@@ -78,15 +148,23 @@ func (store *Store) setTodaCommission(ctx context.Context, actor adminIdentity, 
 }
 
 func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
-	start, err := time.Parse("2006-01-02", text(payload, "startDate"))
+	location, err := time.LoadLocation("Asia/Manila")
+	if err != nil {
+		return nil, err
+	}
+	start, err := time.ParseInLocation("2006-01-02", text(payload, "startDate"), location)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid start date", app.ErrInvalidArgument)
 	}
-	end, err := time.Parse("2006-01-02", text(payload, "endDate"))
+	end, err := time.ParseInLocation("2006-01-02", text(payload, "endDate"), location)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid end date", app.ErrInvalidArgument)
 	}
 	end = end.AddDate(0, 0, 1)
+	driverDirectory, err := store.adminDriverDirectory(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
 	query := store.firestore.Collection("settlements").Limit(500)
 	documents, err := query.Documents(ctx).GetAll()
 	if err != nil {
@@ -97,11 +175,23 @@ func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, p
 		at   time.Time
 	}
 	entries := make([]reportEntry, 0)
+	driverTotals := make(map[string]map[string]any, len(driverDirectory))
+	for driverID, driver := range driverDirectory {
+		driverTotals[driverID] = map[string]any{
+			"driverId": driverID, "driverName": preferredAdminDriverName(driver, driverID),
+			"completedRides": 0, "grossFare": 0.0, "commissionAmount": 0.0, "driverNetEarnings": 0.0,
+		}
+	}
 	var gross, commission, net float64
 	completed, pending, settled, disputed := 0, 0, 0, 0
 	for _, document := range documents {
 		data := document.Data()
-		if !actor.canAccessToda(text(data, "todaId")) {
+		driverID := text(data, "driverId")
+		settlementTodaID := text(data, "todaId", "driverTodaId")
+		if settlementTodaID == "" {
+			settlementTodaID = text(driverDirectory[driverID], "todaId", "ownerTodaId", "driverTodaId")
+		}
+		if !actor.canAccessToda(settlementTodaID) {
 			continue
 		}
 		occurredAt := reportTimestamp(data)
@@ -123,33 +213,61 @@ func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, p
 		if settlementStatus != "settled" {
 			continue
 		}
+		driverTotal, knownDriver := driverTotals[driverID]
+		if !knownDriver {
+			driverTotal = map[string]any{
+				"driverId": driverID, "driverName": preferredAdminDriverName(data, driverID),
+				"completedRides": 0, "grossFare": 0.0, "commissionAmount": 0.0, "driverNetEarnings": 0.0,
+			}
+			driverTotals[driverID] = driverTotal
+		}
+		driverName := text(driverTotal, "driverName")
+		if driverName == "" {
+			driverName = preferredAdminDriverName(data, driverID)
+			driverTotal["driverName"] = driverName
+		}
+		grossFare := number(data, "grossFare", "amountDue")
+		commissionAmount := number(data, "commissionAmount")
+		driverNetEarnings := number(data, "driverNetEarnings")
+		driverTotal["completedRides"] = integer(driverTotal, "completedRides") + 1
+		driverTotal["grossFare"] = number(driverTotal, "grossFare") + grossFare
+		driverTotal["commissionAmount"] = number(driverTotal, "commissionAmount") + commissionAmount
+		driverTotal["driverNetEarnings"] = number(driverTotal, "driverNetEarnings") + driverNetEarnings
 		item := map[string]any{
 			"bookingId":         text(data, "bookingId"),
 			"receiptNumber":     text(data, "receiptNumber"),
-			"driverId":          text(data, "driverId"),
-			"driverName":        text(data, "driverName"),
+			"driverId":          driverID,
+			"driverName":        driverName,
 			"completedAt":       occurredAt,
-			"grossFare":         number(data, "grossFare", "amountDue"),
+			"grossFare":         grossFare,
 			"commissionPercent": number(data, "commissionPercent"),
-			"commissionAmount":  number(data, "commissionAmount"),
-			"driverNetEarnings": number(data, "driverNetEarnings"),
+			"commissionAmount":  commissionAmount,
+			"driverNetEarnings": driverNetEarnings,
 			"settlementStatus":  settlementStatus,
 			"adjustmentStatus":  adjustmentStatus,
 			"disputeReason":     text(data, "disputeReason"),
 		}
 		entries = append(entries, reportEntry{item: item, at: occurredAt})
-		gross += number(data, "grossFare")
-		commission += number(data, "commissionAmount")
-		net += number(data, "driverNetEarnings")
+		gross += grossFare
+		commission += commissionAmount
+		net += driverNetEarnings
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].at.After(entries[j].at) })
 	items := make([]map[string]any, 0, len(entries))
 	for _, entry := range entries {
 		items = append(items, entry.item)
 	}
-	result := map[string]any{"summary": map[string]any{"grossFare": gross, "commissionAmount": commission, "driverNetEarnings": net, "completedRides": completed, "pendingSettlements": pending, "settledSettlements": settled, "disputedSettlements": disputed}, "items": items, "nextCursor": ""}
+	driverSummaries := make([]map[string]any, 0, len(driverTotals))
+	for _, driver := range driverTotals {
+		driverSummaries = append(driverSummaries, driver)
+	}
+	sort.Slice(driverSummaries, func(i, j int) bool {
+		return strings.ToLower(text(driverSummaries[i], "driverName")) < strings.ToLower(text(driverSummaries[j], "driverName"))
+	})
+	result := map[string]any{"summary": map[string]any{"grossFare": gross, "commissionAmount": commission, "driverNetEarnings": net, "completedRides": completed, "pendingSettlements": pending, "settledSettlements": settled, "disputedSettlements": disputed}, "items": items, "driverSummaries": driverSummaries, "nextCursor": ""}
 	if booleanDefault(payload, false, "summaryOnly") {
 		result["items"] = []map[string]any{}
+		result["driverSummaries"] = []map[string]any{}
 	}
 	return result, nil
 }
@@ -210,9 +328,6 @@ func (store *Store) adminLiveDrivers(ctx context.Context, actor adminIdentity) (
 	items := make([]map[string]any, 0)
 	for _, driver := range drivers {
 		data := driver.Data()
-		if !actor.canAccessToda(text(data, "todaId", "ownerTodaId", "driverTodaId")) {
-			continue
-		}
 		if text(data, "driverStatus", "status") != "approved" {
 			continue
 		}
@@ -221,6 +336,9 @@ func (store *Store) adminLiveDrivers(ctx context.Context, actor adminIdentity) (
 			continue
 		}
 		item := hydrateAdminDriver(data, driver.Ref.ID, profiles[driver.Ref.ID], vehicles[driver.Ref.ID])
+		if !actor.canAccessToda(text(item, "todaId", "ownerTodaId", "driverTodaId")) {
+			continue
+		}
 		item["id"], item["driverId"], item["location"] = driver.Ref.ID, driver.Ref.ID, location
 		items = append(items, item)
 	}
@@ -271,10 +389,10 @@ func (store *Store) adminListDrivers(ctx context.Context, actor adminIdentity, p
 			continue
 		}
 		data := document.Data()
-		if !actor.canAccessToda(text(data, "todaId", "ownerTodaId", "driverTodaId")) {
+		item := hydrateAdminDriver(data, document.Ref.ID, profiles[document.Ref.ID], vehicles[document.Ref.ID])
+		if !actor.canAccessToda(text(item, "todaId", "ownerTodaId", "driverTodaId")) {
 			continue
 		}
-		item := hydrateAdminDriver(data, document.Ref.ID, profiles[document.Ref.ID], vehicles[document.Ref.ID])
 		if search != "" && !strings.Contains(strings.ToLower(document.Ref.ID+" "+text(item, "name", "driverName", "email", "todaId", "driverStatus")), search) {
 			continue
 		}
@@ -292,15 +410,14 @@ func (store *Store) adminListDrivers(ctx context.Context, actor adminIdentity, p
 }
 
 func (store *Store) adminDriverLookups(ctx context.Context) (map[string]map[string]any, map[string]map[string]any, error) {
-	userDocuments, err := store.firestore.Collection("users").Limit(2000).Documents(ctx).GetAll()
+	allProfiles, err := store.adminUserProfiles(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	profiles := make(map[string]map[string]any, len(userDocuments))
-	for _, document := range userDocuments {
-		data := document.Data()
+	profiles := make(map[string]map[string]any, len(allProfiles))
+	for id, data := range allProfiles {
 		if text(data, "role") == "driver" || text(data, "driverId", "uid") != "" {
-			profiles[document.Ref.ID] = data
+			profiles[id] = data
 		}
 	}
 	vehicleDocuments, err := store.firestore.Collection("vehicles").Limit(2000).Documents(ctx).GetAll()
@@ -316,6 +433,42 @@ func (store *Store) adminDriverLookups(ctx context.Context) (map[string]map[stri
 		}
 	}
 	return profiles, vehicles, nil
+}
+
+func (store *Store) adminUserProfiles(ctx context.Context) (map[string]map[string]any, error) {
+	userDocuments, err := store.firestore.Collection("users").Limit(2000).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, err
+	}
+	profiles := make(map[string]map[string]any, len(userDocuments))
+	for _, document := range userDocuments {
+		profiles[document.Ref.ID] = document.Data()
+	}
+	return profiles, nil
+}
+
+// adminDriverDirectory is the canonical presentation lookup for TODA-facing
+// reports. It includes all registered drivers in scope, even if they have no
+// settlements in the currently selected date range.
+func (store *Store) adminDriverDirectory(ctx context.Context, actor adminIdentity) (map[string]map[string]any, error) {
+	documents, err := store.firestore.Collection("drivers").Limit(2000).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, err
+	}
+	profiles, vehicles, err := store.adminDriverLookups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	directory := make(map[string]map[string]any, len(documents))
+	for _, document := range documents {
+		item := hydrateAdminDriver(document.Data(), document.Ref.ID, profiles[document.Ref.ID], vehicles[document.Ref.ID])
+		if !actor.canAccessToda(text(item, "todaId", "ownerTodaId", "driverTodaId")) {
+			continue
+		}
+		item["id"] = document.Ref.ID
+		directory[document.Ref.ID] = item
+	}
+	return directory, nil
 }
 
 func hydrateAdminDriver(driver map[string]any, uid string, profile, storedVehicle map[string]any) map[string]any {
@@ -359,6 +512,24 @@ func hydrateAdminDriver(driver map[string]any, uid string, profile, storedVehicl
 		}
 	}
 	return item
+}
+
+func preferredAdminDriverName(data map[string]any, driverID string) string {
+	if name := firstAdminText(data, nil, nil, "driverName", "name", "displayName", "fullName"); name != "" {
+		return name
+	}
+	if applicant, ok := data["applicant"].(map[string]any); ok {
+		if name := personName(applicant); name != "Driver" {
+			return name
+		}
+	}
+	if driverID != "" {
+		if len(driverID) > 8 {
+			driverID = driverID[len(driverID)-8:]
+		}
+		return "Driver " + driverID
+	}
+	return "Registered driver"
 }
 
 func firstAdminText(first, second, third map[string]any, keys ...string) string {

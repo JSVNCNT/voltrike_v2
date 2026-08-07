@@ -4,7 +4,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { adminApi } from './admin-api';
 import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
-import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaCommissionReportItem, TodaCommissionReportSummary, TodaRegistration, ZoneRequest } from './types';
+import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaCommissionDriverSummary, TodaCommissionReportItem, TodaCommissionReportSummary, TodaRegistration, ZoneRequest } from './types';
 import {
   enableAdminWebPush,
   listenForAdminPush,
@@ -77,6 +77,18 @@ function currentMonthRange() {
     startDate: dateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)),
     endDate: dateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
   };
+}
+function currentDayRange() {
+  const today = new Date();
+  const value = dateInputValue(today);
+  return { startDate: value, endDate: value };
+}
+function currentWeekRange() {
+  const today = new Date();
+  const mondayOffset = (today.getDay() + 6) % 7;
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - mondayOffset);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  return { startDate: dateInputValue(start), endDate: dateInputValue(end) };
 }
 const overviewMetricsRefreshMs = 15 * 1000;
 const overviewCommissionRefreshMs = 5 * 60 * 1000;
@@ -476,6 +488,8 @@ function Metric({ label: title, value, warning }: { label: string; value: string
 
 function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
   const initialRange = useMemo(currentMonthRange, []);
+  const todayRange = useMemo(currentDayRange, []);
+  const weekRange = useMemo(currentWeekRange, []);
   const [percent, setPercent] = useState(0);
   const [recommended, setRecommended] = useState(10);
   const [maximum, setMaximum] = useState(30);
@@ -486,6 +500,9 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
   const [appliedRange, setAppliedRange] = useState(initialRange);
   const [summary, setSummary] = useState<TodaCommissionReportSummary | null>(null);
   const [items, setItems] = useState<TodaCommissionReportItem[]>([]);
+  const [driverSummaries, setDriverSummaries] = useState<TodaCommissionDriverSummary[]>([]);
+  const [todaySummary, setTodaySummary] = useState<TodaCommissionReportSummary | null>(null);
+  const [weekSummary, setWeekSummary] = useState<TodaCommissionReportSummary | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState('');
@@ -517,6 +534,7 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
             !current.some((existing) => existing.bookingId === item.bookingId)),
         ]
         : report.items);
+      if (!append) setDriverSummaries(report.driverSummaries);
       setNextCursor(report.nextCursor);
       setReportError('');
     } catch (error) {
@@ -525,9 +543,24 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
       setReportLoading(false);
     }
   }, [appliedRange]);
+  const loadPeriodSummaries = useCallback(async () => {
+    try {
+      const [today, week] = await Promise.all([
+        adminApi.todaCommissionReport(todayRange.startDate, todayRange.endDate, { summaryOnly: true }),
+        adminApi.todaCommissionReport(weekRange.startDate, weekRange.endDate, { summaryOnly: true }),
+      ]);
+      setTodaySummary(today.summary);
+      setWeekSummary(week.summary);
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : 'Unable to load today and this week\'s commission totals.');
+    }
+  }, [todayRange, weekRange]);
   useEffect(() => {
     void loadReport();
   }, [loadReport]);
+  useEffect(() => {
+    void loadPeriodSummaries();
+  }, [loadPeriodSummaries]);
   function applyReportRange(event: FormEvent) {
     event.preventDefault();
     if (!startDate || !endDate) {
@@ -581,7 +614,7 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
           <h2>Completed-ride commission report</h2>
           <p className="muted">Totals use the immutable rate captured for each ride. A ride appears only after completion; pending and already-assigned rides are not recalculated when the setting above changes.</p>
         </div>
-        <button type="button" onClick={() => void loadReport()} disabled={reportLoading}>Refresh report</button>
+        <button type="button" onClick={() => void Promise.all([loadReport(), loadPeriodSummaries()])} disabled={reportLoading}>Refresh report</button>
       </div>
       <form className="commission-filters" onSubmit={applyReportRange}>
         <label>Start date<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
@@ -598,6 +631,26 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
         <Metric label="Settled rides" value={summary ? String(summary.settledSettlements) : '—'} />
         <Metric label="Disputed settlements" value={summary ? String(summary.disputedSettlements) : '—'} warning={Boolean(summary?.disputedSettlements)} />
       </div>
+      <div className="cards commission-cards">
+        <Metric label="Completed rides today" value={todaySummary ? String(todaySummary.completedRides) : '—'} />
+        <Metric label="Commission due today" value={todaySummary ? peso(todaySummary.commissionAmount) : '—'} />
+        <Metric label="Completed rides this week" value={weekSummary ? String(weekSummary.completedRides) : '—'} />
+        <Metric label="Commission due this week" value={weekSummary ? peso(weekSummary.commissionAmount) : '—'} />
+      </div>
+      <section className="commission-driver-breakdown">
+        <h3>Commission by registered driver</h3>
+        <p className="muted">Every driver assigned to this TODA is listed, including drivers with no completed ride in the selected date range.</p>
+        <div className="table commission-table">
+          {driverSummaries.map((driver) => <div className="row commission-row" key={driver.driverId}>
+            <span><b>{driver.driverName}</b><small className="technical-id">Driver: {driver.driverId}</small></span>
+            <span><b>{driver.completedRides}</b><small>completed ride{driver.completedRides === 1 ? '' : 's'}</small></span>
+            <span><b>{peso(driver.grossFare)}</b><small>gross passenger fares</small></span>
+            <span><b>{peso(driver.commissionAmount)}</b><small>TODA commission due</small></span>
+            <span><b>{peso(driver.driverNetEarnings)}</b><small>driver net earnings</small></span>
+          </div>)}
+          {!reportLoading && driverSummaries.length === 0 && <p className="muted">No registered drivers are available for this TODA scope.</p>}
+        </div>
+      </section>
       <div className="table commission-table">
         {items.map((item) => {
           const disputed = item.adjustmentStatus === 'disputed'
@@ -783,11 +836,18 @@ function RatingsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const reload = useCallback(() => {
-    void adminApi.ratingPage().then((page) => {
+  const [error, setError] = useState('');
+  const reload = useCallback(async () => {
+    try {
+      const page = await adminApi.ratingPage();
       setRatings(page.items);
       setNextCursor(page.nextCursor);
-    }).finally(() => setLoading(false));
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to load driver ratings.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
@@ -804,7 +864,11 @@ function RatingsPage() {
     }
   }
   useRefreshOnVisible(reload);
-  return <section className="panel wide"><h2>Passenger ratings</h2><p className="muted">Ratings are immutable trip records. TODA administrators see only feedback for drivers assigned to their TODA.</p>{loading && <p>Loading ratings…</p>}<div className="table">{ratings.map((rating) => <div className="row report" key={rating.id}><span><b>{rating.rating} ★ for {rating.driverName || 'Driver'}</b><small>Passenger: {rating.passengerName || 'Passenger'}</small><small>TODA: {rating.todaName || rating.todaId || 'Not recorded'}</small></span><span>{rating.comment || 'Passenger left a star rating without a comment.'}</span><span><small>{rating.createdAt ? new Date(rating.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><br /><small className="technical-id">Booking: {rating.bookingId}</small></span></div>)}{!loading && ratings.length === 0 && <p className="muted">No ratings are available in this scope.</p>}{nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older ratings'}</button>}</div></section>;
+  useEffect(() => {
+    const timer = window.setInterval(() => void reload(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [reload]);
+  return <section className="panel wide"><h2>Passenger ratings</h2><p className="muted">Ratings are immutable trip records. TODA administrators see only feedback for drivers assigned to their TODA. This page refreshes every 15 seconds while open.</p>{error && <div className="notice">{error}</div>}{loading && <p>Loading ratings…</p>}<div className="table">{ratings.map((rating) => <div className="row report" key={rating.id}><span><b>{rating.rating} ★ for {rating.driverName || 'Driver'}</b><small>Passenger: {rating.passengerName || 'Passenger'}</small><small>TODA: {rating.todaName || rating.todaId || 'Not recorded'}</small></span><span>{rating.comment || 'Passenger left a star rating without a comment.'}</span><span><small>{rating.createdAt ? new Date(rating.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><br /><small className="technical-id">Booking: {rating.bookingId}</small></span></div>)}{!loading && ratings.length === 0 && <p className="muted">No ratings are available in this scope.</p>}{nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older ratings'}</button>}</div></section>;
 }
 
 function ReportsPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
