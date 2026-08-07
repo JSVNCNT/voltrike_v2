@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 
 typedef VoltrikeTokenProvider = Future<String?> Function();
 
@@ -23,6 +25,7 @@ class VoltrikeApi {
     FirebaseAuth? auth,
     String? baseUrl,
     VoltrikeTokenProvider? appCheckTokenProvider,
+    Duration requestTimeout = const Duration(seconds: 20),
   }) : _client = client ?? http.Client(),
        _auth = auth ?? FirebaseAuth.instance,
        _baseUrl = (baseUrl ?? _configuredBaseUrl()).replaceFirst(
@@ -30,7 +33,8 @@ class VoltrikeApi {
          '',
        ),
        _appCheckTokenProvider =
-           appCheckTokenProvider ?? FirebaseAppCheck.instance.getToken;
+           appCheckTokenProvider ?? FirebaseAppCheck.instance.getToken,
+       _requestTimeout = requestTimeout;
 
   static final VoltrikeApi instance = VoltrikeApi();
 
@@ -38,6 +42,7 @@ class VoltrikeApi {
   final FirebaseAuth _auth;
   final String _baseUrl;
   final VoltrikeTokenProvider? _appCheckTokenProvider;
+  final Duration _requestTimeout;
 
   static String _configuredBaseUrl() {
     const configured = String.fromEnvironment('VOLTRIKE_API_BASE_URL');
@@ -135,7 +140,12 @@ class VoltrikeApi {
     return _request(
       'POST',
       '/api/v2/operations/${Uri.encodeComponent(name)}',
-      body: <String, dynamic>{'commandId': ?commandId, 'payload': payload},
+      body: <String, dynamic>{
+        'commandId': commandId?.trim().isNotEmpty == true
+            ? commandId!.trim()
+            : const Uuid().v4(),
+        'payload': payload,
+      },
     ).then((response) => _record(response['data']));
   }
 
@@ -176,25 +186,36 @@ class VoltrikeApi {
     try {
       switch (method) {
         case 'GET':
-          response = await _client.get(uri, headers: headers);
+          response = await _client
+              .get(uri, headers: headers)
+              .timeout(_requestTimeout);
           break;
         case 'POST':
-          response = await _client.post(
-            uri,
-            headers: headers,
-            body: jsonEncode(body ?? const <String, dynamic>{}),
-          );
+          response = await _client
+              .post(
+                uri,
+                headers: headers,
+                body: jsonEncode(body ?? const <String, dynamic>{}),
+              )
+              .timeout(_requestTimeout);
           break;
         case 'PUT':
-          response = await _client.put(
-            uri,
-            headers: headers,
-            body: jsonEncode(body ?? const <String, dynamic>{}),
-          );
+          response = await _client
+              .put(
+                uri,
+                headers: headers,
+                body: jsonEncode(body ?? const <String, dynamic>{}),
+              )
+              .timeout(_requestTimeout);
           break;
         default:
           throw const VoltrikeApiException('Unsupported API method.');
       }
+    } on TimeoutException {
+      throw const VoltrikeApiException(
+        'The VolTrike API timed out. Check your connection and try again.',
+        code: 'deadline-exceeded',
+      );
     } catch (error) {
       if (error is VoltrikeApiException) rethrow;
       throw VoltrikeApiException('The VolTrike API is unavailable: $error');

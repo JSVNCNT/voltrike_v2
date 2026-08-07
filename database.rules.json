@@ -2,7 +2,7 @@
   "rules": {
     "driver_locations": {
       "$driverId": {
-        ".read": "auth != null && (auth.uid === $driverId || root.child('driver_tracking_access').child(auth.uid).child($driverId).exists())",
+        ".read": "auth != null && (auth.uid === $driverId || (root.child('driver_tracking_access').child(auth.uid).child($driverId).child('expiresAt').isNumber() && root.child('driver_tracking_access').child(auth.uid).child($driverId).child('expiresAt').val() > now))",
         ".write": false,
         ".validate": "newData.hasChildren(['latitude', 'longitude', 'accuracy', 'timestamp', 'online'])",
         "latitude": {
@@ -56,7 +56,7 @@
     "driverLocations": {
       "$driverId": {
         "$sessionId": {
-          ".read": "auth != null && (auth.uid === $driverId || root.child('driver_tracking_access').child(auth.uid).child($driverId).exists())",
+          ".read": "auth != null && (auth.uid === $driverId || (root.child('driver_tracking_access').child(auth.uid).child($driverId).child('expiresAt').isNumber() && root.child('driver_tracking_access').child(auth.uid).child($driverId).child('expiresAt').val() > now))",
           ".write": false
         }
       }

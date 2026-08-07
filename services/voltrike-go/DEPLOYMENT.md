@@ -1,6 +1,6 @@
-# VolTrike capstone deployment (`flutter run` mobile clients)
+# VolTrike hosted private deployment
 
-There is no Play Store or mobile release in this deployment model. Deploy only
+There is no Google Play release in this deployment model. Deploy only
 the shared services that must be reachable by multiple phones:
 
 - Go V2 API: Google Cloud Run.
@@ -9,13 +9,14 @@ the shared services that must be reachable by multiple phones:
 - React/TypeScript Admin: the existing Render Static Site.
 - Voice infrastructure: LiveKit Cloud or an equivalent LiveKit server.
 
-The passenger and driver apps remain normal debug sessions started with
-`flutter run`. Each phone talks to the same Cloud Run and Firebase resources,
-so multi-phone testing works without publishing an APK, AAB, or store release.
+Passenger and driver phones use a privately distributed APK. Each phone talks
+to the same Cloud Run and Firebase resources, so the system continues running
+when the development PC, Flutter, VS Code, or ADB is off. `flutter run` is only
+for development and is never part of the hosted runtime.
 
-This is a shared capstone environment, not a public production release. It can
-still incur cloud/provider usage, so configure budgets and never commit secret
-values or App Check debug tokens.
+This is a production-like private environment, not a public app-store release.
+It can incur cloud/provider usage even with scale-to-zero, so configure budgets
+and never commit secret values or App Check debug tokens.
 
 ```text
 flutter run on passenger phone ─┐
@@ -64,6 +65,7 @@ gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runt
 gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebaseappcheck.tokenVerifier"
 gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebaseauth.admin"
 gcloud storage buckets add-iam-policy-binding "gs://$storageBucket" --member="serviceAccount:$runtimeServiceAccount" --role="roles/storage.objectAdmin"
+gcloud iam service-accounts add-iam-policy-binding $runtimeServiceAccount --member="serviceAccount:$runtimeServiceAccount" --role="roles/iam.serviceAccountTokenCreator"
 ```
 
 The API requires Google Routes and LiveKit credentials, a stable 32-byte quote
@@ -115,13 +117,12 @@ gcloud secrets add-iam-policy-binding ADMIN_BOOTSTRAP_CODE --member="serviceAcco
 ## 3. Deploy the Go API
 
 The service is intentionally public at the network layer. Every `/api/v2/**`
-request requires a Firebase ID token. This capstone distribution disables App
-Check only so a privately shared debug APK can work on additional phones
-without registering a debug token on every device. Set it back to `true`
-before any public release.
+request requires a Firebase ID token and a registered App Check token. Private
+debug APKs use individually registered debug tokens; this does not require Play
+Console or Google Play distribution.
 
 ```powershell
-gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=false,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,LIVEKIT_SERVER_URL=$liveKitServerUrl" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
+gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=true,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,LIVEKIT_SERVER_URL=$liveKitServerUrl,SENTRY_DSN=$env:SENTRY_GO_DSN,SENTRY_ENVIRONMENT=production,SENTRY_TRACES_SAMPLE_RATE=0.05" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
 $apiUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
 $apiUrl
 ```
@@ -133,11 +134,9 @@ curl.exe "$apiUrl/health"
 curl.exe "$apiUrl/ready"
 ```
 
-## 4. Optional App Check debugging
+## 4. App Check for private APKs
 
-In Firebase Console. This section is optional for the private capstone APK:
-the deployed Cloud Run service does not require App Check and Firebase product
-enforcement remains disabled, so Quick Shared phones do not need debug tokens.
+Register every private test device before enabling the hosted environment.
 
 1. Open **Build/Security → App Check** and register the Android Firebase app.
    A normal `flutter run` automatically uses the Android debug provider, so
@@ -150,9 +149,8 @@ enforcement remains disabled, so Quick Shared phones do not need debug tokens.
    save its public site key for the Render configuration below.
 5. Under **Authentication → Settings → Authorized domains**, add the Render
    Admin hostname.
-6. Keep Firebase-product enforcement disabled for this capstone distribution.
-   Go validates Firebase Authentication and role authorization, but does not
-   require an App Check token in this private mode.
+6. Enable App Check enforcement after every active test device is registered.
+   The Go API already rejects missing or invalid App Check tokens.
 
 If the capstone later runs from an Apple device or simulator, register the
 Apple Firebase app and its debug token in the same App Check screen. Building
@@ -199,8 +197,14 @@ firebase functions:secrets:set GO_LOCAL_INTERNAL_KEY --project $projectId
 firebase functions:secrets:set BREVO_SMTP_LOGIN --project $projectId
 firebase functions:secrets:set BREVO_SMTP_KEY --project $projectId
 firebase functions:secrets:set BREVO_SENDER_EMAIL --project $projectId
-firebase deploy --only "firestore,database,storage,functions" --project $projectId
+firebase deploy --only "firestore,database,storage" --project $projectId
+firebase deploy --only "functions:processGoOutbox,functions:requestBrandedPasswordResetEmail,functions:requestBrandedVerificationEmail,functions:registerAdminWebPushToken,functions:unregisterAdminWebPushToken,functions:runGoMaintenance" --project $projectId
 ```
+
+The selective Functions deployment intentionally leaves older callable
+endpoints in place until their invocation logs have been observed for a full
+client migration window. Delete them only after confirming that no installed
+private APK or external integration still calls them.
 
 When Firebase prompts for the `VOLTRIKE_API_BASE_URL` parameter, enter the
 printed `$apiUrl`. Firebase Hosting is not deployed; Render remains the only
@@ -211,21 +215,44 @@ Admin frontend host.
 Build the one private APK that can be Quick Shared to each Android phone:
 
 ```powershell
-flutter build apk --debug --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app
+flutter build apk --debug --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app --dart-define=SENTRY_DSN=https://39ba2251daffea156fb5d535af5e801c@o4511869752836096.ingest.us.sentry.io/4511869828202496 --dart-define=SENTRY_ENVIRONMENT=production --dart-define=SENTRY_RELEASE=voltrike_v2@1.0.0+1
 ```
 
-Quick Share `build/app/outputs/flutter-apk/app-debug.apk` to each tester. Each
+Register that phone's App Check debug token, then Quick Share
+`build/app/outputs/flutter-apk/app-debug.apk` to each tester. Each
 phone can register or sign in and use Cloud Run and Firebase without Flutter,
 ADB, or a connection to the development PC. Stopping a local Flutter session
 stops only that local client; Cloud Run, Firebase, Functions, and Render stay
 online.
 
 Use `flutter run` only for later development or debugging. It is not required
-to operate the shared capstone APK. Before any public release, switch
-`GO_REQUIRE_APP_CHECK` back to `true` and use a signed release build with Play
-Integrity.
+to operate the shared private deployment. A future public release can replace
+debug App Check tokens with Play Integrity and add store signing at that time.
 
-## 8. What must be redeployed after a change
+## 8. Retention, backups, and hosted automation
+
+Enable Firestore TTL for short-lived operational records. TTL deletion is
+asynchronous; the hosted maintenance worker also removes expired command
+receipts and Realtime Database dispatch/tracking projections every minute.
+
+```powershell
+gcloud firestore fields ttls update expiresAt --collection-group=command_receipts --enable-ttl --project=$projectId
+gcloud firestore fields ttls update expiresAt --collection-group=communicationDeliveries --enable-ttl --project=$projectId
+gcloud firestore fields ttls update expiresAt --collection-group=outbox --enable-ttl --project=$projectId
+```
+
+Create a scheduled Firestore export to a retention-locked Cloud Storage bucket
+before real passenger data is collected. Budget alerts should cover Cloud Run,
+Firebase/Firestore, Functions/Scheduler, Routes, Storage, Render, and LiveKit.
+
+The manual `deploy hosted services` GitHub workflow uses Workload Identity
+Federation (no JSON service-account key) and has separate `staging` and
+`production` environments. Configure each environment's variables listed in
+the workflow, require approval for `production`, and use it to deploy Cloud Run
+plus Firebase without relying on this PC. Render continues deploying the Admin
+site from the repository.
+
+## 9. What must be redeployed after a change
 
 - Flutter/Dart-only change: hot reload/restart, or run `flutter run` again.
 - Go change: repeat the Cloud Run deploy command in section 3.

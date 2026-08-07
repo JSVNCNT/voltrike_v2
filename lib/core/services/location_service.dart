@@ -13,13 +13,11 @@ import 'geolocation_service.dart';
 class LocationService {
   LocationService._();
 
-  static final LocationService instance =
-      LocationService._();
+  static final LocationService instance = LocationService._();
 
   StreamSubscription<Position>? _subscription;
 
-  final StreamController<Position>
-      _locationController =
+  final StreamController<Position> _locationController =
       StreamController<Position>.broadcast();
 
   /// ==========================================================================
@@ -34,8 +32,7 @@ class LocationService {
   /// Current Position Stream
   /// ==========================================================================
 
-  Stream<Position> get locationStream =>
-      _locationController.stream;
+  Stream<Position> get locationStream => _locationController.stream;
 
   /// ==========================================================================
   /// Start Tracking
@@ -44,10 +41,9 @@ class LocationService {
   Future<void> startTracking() async {
     await stopTracking();
 
-    _subscription = GeolocationService
-        .getPositionStream()
-        .listen(
+    _subscription = GeolocationService.getPositionStream().listen(
       _locationController.add,
+      onError: _locationController.addError,
     );
   }
 
@@ -77,8 +73,7 @@ class LocationService {
   /// ==========================================================================
 
   Future<bool> openLocationSettings() {
-    return GeolocationService
-        .openLocationSettings();
+    return GeolocationService.openLocationSettings();
   }
 
   Future<bool> openAppSettings() {

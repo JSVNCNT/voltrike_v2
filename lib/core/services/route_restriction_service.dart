@@ -50,11 +50,24 @@ class RouteRestrictionService {
   /// matcher so legacy, non-enforced corridor records never become overlays.
   /// The authenticated Go API is polled rather than reading Firestore directly.
   Stream<List<RouteRestriction>> watchActiveRestrictions() async* {
-    yield List<RouteRestriction>.unmodifiable(await activeRestrictions());
-    await for (final _ in Stream<void>.periodic(const Duration(seconds: 30))) {
-      yield List<RouteRestriction>.unmodifiable(
-        await activeRestrictions(forceRefresh: true),
-      );
+    var firstAttempt = true;
+    while (true) {
+      if (!firstAttempt) {
+        await Future<void>.delayed(const Duration(seconds: 30));
+      }
+      try {
+        yield List<RouteRestriction>.unmodifiable(
+          await activeRestrictions(forceRefresh: !firstAttempt),
+        );
+      } catch (_) {
+        // A transient refresh failure must not permanently terminate safety
+        // monitoring. Keep the last known rules and retry on the next cycle.
+        final cached = _cache;
+        if (cached != null) {
+          yield List<RouteRestriction>.unmodifiable(cached);
+        }
+      }
+      firstAttempt = false;
     }
   }
 

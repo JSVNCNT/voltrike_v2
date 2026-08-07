@@ -97,31 +97,32 @@ func dispatchServicePriority(todaID string, request app.DispatchRequest) int {
 
 func (store *Store) PublishBookingOffers(ctx context.Context, bookingID string, candidates []app.DispatchCandidate, expiresAt time.Time) error {
 	bookingRef := store.firestore.Collection("bookings").Doc(bookingID)
-	bookingSnapshot, err := bookingRef.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("read booking offer snapshot: %w", err)
-	}
-	if !bookingSnapshot.Exists() {
-		return fmt.Errorf("booking offer snapshot does not exist")
-	}
-	bookingData := bookingSnapshot.Data()
-	batch := store.firestore.Batch()
-	ids := make([]string, 0, len(candidates))
-	now := time.Now().UTC()
-	for _, candidate := range candidates {
-		ids = append(ids, candidate.DriverID)
-		offer := store.firestore.Collection("drivers").Doc(candidate.DriverID).Collection("bookingOffers").Doc(bookingID)
-		payload := bookingOfferSnapshot(bookingData)
-		payload["bookingId"], payload["driverId"], payload["todaId"] = bookingID, candidate.DriverID, candidate.TodaID
-		payload["status"], payload["offerRound"] = "offered", integer(bookingData, "offerRound")+1
-		payload["distanceMeters"], payload["servicePriority"] = candidate.DistanceMeters, candidate.ServicePriority
-		payload["dispatchPolicyVersion"], payload["expiresAt"] = 3, expiresAt
-		payload["createdAt"], payload["updatedAt"] = now, now
-		batch.Set(offer, payload)
-	}
-	batch.Set(bookingRef, map[string]any{"offerRound": 1, "currentOfferDriverIds": ids, "offeredDriverIds": ids, "nextDispatchAt": expiresAt, "updatedAt": now}, firestore.MergeAll)
-	_, err = batch.Commit(ctx)
-	return err
+	return store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		bookingSnapshot, err := tx.Get(bookingRef)
+		if err != nil || !bookingSnapshot.Exists() {
+			return fmt.Errorf("read booking offer snapshot: %w", err)
+		}
+		bookingData := bookingSnapshot.Data()
+		if text(bookingData, "status") != "pending" {
+			return fmt.Errorf("booking is no longer pending")
+		}
+		nextRound := integer(bookingData, "offerRound") + 1
+		ids := make([]string, 0, len(candidates))
+		now := time.Now().UTC()
+		for _, candidate := range candidates {
+			ids = append(ids, candidate.DriverID)
+			offer := store.firestore.Collection("drivers").Doc(candidate.DriverID).Collection("bookingOffers").Doc(bookingID)
+			payload := bookingOfferSnapshot(bookingData)
+			payload["bookingId"], payload["driverId"], payload["todaId"] = bookingID, candidate.DriverID, candidate.TodaID
+			payload["status"], payload["offerRound"] = "offered", nextRound
+			payload["distanceMeters"], payload["servicePriority"] = candidate.DistanceMeters, candidate.ServicePriority
+			payload["dispatchPolicyVersion"], payload["expiresAt"] = 3, expiresAt
+			payload["createdAt"], payload["updatedAt"] = now, now
+			tx.Set(offer, payload)
+		}
+		tx.Set(bookingRef, map[string]any{"offerRound": nextRound, "currentOfferDriverIds": ids, "offeredDriverIds": ids, "nextDispatchAt": expiresAt, "updatedAt": now}, firestore.MergeAll)
+		return nil
+	})
 }
 
 // bookingOfferSnapshot gives an offered driver everything required to render a

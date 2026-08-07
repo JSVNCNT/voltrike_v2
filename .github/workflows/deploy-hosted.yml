@@ -1,0 +1,86 @@
+name: deploy hosted services
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment containing the deployment variables
+        required: true
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: hosted-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      DATABASE_URL: ${{ vars.FIREBASE_DATABASE_URL }}
+      STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+      ADMIN_ORIGIN: ${{ vars.ADMIN_ORIGIN }}
+      LIVEKIT_URL: ${{ vars.LIVEKIT_SERVER_URL }}
+      RUNTIME_SERVICE_ACCOUNT: ${{ vars.RUNTIME_SERVICE_ACCOUNT }}
+      SENTRY_GO_DSN: ${{ vars.SENTRY_GO_DSN }}
+      SENTRY_FUNCTIONS_DSN: ${{ vars.SENTRY_FUNCTIONS_DSN }}
+      SENTRY_ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate environment configuration
+        shell: bash
+        run: |
+          test -n "$PROJECT_ID"
+          test -n "$REGION"
+          test -n "$DATABASE_URL"
+          test -n "$STORAGE_BUCKET"
+          test -n "$ADMIN_ORIGIN"
+          test -n "$RUNTIME_SERVICE_ACCOUNT"
+          test -n "$SENTRY_GO_DSN"
+          test -n "$SENTRY_FUNCTIONS_DSN"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy Cloud Run authority
+        shell: bash
+        run: >-
+          gcloud run deploy voltrike-api-v2
+          --source services/voltrike-go
+          --region "$REGION"
+          --project "$PROJECT_ID"
+          --service-account "$RUNTIME_SERVICE_ACCOUNT"
+          --allow-unauthenticated
+          --min-instances 0
+          --max-instances 3
+          --cpu 1
+          --memory 512Mi
+          --concurrency 40
+          --timeout 30s
+          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIREBASE_DATABASE_URL=$DATABASE_URL,FIREBASE_STORAGE_BUCKET=$STORAGE_BUCKET,GO_ALLOWED_ORIGINS=$ADMIN_ORIGIN,GO_REQUIRE_APP_CHECK=true,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,RATE_LIMIT_PER_MINUTE=240,LIVEKIT_SERVER_URL=$LIVEKIT_URL,SENTRY_DSN=$SENTRY_GO_DSN,SENTRY_ENVIRONMENT=$SENTRY_ENVIRONMENT,SENTRY_RELEASE=$GITHUB_SHA,SENTRY_TRACES_SAMPLE_RATE=0.05"
+          --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
+      - name: Verify hosted API
+        shell: bash
+        run: |
+          API_URL="$(gcloud run services describe voltrike-api-v2 --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')"
+          curl --fail --retry 5 --retry-all-errors "$API_URL/health"
+          curl --fail --retry 5 --retry-all-errors "$API_URL/ready"
+      - name: Deploy Firebase rules, indexes, and integration workers
+        shell: bash
+        run: |
+          npm install --global firebase-tools@15.24.0
+          API_URL="$(gcloud run services describe voltrike-api-v2 --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')"
+          printf 'VOLTRIKE_API_BASE_URL=%s\nSENTRY_DSN=%s\nSENTRY_ENVIRONMENT=%s\nSENTRY_RELEASE=%s\nSENTRY_TRACES_SAMPLE_RATE=0.05\n' "$API_URL" "$SENTRY_FUNCTIONS_DSN" "$SENTRY_ENVIRONMENT" "$GITHUB_SHA" > "functions/.env.$PROJECT_ID"
+          firebase deploy --only firestore,database,storage --project "$PROJECT_ID" --non-interactive
+          firebase deploy --only functions:processGoOutbox,functions:requestBrandedPasswordResetEmail,functions:requestBrandedVerificationEmail,functions:registerAdminWebPushToken,functions:unregisterAdminWebPushToken,functions:runGoMaintenance --project "$PROJECT_ID" --non-interactive

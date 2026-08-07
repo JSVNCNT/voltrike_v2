@@ -25,6 +25,10 @@ type MaintenanceStore interface {
 	ExpireCallsAndEscalateSafety(context.Context, time.Time) (map[string]int, error)
 }
 
+type OperationalCleanupStore interface {
+	CleanupOperationalData(context.Context, time.Time) (map[string]int, error)
+}
+
 func (service *Service) RunMaintenance(ctx context.Context) (map[string]any, error) {
 	store, ok := service.store.(MaintenanceStore)
 	if !ok {
@@ -73,10 +77,20 @@ func (service *Service) RunMaintenance(ctx context.Context) (map[string]any, err
 	if err != nil {
 		return nil, err
 	}
+	cleanup := map[string]int{}
+	if cleanupStore, ok := service.store.(OperationalCleanupStore); ok {
+		cleanup, err = cleanupStore.CleanupOperationalData(ctx, now)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return map[string]any{
 		"bookingSearchesExpired": expired,
 		"bookingsRedispatched":   redispatched,
 		"callsExpired":           integration["callsExpired"],
 		"safetyEscalated":        integration["safetyEscalated"],
+		"staleDispatchEntries":   cleanup["staleDispatchEntries"],
+		"expiredTrackingGrants":  cleanup["expiredTrackingGrants"],
+		"expiredCommandReceipts": cleanup["expiredCommandReceipts"],
 	}, nil
 }

@@ -164,17 +164,22 @@ func (store *Store) GetBooking(ctx context.Context, principal app.Principal, boo
 	data := doc.Data()
 	owner := text(data, "passengerId", "passengerID")
 	driver := text(data, "driverId", "driverID")
-	if owner != principal.UID && driver != principal.UID && !adminPrincipal(principal) {
+	if owner != principal.UID && driver != principal.UID && !store.canAdminAccessToda(ctx, principal, text(data, "todaId", "driverTodaId", "ownerTodaId")) {
 		return app.BookingRecord{}, fmt.Errorf("%w: booking is not visible to this user", app.ErrPrecondition)
 	}
 	return app.BookingRecord{ID: bookingID, Data: data}, nil
 }
 
 func (store *Store) ListAdminBookings(ctx context.Context, principal app.Principal, cursor, search string, pageSize int) (app.AdminPage, error) {
-	if !adminPrincipal(principal) {
-		return app.AdminPage{}, fmt.Errorf("%w: administrator access is required", app.ErrPrecondition)
+	actor, err := store.loadAdmin(ctx, principal)
+	if err != nil {
+		return app.AdminPage{}, err
 	}
-	query := store.firestore.Collection("bookings").OrderBy(firestore.DocumentID, firestore.Asc).Limit(pageSize)
+	query := store.firestore.Collection("bookings").Query
+	if !actor.developer() {
+		query = query.Where("todaId", "==", actor.TodaID)
+	}
+	query = query.OrderBy(firestore.DocumentID, firestore.Asc).Limit(pageSize)
 	if strings.TrimSpace(cursor) != "" {
 		query = query.StartAfter(strings.TrimSpace(cursor))
 	}
@@ -240,10 +245,19 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		}
 		owner := text(data, "passengerId", "passengerID")
 		driver := text(data, "driverId", "driverID")
+		adminAllowed := false
+		if owner != principal.UID && driver != principal.UID && command.Action != "accept" && command.Action != "decline" {
+			adminSnapshot, adminErr := tx.Get(store.firestore.Collection("users").Doc(principal.UID))
+			if adminErr == nil {
+				if actor, actorErr := adminIdentityFromProfile(principal, adminSnapshot.Data()); actorErr == nil {
+					adminAllowed = actor.canAccessToda(text(data, "todaId", "driverTodaId", "ownerTodaId"))
+				}
+			}
+		}
 		var acceptingDriverRef, acceptingOfferRef *firestore.DocumentRef
 		var acceptingUser, acceptingDriver, acceptingVehicle, acceptingToda map[string]any
 		if command.Action == "accept" || command.Action == "decline" {
-			if owner == principal.UID || adminPrincipal(principal) {
+			if owner == principal.UID {
 				return fmt.Errorf("%w: an offered driver is required", app.ErrPrecondition)
 			}
 			acceptingDriverRef = store.firestore.Collection("drivers").Doc(principal.UID)
@@ -277,11 +291,11 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 					return fmt.Errorf("%w: driver vehicle, TODA, or license is not eligible", app.ErrPrecondition)
 				}
 			}
-		} else if owner != principal.UID && driver != principal.UID && !adminPrincipal(principal) {
+		} else if owner != principal.UID && driver != principal.UID && !adminAllowed {
 			return fmt.Errorf("%w: booking is not owned by this user", app.ErrPrecondition)
 		}
 		if command.Action == "arrived" || command.Action == "start" || command.Action == "payment" || command.Action == "complete" || command.Action == "receipt" {
-			if driver != principal.UID && !adminPrincipal(principal) {
+			if driver != principal.UID {
 				return fmt.Errorf("%w: only the assigned driver can perform this action", app.ErrPrecondition)
 			}
 		}
@@ -500,7 +514,8 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 	passengerID := text(result.Data, "passengerId", "passengerID")
 	driverID := text(result.Data, "driverId", "driverID")
 	if command.Action == "accept" && passengerID != "" && driverID != "" {
-		if err := store.realtime.NewRef("driver_tracking_access/"+passengerID+"/"+driverID).Set(ctx, map[string]any{"bookingId": command.BookingID, "grantedAt": time.Now().UnixMilli()}); err != nil {
+		now := time.Now()
+		if err := store.realtime.NewRef("driver_tracking_access/"+passengerID+"/"+driverID).Set(ctx, map[string]any{"bookingId": command.BookingID, "grantedAt": now.UnixMilli(), "expiresAt": now.Add(24 * time.Hour).UnixMilli()}); err != nil {
 			return app.BookingRecord{}, fmt.Errorf("write tracking access projection: %w", err)
 		}
 	}
@@ -810,6 +825,8 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		"receivedAt":      now.UnixMilli(),
 	}
 	cell := dispatchCell(command.Latitude, command.Longitude)
+	var previousCell string
+	_ = store.realtime.NewRef("dispatchDriverCells/" + principal.UID).Get(ctx, &previousCell)
 	cellUpdates := map[string]any{
 		"dispatchCells/" + cell + "/" + principal.UID:                updates,
 		"dispatchDriverCells/" + principal.UID:                       cell,
@@ -817,8 +834,16 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		"driverLocations/" + principal.UID + "/" + command.SessionID: updates,
 		"driver_locations/" + principal.UID:                          updates,
 	}
+	if previousCell != "" && previousCell != cell {
+		cellUpdates["dispatchCells/"+previousCell+"/"+principal.UID] = nil
+	}
 	if !command.Online {
 		cellUpdates["dispatchCells/"+cell+"/"+principal.UID] = nil
+		if previousCell != "" {
+			cellUpdates["dispatchCells/"+previousCell+"/"+principal.UID] = nil
+		}
+		cellUpdates["dispatchDriverCells/"+principal.UID] = nil
+		cellUpdates["driverPresence/"+principal.UID+"/"+command.SessionID] = nil
 	}
 	if err := store.realtime.NewRef("").Update(ctx, cellUpdates); err != nil {
 		return fmt.Errorf("write driver dispatch projection: %w", err)
@@ -846,9 +871,4 @@ func jsonMap(value any) map[string]any {
 		return map[string]any{}
 	}
 	return result
-}
-
-func adminPrincipal(principal app.Principal) bool {
-	role, _ := principal.Claims["role"].(string)
-	return role == "admin" || role == "developer" || role == "developer_admin" || role == "toda_admin" || principal.Claims["admin"] == true
 }

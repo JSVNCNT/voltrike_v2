@@ -9,6 +9,8 @@ require (
 	google.golang.org/grpc v1.82.1
 )
 
+require github.com/getsentry/sentry-go v0.48.0 // indirect
+
 require (
 	cel.dev/expr v0.25.2 // indirect
 	cloud.google.com/go v0.123.0 // indirect

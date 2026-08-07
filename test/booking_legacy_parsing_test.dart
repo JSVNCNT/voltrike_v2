@@ -27,6 +27,10 @@ void main() {
     expect(booking.status, BookingStatus.pending);
     expect(booking.additionalPassengers, 0);
     expect(booking.baggageCount, 0);
+    expect(
+      booking.createdAt,
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+    );
   });
 
   test(
@@ -96,6 +100,19 @@ void main() {
     expect(
       booking.toFirestore()['schemaVersion'],
       Booking.currentSchemaVersion,
+    );
+  });
+
+  test('current schema rejects missing coordinates and timestamps', () {
+    expect(
+      () => Booking.fromMap(
+        bookingId: 'invalid-current-booking',
+        data: const <String, dynamic>{
+          'schemaVersion': Booking.currentSchemaVersion,
+          'status': 'pending',
+        },
+      ),
+      throwsFormatException,
     );
   });
 }

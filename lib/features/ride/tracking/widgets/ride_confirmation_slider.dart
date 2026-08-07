@@ -195,54 +195,59 @@ class _RideConfirmationSliderState extends State<RideConfirmationSlider> {
 
           return SizedBox(
             height: _height,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragStart: _enabled ? (_) => _startDrag() : null,
-              onHorizontalDragUpdate: _enabled
-                  ? (details) => _drag(details, travel)
-                  : null,
-              onHorizontalDragEnd: _enabled ? (_) => _finishDrag() : null,
-              onHorizontalDragCancel: _enabled ? _cancelDrag : null,
-              child: Material(
-                color: baseTrackColor,
-                shape: const StadiumBorder(),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned.fill(
-                      child: FractionallySizedBox(
-                        widthFactor: _progress,
-                        alignment: Alignment.centerLeft,
-                        child: ColoredBox(color: progressColor),
-                      ),
+            child: Material(
+              color: baseTrackColor,
+              shape: const StadiumBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned.fill(
+                    child: FractionallySizedBox(
+                      widthFactor: _progress,
+                      alignment: Alignment.centerLeft,
+                      child: ColoredBox(color: progressColor),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 64),
-                      child: AnimatedOpacity(
-                        opacity: labelOpacity,
-                        duration: const Duration(milliseconds: 90),
-                        child: Text(
-                          statusLabel,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: widget.enabled
-                                ? colorScheme.onPrimary
-                                : colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w700,
-                          ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 64),
+                    child: AnimatedOpacity(
+                      opacity: labelOpacity,
+                      duration: const Duration(milliseconds: 90),
+                      child: Text(
+                        statusLabel,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: widget.enabled
+                              ? colorScheme.onPrimary
+                              : colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
-                    AnimatedPositioned(
-                      duration: _dragging
-                          ? Duration.zero
-                          : const Duration(milliseconds: 240),
-                      curve: Curves.easeOutCubic,
-                      left: thumbLeft,
-                      top: _inset,
+                  ),
+                  AnimatedPositioned(
+                    duration: _dragging
+                        ? Duration.zero
+                        : const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    left: thumbLeft,
+                    top: _inset,
+                    child: GestureDetector(
+                      key: const Key('ride-swipe-thumb'),
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragStart: _enabled
+                          ? (_) => _startDrag()
+                          : null,
+                      onHorizontalDragUpdate: _enabled
+                          ? (details) => _drag(details, travel)
+                          : null,
+                      onHorizontalDragEnd: _enabled
+                          ? (_) => _finishDrag()
+                          : null,
+                      onHorizontalDragCancel: _enabled ? _cancelDrag : null,
                       child: Semantics(
                         label: 'Ride confirmation handle',
                         child: Material(
@@ -289,8 +294,8 @@ class _RideConfirmationSliderState extends State<RideConfirmationSlider> {
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           );

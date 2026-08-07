@@ -115,6 +115,7 @@ dependencies:
   voltrike_core:
     path: rust_builder
   flutter_rust_bridge: 2.12.0
+  sentry_flutter: 9.21.0
 
 dev_dependencies:
   flutter_test:
@@ -124,6 +125,16 @@ dev_dependencies:
   device_info_plus: ^12.4.0
 
   flutter_lints: ^6.0.0
+  sentry_dart_plugin: ^3.4.0
+
+sentry:
+  upload_debug_symbols: true
+  upload_source_maps: true
+  upload_sources: false
+  project: voltrike-flutter
+  org: voltrike
+  wait_for_processing: false
+  log_level: warning
 
 flutter:
   uses-material-design: true

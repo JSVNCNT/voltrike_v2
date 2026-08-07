@@ -143,6 +143,7 @@ async function complete(eventId, status, details = {}) {
       notificationsFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
       notificationsDetails: details,
     },
+    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * 86_400_000),
   }, { merge: true });
 }
 

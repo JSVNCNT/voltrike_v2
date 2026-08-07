@@ -315,7 +315,9 @@ class Driver extends Equatable {
 
       isOnline: map['isOnline'] ?? false,
 
-      isAvailable: map['isAvailable'] ?? true,
+      // Missing availability must fail closed. The backend can explicitly
+      // migrate an approved legacy driver to available after validation.
+      isAvailable: map['isAvailable'] == true,
 
       currentBookingId: map['currentBookingId'] as String?,
 

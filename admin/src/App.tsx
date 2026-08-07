@@ -753,6 +753,35 @@ function Todas({ onMessage }: { onMessage: (value: string) => void }) {
     try { await adminApi.setTodaStatus(toda.id, !toda.isActive); onMessage(`${toda.name} ${toda.isActive ? 'suspended' : 'restored'}.`); reload(); }
     catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update TODA.'); }
   }
+  async function openDocument(todaId: string, reference: string) {
+    if (/^https:\/\//i.test(reference)) {
+      window.open(reference, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const popup = window.open('about:blank', '_blank');
+    if (popup) popup.opener = null;
+    try {
+      const result = await adminApi.todaDocumentUrl(todaId, reference);
+      if (popup) popup.location.replace(result.url);
+      else window.location.assign(result.url);
+    } catch (error) {
+      popup?.close();
+      onMessage(error instanceof Error ? error.message : 'Unable to open the secure document.');
+    }
+  }
+  useEffect(() => {
+    const interceptPrivateDocument = (event: MouseEvent) => {
+      const anchor = (event.target as Element | null)?.closest<HTMLAnchorElement>('.toda-row .document-links a');
+      const reference = anchor?.getAttribute('href');
+      if (!anchor || !reference || /^https:\/\//i.test(reference)) return;
+      const toda = todas.find((item) => Object.values(item.documents || {}).includes(reference));
+      if (!toda) return;
+      event.preventDefault();
+      void openDocument(toda.id, reference);
+    };
+    document.addEventListener('click', interceptPrivateDocument);
+    return () => document.removeEventListener('click', interceptPrivateDocument);
+  }, [todas]);
   const location = (toda: Toda) => [toda.barangayName, toda.cityName, toda.regionName].filter(Boolean).join(', ') || toda.barangayCode;
   const evidence = (toda: Toda) => [
     ['SEC certificate', toda.documents?.secCertificate],

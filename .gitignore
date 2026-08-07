@@ -59,7 +59,10 @@ app.*.map.json
 /admin/.env.*
 !/admin/.env.example
 !/admin/.env.emulator
+/admin/dist/
 **/node_modules/
+/tmp/
+/driver-test-current.png
 
 
 # API key generated from the local build environment.

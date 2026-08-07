@@ -102,15 +102,15 @@ async function uploadAndFinalizeTodaDocument(
     contentType: file.type,
     customMetadata: { ownerUid: uid, targetType: 'toda_document' },
   });
-  const finalized = await call<{ downloadUrl: string }>('finalizeMedia', {
+  const finalized = await call<{ reference: string }>('finalizeMedia', {
     stagingPath: uploaded.ref.fullPath,
     generation: Number(uploaded.metadata.generation),
     targetType: 'toda_document',
     targetId: todaId,
     field,
   });
-  if (!finalized.downloadUrl) throw new Error('Media finalization returned no URL.');
-  return finalized.downloadUrl;
+  if (!finalized.reference) throw new Error('Media finalization returned no reference.');
+  return finalized.reference;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -734,6 +734,8 @@ export const adminApi = {
   reviewTodaRegistration: (todaId: string, status: 'approved' | 'declined') => call<{ updated: boolean }>('adminReviewTodaRegistration', { todaId, status }),
   setTodaStatus: (todaId: string, isActive: boolean) => call<{ updated: boolean }>('adminSetTodaStatus', { todaId, isActive }),
   attachTodaRegistrationDocuments: (todaId: string, documents: Record<string, string>) => call<{ updated: boolean }>('attachTodaRegistrationDocuments', { todaId, documents }),
+  todaDocumentUrl: (todaId: string, reference: string) =>
+    call<{ url: string; expiresAt: string }>('adminGetTodaDocumentUrl', { todaId, reference }),
   updateFare: (fare: FareConfig) => call<{ updated: boolean }>('adminUpdateFare', { fare }),
   setDriverStatus: (uid: string, status: string, license?: { number: string; expiry: string }) =>
     call<{ updated: boolean }>('adminSetDriverStatus', {

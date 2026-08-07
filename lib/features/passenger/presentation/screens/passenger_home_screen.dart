@@ -659,7 +659,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
   Future<void> _bookRide() async {
     if (_bookingCreationInProgress) return;
-    final session = ref.read(bookingSessionProvider);
+    var session = ref.read(bookingSessionProvider);
 
     if (!session.hasRoute ||
         session.pickup == null ||
@@ -669,6 +669,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
     setState(() => _bookingCreationInProgress = true);
     try {
+      final refreshedSession = await _confirmCurrentQuote(session);
+      if (refreshedSession == null || !mounted) return;
+      session = refreshedSession;
+
       final creation = await ref
           .read(bookingControllerProvider.notifier)
           .createBooking(
@@ -781,5 +785,98 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         setState(() => _bookingCreationInProgress = false);
       }
     }
+  }
+
+  /// Refreshes an expired/invalidated quote and obtains explicit consent when
+  /// any user-visible price or coverage fact changed. No booking is created
+  /// until this completes successfully.
+  Future<BookingSession?> _confirmCurrentQuote(BookingSession session) async {
+    final expiresAt = session.goQuoteExpiresAt;
+    final quoteIsUsable =
+        session.goQuoteToken.trim().isNotEmpty &&
+        expiresAt != null &&
+        expiresAt.isAfter(DateTime.now().add(const Duration(seconds: 15)));
+    if (quoteIsUsable) return session;
+
+    final quote = await BookingQuoteService.instance.tryBookingQuote(
+      pickup: session.pickup!,
+      destination: session.destination!,
+      additionalPassengers: session.additionalPassengers,
+      baggageCount: session.baggageCount,
+    );
+    if (quote == null || quote.quoteToken.trim().isEmpty) {
+      throw const GoQuoteException(
+        'The fare could not be confirmed. Check your connection and retry.',
+      );
+    }
+
+    double component(String key) {
+      final value = quote.fareBreakdown[key];
+      return value is num && value.isFinite ? value.toDouble() : 0;
+    }
+
+    List<LatLng> routePoints = session.routePoints;
+    try {
+      routePoints = PolylineService.decodePolyline(quote.encodedPolyline);
+    } on FormatException {
+      throw const GoQuoteException(
+        'The confirmed route was invalid. Please calculate the trip again.',
+      );
+    }
+    final refreshed = session.copyWith(
+      routePoints: routePoints,
+      routeAdvisory: quote.routePolicy.hasNotice
+          ? quote.routePolicy.passengerMessage
+          : '',
+      routePolicy: quote.routePolicy,
+      distanceMeters: quote.distanceMeters,
+      duration: quote.durationMinutes == null
+          ? quote.estimatedDuration
+          : '${quote.durationMinutes} mins',
+      baseFare: component('baseFare'),
+      distanceFare: component('distanceFare'),
+      additionalPassengerFee: component('additionalPassengerFare'),
+      baggageFee: component('baggageFare'),
+      boundarySurcharge: component('boundarySurcharge'),
+      estimatedFare: quote.estimatedFare,
+      isOutsideToda: quote.isOutsideToda,
+      goQuoteToken: quote.quoteToken,
+      goQuoteExpiresAt: quote.quoteExpiresAt,
+      hasRoute: true,
+    );
+    ref.read(bookingSessionProvider.notifier).update(refreshed);
+
+    final changed =
+        (refreshed.estimatedFare - session.estimatedFare).abs() >= 0.01 ||
+        refreshed.distanceMeters != session.distanceMeters ||
+        refreshed.isOutsideToda != session.isOutsideToda;
+    if (!changed || !mounted) return refreshed;
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.receipt_long_rounded),
+        title: const Text('Fare updated'),
+        content: Text(
+          'The current server-confirmed fare is '
+          '₱${refreshed.estimatedFare.toStringAsFixed(2)} for '
+          '${(refreshed.distanceMeters / 1000).toStringAsFixed(2)} km. '
+          '${refreshed.isOutsideToda ? 'The Outside TODA surcharge is included. ' : ''}'
+          'Do you want to request the ride at this fare?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Review trip'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Request ride'),
+          ),
+        ],
+      ),
+    );
+    return accepted == true ? refreshed : null;
   }
 }
