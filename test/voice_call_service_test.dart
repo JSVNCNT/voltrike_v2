@@ -28,18 +28,24 @@ void main() {
         expect(factoryCalls, 1);
         expect(client.prepareCalls, 1);
         expect(client.connectCalls, 1);
+        expect(client.speakerSelections, <bool>[false]);
         expect(service.isConnected, isTrue);
         expect(service.isMicrophonePublished, isTrue);
         expect(service.isMediaReady, isFalse);
 
         client
           ..hasRemoteParticipantValue = true
+          ..remoteParticipantIsSpeakingValue = true
           ..remoteAudioSubscribedValue = true
           ..emit(VoiceCallRoomEvent.remoteAudioChanged);
 
         expect(service.hasRemoteParticipant, isTrue);
+        expect(service.remoteParticipantIsSpeaking, isTrue);
         expect(service.hasRemoteAudio, isTrue);
         expect(service.isMediaReady, isTrue);
+
+        await service.setSpeakerOn(true);
+        expect(client.speakerSelections, <bool>[false, true]);
 
         await service.disconnect();
         expect(client.disconnectCalls, 1);
@@ -115,6 +121,7 @@ class _FakeVoiceCallRoomClient implements VoiceCallRoomClient {
   bool connectedValue = false;
   VoiceCallReconnectPhase reconnectPhaseValue = VoiceCallReconnectPhase.none;
   bool hasRemoteParticipantValue = false;
+  bool remoteParticipantIsSpeakingValue = false;
   bool microphonePublishedValue = false;
   bool remoteAudioSubscribedValue = false;
   bool remoteAudioSubscriptionFailedValue = false;
@@ -122,6 +129,7 @@ class _FakeVoiceCallRoomClient implements VoiceCallRoomClient {
       VoiceCallConnectionQuality.unknown;
   int prepareCalls = 0;
   int connectCalls = 0;
+  final List<bool> speakerSelections = <bool>[];
   int disconnectCalls = 0;
   int disposeCalls = 0;
 
@@ -136,6 +144,9 @@ class _FakeVoiceCallRoomClient implements VoiceCallRoomClient {
 
   @override
   bool get hasRemoteParticipant => hasRemoteParticipantValue;
+
+  @override
+  bool get remoteParticipantIsSpeaking => remoteParticipantIsSpeakingValue;
 
   @override
   bool get microphonePublished => microphonePublishedValue;
@@ -170,6 +181,11 @@ class _FakeVoiceCallRoomClient implements VoiceCallRoomClient {
 
   @override
   Future<void> setMuted(bool muted) async {}
+
+  @override
+  Future<void> setSpeakerOn(bool speakerOn) async {
+    speakerSelections.add(speakerOn);
+  }
 
   @override
   Future<void> disconnect() async {

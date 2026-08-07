@@ -52,6 +52,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   String? _callId;
   String? _error;
   bool _muted = false;
+  bool _speakerOn = false;
+  bool _nearbyFeedbackGuard = false;
+  bool _mutedBeforeFeedbackGuard = false;
   bool _starting = false;
   bool _joining = false;
   bool _ending = false;
@@ -341,6 +344,36 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     if (mounted) Navigator.pop(context);
   }
 
+  /// Nearby loudspeakers can form a physical feedback loop that no network
+  /// service can remove. This deliberately uses the earpiece and pauses this
+  /// phone's microphone until the rider turns the guard off.
+  Future<void> _setNearbyFeedbackGuard(bool enabled) async {
+    if (!_service.isConnected) return;
+    try {
+      if (enabled) {
+        _mutedBeforeFeedbackGuard = _muted;
+        await _service.setSpeakerOn(false);
+        await _service.setMuted(true);
+      } else {
+        await _service.setMuted(_mutedBeforeFeedbackGuard);
+      }
+      if (mounted) {
+        setState(() {
+          _nearbyFeedbackGuard = enabled;
+          _speakerOn = false;
+          _muted = enabled ? true : _mutedBeforeFeedbackGuard;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'Could not change nearby feedback protection. Please try again.',
+        );
+      }
+    }
+  }
+
   BookingCallStatus get _effectiveStatus =>
       _session?.effectiveStatus() ?? BookingCallStatus.starting;
 
@@ -351,6 +384,12 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         ? session.invitationRemaining()
         : session.callRemaining();
     return (duration.inMilliseconds / 1000).ceil().clamp(0, 120);
+  }
+
+  int get _elapsedSeconds {
+    final session = _session;
+    if (session == null) return 0;
+    return session.callElapsed().inSeconds.clamp(0, 359999);
   }
 
   String get _statusText {
@@ -380,8 +419,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       BookingCallStatus.accepted => 'Connecting call audio...',
       BookingCallStatus.declined => '$name declined the call.',
       BookingCallStatus.expired => 'The call invitation expired.',
-      BookingCallStatus.ended when _timedOut =>
-        'This two-minute call has ended.',
+      BookingCallStatus.ended when _timedOut => 'The call has ended.',
       BookingCallStatus.ended => 'The call has ended.',
     };
   }
@@ -399,9 +437,10 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final secondsRemaining = _secondsRemaining;
-    final minutes = secondsRemaining ~/ 60;
-    final seconds = (secondsRemaining % 60).toString().padLeft(2, '0');
+    final isRinging = _effectiveStatus == BookingCallStatus.ringing;
+    final timerSeconds = isRinging ? _secondsRemaining : _elapsedSeconds;
+    final minutes = timerSeconds ~/ 60;
+    final seconds = (timerSeconds % 60).toString().padLeft(2, '0');
     final terminal = _effectiveStatus.isTerminal;
     final showTimer =
         !terminal &&
@@ -518,12 +557,23 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                       ),
                                 ),
                               ),
+                              if (!terminal &&
+                                  _effectiveStatus ==
+                                      BookingCallStatus.accepted &&
+                                  _service.isMediaReady) ...[
+                                const SizedBox(height: 12),
+                                _CallAudioState(
+                                  remoteSpeaking:
+                                      _service.remoteParticipantIsSpeaking,
+                                  participantName: _participant.name,
+                                ),
+                              ],
                               if (showTimer) ...[
                                 const SizedBox(height: 10),
                                 Text(
-                                  _effectiveStatus == BookingCallStatus.ringing
+                                  isRinging
                                       ? 'Invitation expires in 0:$seconds'
-                                      : 'Call ends in $minutes:$seconds',
+                                      : '$minutes:$seconds',
                                   style: Theme.of(context).textTheme.bodyMedium
                                       ?.copyWith(color: Colors.white60),
                                 ),
@@ -566,6 +616,32 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                               ],
                             ],
                           ),
+                          if (!terminal &&
+                              _effectiveStatus == BookingCallStatus.accepted &&
+                              _service.isConnected) ...[
+                            const SizedBox(height: 22),
+                            TextButton.icon(
+                              onPressed: () => unawaited(
+                                _setNearbyFeedbackGuard(!_nearbyFeedbackGuard),
+                              ),
+                              icon: Icon(
+                                _nearbyFeedbackGuard
+                                    ? Icons.hearing_rounded
+                                    : Icons.volume_off_rounded,
+                                size: 18,
+                              ),
+                              label: Text(
+                                _nearbyFeedbackGuard
+                                    ? 'Nearby Feedback Guard on — tap to resume mic'
+                                    : 'Nearby phones? Enable Feedback Guard',
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: _nearbyFeedbackGuard
+                                    ? const Color(0xFF9CF3D0)
+                                    : Colors.white70,
+                              ),
+                            ),
+                          ],
                           Padding(
                             padding: const EdgeInsets.only(top: 42),
                             child: Row(
@@ -577,7 +653,10 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                   icon: _muted
                                       ? Icons.mic_off_rounded
                                       : Icons.mic_rounded,
-                                  onPressed: !_service.isConnected || terminal
+                                  onPressed:
+                                      !_service.isConnected ||
+                                          terminal ||
+                                          _nearbyFeedbackGuard
                                       ? null
                                       : () async {
                                           try {
@@ -599,7 +678,45 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                       : Colors.white.withValues(alpha: .14),
                                   foregroundColor: Colors.white,
                                 ),
-                                const SizedBox(width: 36),
+                                const SizedBox(width: 20),
+                                _CallControlButton(
+                                  tooltip: _speakerOn
+                                      ? 'Use earpiece'
+                                      : 'Use speaker',
+                                  label: _speakerOn ? 'Speaker' : 'Earpiece',
+                                  icon: _speakerOn
+                                      ? Icons.volume_up_rounded
+                                      : Icons.hearing_rounded,
+                                  onPressed:
+                                      !_service.isConnected ||
+                                          terminal ||
+                                          _nearbyFeedbackGuard
+                                      ? null
+                                      : () async {
+                                          try {
+                                            await _service.setSpeakerOn(
+                                              !_speakerOn,
+                                            );
+                                            if (mounted) {
+                                              setState(
+                                                () => _speakerOn = !_speakerOn,
+                                              );
+                                            }
+                                          } catch (_) {
+                                            if (mounted) {
+                                              setState(
+                                                () => _error =
+                                                    'Could not change the call audio output. Please try again.',
+                                              );
+                                            }
+                                          }
+                                        },
+                                  backgroundColor: _speakerOn
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Colors.white.withValues(alpha: .14),
+                                  foregroundColor: Colors.white,
+                                ),
+                                const SizedBox(width: 20),
                                 _CallControlButton(
                                   tooltip: terminal ? 'Close' : 'End call',
                                   label: terminal ? 'Close' : 'End call',
@@ -622,6 +739,45 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CallAudioState extends StatelessWidget {
+  const _CallAudioState({
+    required this.remoteSpeaking,
+    required this.participantName,
+  });
+
+  final bool remoteSpeaking;
+  final String participantName;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = remoteSpeaking
+        ? '$participantName is speaking'
+        : 'Audio connected';
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: remoteSpeaking
+            ? const Color(0xFF1A8D79).withValues(alpha: .32)
+            : Colors.white.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            remoteSpeaking ? Icons.graphic_eq_rounded : Icons.volume_up_rounded,
+            color: remoteSpeaking ? const Color(0xFF9CF3D0) : Colors.white70,
+            size: 17,
+          ),
+          const SizedBox(width: 7),
+          Text(label, style: const TextStyle(color: Colors.white70)),
+        ],
       ),
     );
   }

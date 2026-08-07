@@ -77,6 +77,7 @@ void main() {
       expect(session.matches('call_stale1234'), isFalse);
       expect(session.effectiveStatus(endsAt), BookingCallStatus.ended);
       expect(session.callRemaining(endsAt), Duration.zero);
+      expect(session.callElapsed(endsAt), const Duration(minutes: 2));
     });
   });
 }

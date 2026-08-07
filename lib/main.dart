@@ -1,3 +1,8 @@
+// The LiveKit audio-session API is marked experimental upstream. We use its
+// documented communication preset because Android must receive voice-call
+// attributes before WebRTC creates the audio device.
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -7,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:livekit_client/livekit_client.dart';
 
 import 'app/app.dart';
 import 'config/firebase_emulator_config.dart';
@@ -21,6 +27,14 @@ Future<void> main() async {
     () async {
       // Flutter bindings and runApp must use the same zone.
       WidgetsFlutterBinding.ensureInitialized();
+
+      // Configure WebRTC for two-way speech before a call can initialise its
+      // audio device. This gives Android the voice-communication audio
+      // attributes required by its echo-cancellation path, rather than normal
+      // media playback routing.
+      await LiveKitClient.initialize(
+        initialAudioSessionOptions: const AudioSessionOptions.communication(),
+      );
 
       ThemePreferenceStore themePreferenceStore;
       try {

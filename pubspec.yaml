@@ -93,6 +93,9 @@ dependencies:
   flutter_svg: ^2.2.0
   shimmer: ^3.0.0
   livekit_client: ^2.8.0
+  # On-device Krisp noise suppression for open-air e-trike calls. This is
+  # separate from WebRTC AEC, which remains enabled in VoiceCallService.
+  livekit_noise_filter: ^0.2.1
 
   # ===========================================================================
   # Permissions

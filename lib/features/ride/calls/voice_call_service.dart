@@ -1,6 +1,12 @@
+// The LiveKit processing/session APIs are marked experimental upstream. Their
+// documented voice-call configuration is required here to avoid media-mode
+// routing and to request WebRTC software AEC on devices with weak platform AEC.
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 
 import 'package:livekit_client/livekit_client.dart';
+import 'package:livekit_noise_filter/livekit_noise_filter.dart';
 
 enum VoiceCallReconnectPhase { none, resuming, reconnecting }
 
@@ -9,6 +15,7 @@ enum VoiceCallConnectionQuality { unknown, excellent, good, poor, lost }
 enum VoiceCallRoomEvent {
   stateChanged,
   participantChanged,
+  speakingChanged,
   localAudioChanged,
   remoteAudioChanged,
   connectionQualityChanged,
@@ -22,6 +29,7 @@ abstract interface class VoiceCallRoomClient {
   bool get isConnected;
   VoiceCallReconnectPhase get reconnectPhase;
   bool get hasRemoteParticipant;
+  bool get remoteParticipantIsSpeaking;
   bool get microphonePublished;
   bool get remoteAudioSubscribed;
   bool get remoteAudioSubscriptionFailed;
@@ -32,6 +40,7 @@ abstract interface class VoiceCallRoomClient {
   Future<void> connect({required String serverUrl, required String token});
 
   Future<void> setMuted(bool muted);
+  Future<void> setSpeakerOn(bool speakerOn);
   Future<void> disconnect();
   Future<void> dispose();
 }
@@ -71,6 +80,8 @@ class VoiceCallService {
   bool get isReconnecting =>
       _client?.reconnectPhase == VoiceCallReconnectPhase.reconnecting;
   bool get hasRemoteParticipant => _client?.hasRemoteParticipant ?? false;
+  bool get remoteParticipantIsSpeaking =>
+      _client?.remoteParticipantIsSpeaking ?? false;
   bool get isMicrophonePublished => _client?.microphonePublished ?? false;
   bool get hasRemoteAudio => _client?.remoteAudioSubscribed ?? false;
   bool get remoteAudioSubscriptionFailed =>
@@ -140,6 +151,15 @@ class VoiceCallService {
         await _safeCleanup(client);
         throw const VoiceCallConnectionCancelled();
       }
+      // Voice calls should start at the receiver/earpiece. Besides being a
+      // better default for private ride calls, this prevents nearby phones
+      // from feeding their loudspeaker output back into the microphone.
+      try {
+        await client.setSpeakerOn(false).timeout(operationTimeout);
+      } catch (_) {
+        // Audio routing is device dependent. The connected call remains valid
+        // even when a platform cannot switch its output route.
+      }
       onChanged?.call();
     } catch (_) {
       if (!_isCurrent(client, generation)) {
@@ -154,6 +174,13 @@ class VoiceCallService {
     final client = _client;
     if (client == null || !client.isConnected) return;
     await client.setMuted(muted).timeout(operationTimeout);
+    if (identical(client, _client)) onChanged?.call();
+  }
+
+  Future<void> setSpeakerOn(bool speakerOn) async {
+    final client = _client;
+    if (client == null || !client.isConnected) return;
+    await client.setSpeakerOn(speakerOn).timeout(operationTimeout);
     if (identical(client, _client)) onChanged?.call();
   }
 
@@ -225,16 +252,33 @@ class VoiceCallService {
 }
 
 class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
-  _LiveKitVoiceCallRoomClient()
-    : _room = Room(
-        roomOptions: const RoomOptions(
-          defaultAudioCaptureOptions: AudioCaptureOptions(
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          ),
+  _LiveKitVoiceCallRoomClient() {
+    _room = Room(
+      roomOptions: RoomOptions(
+        // This is bridged before LiveKit starts Android's native audio
+        // management, so an incoming or outgoing call cannot briefly begin
+        // on speakerphone and seed an acoustic feedback loop.
+        defaultAudioOutputOptions: AudioOutputOptions(speakerOn: false),
+        defaultAudioCaptureOptions: AudioCaptureOptions(
+          // This runs on the caller's phone before its microphone reaches
+          // the room. Apply it to both roles: passengers may be outdoors,
+          // and e-trike drivers benefit from wind and road-noise removal.
+          // WebRTC AEC remains enabled below for speaker playback echo.
+          processor: _noiseFilter,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          highPassFilter: true,
+          // Ask WebRTC's software voice processor to stay active. Some
+          // Android devices report a platform AEC capability but do not
+          // effectively cancel speaker feedback during short voice calls.
+          echoCancellationMode: AudioProcessingMode.software,
+          noiseSuppressionMode: AudioProcessingMode.software,
+          autoGainControlMode: AudioProcessingMode.software,
+          highPassFilterMode: AudioProcessingMode.software,
         ),
-      ) {
+      ),
+    );
     _listener = _room.createListener()
       ..on<RoomConnectedEvent>((_) {
         _reconnectPhase = VoiceCallReconnectPhase.none;
@@ -262,6 +306,9 @@ class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
       ..on<ParticipantDisconnectedEvent>(
         (_) => _emit(VoiceCallRoomEvent.participantChanged),
       )
+      ..on<ActiveSpeakersChangedEvent>(
+        (_) => _emit(VoiceCallRoomEvent.speakingChanged),
+      )
       ..on<LocalTrackPublishedEvent>(
         (_) => _emit(VoiceCallRoomEvent.localAudioChanged),
       )
@@ -288,7 +335,8 @@ class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
       );
   }
 
-  final Room _room;
+  final LiveKitNoiseFilter _noiseFilter = LiveKitNoiseFilter();
+  late final Room _room;
   final StreamController<VoiceCallRoomEvent> _events =
       StreamController<VoiceCallRoomEvent>.broadcast(sync: true);
   late final EventsListener<RoomEvent> _listener;
@@ -307,6 +355,11 @@ class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
 
   @override
   bool get hasRemoteParticipant => _room.remoteParticipants.isNotEmpty;
+
+  @override
+  bool get remoteParticipantIsSpeaking => _room.remoteParticipants.values.any(
+    (participant) => participant.isSpeaking,
+  );
 
   @override
   bool get microphonePublished =>
@@ -350,8 +403,18 @@ class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
   }
 
   @override
-  Future<void> connect({required String serverUrl, required String token}) {
-    return _room.connect(
+  Future<void> connect({
+    required String serverUrl,
+    required String token,
+  }) async {
+    // Apply the voice-call route before the room starts its audio engine. The
+    // Room option above handles first-connect too; this explicit preference
+    // also restores the safe route if a previous call used loudspeaker.
+    await AudioManager.instance.setAudioSessionManagementMode(
+      AudioSessionManagementMode.automatic,
+    );
+    await AudioManager.instance.setSpeakerOutputPreferred(false);
+    await _room.connect(
       serverUrl,
       token,
       connectOptions: const ConnectOptions(
@@ -369,6 +432,10 @@ class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
     await _room.localParticipant?.setMicrophoneEnabled(!muted);
     _emit(VoiceCallRoomEvent.localAudioChanged);
   }
+
+  @override
+  Future<void> setSpeakerOn(bool speakerOn) =>
+      AudioManager.instance.setSpeakerOutputPreferred(speakerOn);
 
   @override
   Future<void> disconnect() => _room.disconnect();

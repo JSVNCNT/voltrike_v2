@@ -99,6 +99,18 @@ class BookingCallSession {
     return remaining.isNegative ? Duration.zero : remaining;
   }
 
+  /// Elapsed connected-call time for the call UI. The backend still owns
+  /// [endsAt] and ends a call when it reaches its configured duration.
+  Duration callElapsed([DateTime? at]) {
+    final now = at ?? DateTime.now();
+    final end = endsAt;
+    final startedAt =
+        acceptedAt ??
+        (end == null ? createdAt : end.subtract(const Duration(minutes: 2)));
+    final elapsed = now.difference(startedAt);
+    return elapsed.isNegative ? Duration.zero : elapsed;
+  }
+
   bool matches(String expectedCallId) =>
       callId.isNotEmpty && callId == expectedCallId;
 
