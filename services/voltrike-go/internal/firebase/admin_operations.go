@@ -145,6 +145,8 @@ func (store *Store) executeAdminOperation(ctx context.Context, principal app.Pri
 		return store.commissionReport(ctx, actor, command.Payload)
 	case "adminGetMetrics":
 		return store.adminMetrics(ctx, actor)
+	case "adminGetOverviewAnalytics":
+		return store.adminOverviewAnalytics(ctx, actor)
 	case "adminListDrivers":
 		return store.adminListDrivers(ctx, actor, command.Payload)
 	case "adminListRatings":

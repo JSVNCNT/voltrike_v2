@@ -404,31 +404,59 @@ func reportTimestamp(data map[string]any) time.Time {
 }
 
 func (store *Store) adminMetrics(ctx context.Context, actor adminIdentity) (map[string]any, error) {
-	collections := []string{"users", "drivers", "todas", "bookings", "reports", "safetyIncidents", "driverViolations", "zoneRequests"}
-	result := map[string]any{}
-	completedTrips := 0
+	collections := []string{"drivers", "bookings", "reports", "safetyIncidents", "zoneRequests"}
+	result := map[string]any{"drivers": 0, "bookings": 0, "reports": 0, "safetyIncidents": 0, "zones": 0, "trips": 0}
 	for _, name := range collections {
 		documents, err := store.firestore.Collection(name).Limit(2000).Documents(ctx).GetAll()
 		if err != nil {
 			return nil, err
 		}
-		count := 0
 		for _, document := range documents {
-			if actor.canAccessToda(text(document.Data(), "todaId", "ownerTodaId", "driverTodaId")) {
-				count++
-				if name == "bookings" && text(document.Data(), "status") == "completed" {
-					completedTrips++
+			data := document.Data()
+			if !actor.canAccessToda(text(data, "todaId", "ownerTodaId", "driverTodaId")) {
+				continue
+			}
+			switch name {
+			case "drivers":
+				result["drivers"] = integer(result, "drivers") + 1
+			case "bookings":
+				result["bookings"] = integer(result, "bookings") + 1
+				if text(data, "status") == "completed" {
+					result["trips"] = integer(result, "trips") + 1
+				}
+			case "reports":
+				if adminMetricStatusOpen(data, "open") {
+					result["reports"] = integer(result, "reports") + 1
+				}
+			case "safetyIncidents":
+				if adminMetricStatusOpen(data, "open", "reported", "acknowledged", "responding") {
+					result["safetyIncidents"] = integer(result, "safetyIncidents") + 1
+				}
+			case "zoneRequests":
+				if adminMetricStatusOpen(data, "pending") {
+					result["zones"] = integer(result, "zones") + 1
 				}
 			}
 		}
-		result[name] = count
 	}
-	result["activeDrivers"] = result["drivers"]
-	result["trips"] = completedTrips
-	result["zones"] = result["zoneRequests"]
-	result["openReports"] = result["reports"]
-	result["openSafetyIncidents"] = result["safetyIncidents"]
+	result["scope"] = "platform"
+	if !actor.developer() {
+		result["scope"] = actor.TodaID
+	}
 	return result, nil
+}
+
+func adminMetricStatusOpen(data map[string]any, openStatuses ...string) bool {
+	status := strings.ToLower(text(data, "responseStatus", "status"))
+	if status == "" {
+		return true // Legacy records without a terminal status still require review.
+	}
+	for _, openStatus := range openStatuses {
+		if status == openStatus {
+			return true
+		}
+	}
+	return false
 }
 
 func (store *Store) adminLiveDrivers(ctx context.Context, actor adminIdentity) (map[string]any, error) {

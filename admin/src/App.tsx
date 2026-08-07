@@ -4,7 +4,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { adminApi } from './admin-api';
 import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
-import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaCommissionDriverSummary, TodaCommissionReportItem, TodaCommissionReportSummary, TodaRegistration, ZoneRequest } from './types';
+import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, OverviewAnalytics, OverviewAnalyticsDay, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaCommissionDriverSummary, TodaCommissionReportItem, TodaCommissionReportSummary, TodaRegistration, ZoneRequest } from './types';
 import {
   enableAdminWebPush,
   listenForAdminPush,
@@ -92,6 +92,7 @@ function currentWeekRange() {
 }
 const overviewMetricsRefreshMs = 15 * 1000;
 const overviewCommissionRefreshMs = 5 * 60 * 1000;
+const overviewAnalyticsRefreshMs = 15 * 60 * 1000;
 function percentLabel(value: number) {
   return `${new Intl.NumberFormat('en-PH', { maximumFractionDigits: 2 }).format(value || 0)}%`;
 }
@@ -358,12 +359,15 @@ function Overview({ session }: { session: AdminSession }) {
     percent: number;
     summary: TodaCommissionReportSummary;
   } | null>(null);
+  const [analytics, setAnalytics] = useState<OverviewAnalytics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [commissionLoading, setCommissionLoading] = useState(
     session.role === 'toda_admin',
   );
   const [metricsError, setMetricsError] = useState('');
   const [commissionError, setCommissionError] = useState('');
+  const [analyticsError, setAnalyticsError] = useState('');
   useEffect(() => {
     let active = true;
     let inFlight = false;
@@ -480,11 +484,177 @@ function Overview({ session }: { session: AdminSession }) {
       );
     };
   }, [session.role, session.todaId]);
-  const loading = metricsLoading || commissionLoading;
-  const error = [metricsError, commissionError].filter(Boolean).join(' ');
-  return <>{loading && <p className="muted">Loading Firebase overview…</p>}{error && <div className="notice">{error}</div>}<div className="cards"><Metric label="Registered drivers" value={String(stats.drivers)} /><Metric label="All bookings" value={String(stats.bookings)} /><Metric label="Completed rides" value={String(stats.trips)} /><Metric label="Open reports" value={String(stats.reports)} warning /><Metric label="Open safety incidents" value={String(stats.safetyIncidents)} warning /><Metric label="Pending zones" value={String(stats.zones)} />{session.role === 'toda_admin' && <><Metric label="Current commission rate" value={commission ? percentLabel(commission.percent) : '—'} /><Metric label="Commission earned this month" value={commission ? peso(commission.summary.commissionAmount) : '—'} /><Metric label="Commission due this month" value={commission ? peso(commission.summary.commissionDue) : '—'} warning={Boolean(commission?.summary.commissionDue)} /><Metric label="Commission paid this month" value={commission ? peso(commission.summary.commissionSettled) : '—'} /><Metric label="Gross completed fares this month" value={commission ? peso(commission.summary.grossFare) : '—'} /><Metric label="Driver net this month" value={commission ? peso(commission.summary.driverNetEarnings) : '—'} /><Metric label="Completed rides this month" value={commission ? String(commission.summary.completedRides) : '—'} /><Metric label="Disputed settlements this month" value={commission ? String(commission.summary.disputedSettlements) : '—'} warning={Boolean(commission?.summary.disputedSettlements)} /></>}</div><section className="panel"><h2>Operational boundaries</h2><p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures and commission totals are restricted by Firebase to your authenticated TODA. Monthly earnings use each completed ride’s snapshotted commission rate; changing today’s rate never recalculates older rides. Marking commission paid records a separate TODA payout and never changes the passenger cash receipt.'}</p></section></>;
+  useEffect(() => {
+    let active = true;
+    let inFlight = false;
+    let lastAttemptedAt = 0;
+    setAnalyticsLoading(true);
+    const refreshAnalytics = async () => {
+      const now = Date.now();
+      if (!active || inFlight || now - lastAttemptedAt < overviewAnalyticsRefreshMs || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      lastAttemptedAt = now;
+      try {
+        const value = await adminApi.overviewAnalytics();
+        if (!active) return;
+        setAnalytics(value);
+        setAnalyticsError('');
+      } catch (reason) {
+        if (!active) return;
+        setAnalyticsError(reason instanceof Error ? reason.message : 'Unable to load overview analytics.');
+      } finally {
+        inFlight = false;
+        if (active) setAnalyticsLoading(false);
+      }
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshAnalytics();
+    };
+    void refreshAnalytics();
+    const timer = window.setInterval(() => void refreshAnalytics(), overviewAnalyticsRefreshMs);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [session.role, session.todaId]);
+
+  const isTodaAdmin = session.role === 'toda_admin';
+  const loading = metricsLoading || commissionLoading || analyticsLoading;
+  const error = [metricsError, commissionError, analyticsError].filter(Boolean).join(' ');
+  const completionRate = stats.bookings > 0 ? Math.round((stats.trips / stats.bookings) * 100) : 0;
+  const attentionItems = [
+    { label: 'Open reports', value: stats.reports, tone: 'attention' as const },
+    { label: 'Open safety incidents', value: stats.safetyIncidents, tone: 'danger' as const },
+    { label: 'Pending zone requests', value: stats.zones, tone: 'governance' as const },
+    ...(isTodaAdmin ? [{ label: 'Disputed settlements', value: commission?.summary.disputedSettlements || 0, tone: 'attention' as const }] : []),
+  ];
+
+  return <div className="overview-dashboard">
+    <div className="overview-intro">
+      <div>
+        <h2>{isTodaAdmin ? 'TODA operating snapshot' : 'Platform operating snapshot'}</h2>
+        <p className="muted">Live totals refresh every 15 seconds. Trend charts use real Firestore records for the latest 14 Manila calendar days.</p>
+      </div>
+      {analytics?.generatedAt && <span className="last-updated">Charts updated {new Date(analytics.generatedAt).toLocaleTimeString('en-PH')}</span>}
+    </div>
+    {loading && <p className="muted" role="status">Refreshing overview data…</p>}
+    {error && <div className="notice">{error}</div>}
+    {analytics?.truncated && <div className="notice">The 14-day chart reached its safe record limit. Values shown are real but partial; shorten the analytics window before operational use at this volume.</div>}
+
+    <div className="cards overview-hero">
+      {isTodaAdmin
+        ? <>
+          <Metric tone="operations" label="Completed rides this month" value={commission ? String(commission.summary.completedRides) : '—'} hint="Settled completed rides" />
+          <Metric tone="finance" label="Gross fares this month" value={commission ? peso(commission.summary.grossFare) : '—'} hint="Passenger cash fares" />
+          <Metric tone={commission?.summary.commissionDue ? 'attention' : 'finance'} label="Commission due" value={commission ? peso(commission.summary.commissionDue) : '—'} warning={Boolean(commission?.summary.commissionDue)} hint="Selected TODA only" />
+          <Metric tone={stats.safetyIncidents ? 'danger' : 'operations'} label="Open safety incidents" value={String(stats.safetyIncidents)} warning={Boolean(stats.safetyIncidents)} hint="Requires operational review" />
+        </>
+        : <>
+          <Metric tone="operations" label="All bookings" value={String(stats.bookings)} hint="Platform scope" />
+          <Metric tone="operations" label="Completed rides" value={String(stats.trips)} hint={`${completionRate}% completion snapshot`} />
+          <Metric tone="governance" label="Registered drivers" value={String(stats.drivers)} hint="All TODAs" />
+          <Metric tone={stats.safetyIncidents ? 'danger' : 'operations'} label="Open safety incidents" value={String(stats.safetyIncidents)} warning={Boolean(stats.safetyIncidents)} hint="Requires operational review" />
+        </>}
+    </div>
+
+    <div className="overview-charts">
+      <DailyBarChart
+        title="14-day ride activity"
+        description="Booking requests are grouped by creation date; completed rides are grouped by settlement time."
+        days={analytics?.days || []}
+        series={[
+          { key: 'bookings', label: 'Booking requests', tone: 'operations' },
+          { key: 'completedRides', label: 'Completed rides', tone: 'governance' },
+        ]}
+        valueFormatter={(value) => String(value)}
+      />
+      {isTodaAdmin && <DailyBarChart
+        title="14-day completed-fare distribution"
+        description="Every bar comes from settled ride snapshots; driver net plus TODA commission equals the completed gross fare."
+        days={analytics?.days || []}
+        series={[
+          { key: 'driverNetEarnings', label: 'Driver net', tone: 'finance' },
+          { key: 'commissionAmount', label: 'TODA commission', tone: 'governance' },
+        ]}
+        valueFormatter={peso}
+      />}
+      <SnapshotBarChart title="Current operational workload" items={attentionItems} />
+    </div>
+
+    <section className="overview-section" aria-labelledby="additional-overview-title">
+      <div className="overview-section-heading">
+        <div><p className="eyebrow">Supporting totals</p><h2 id="additional-overview-title">Additional overview</h2></div>
+      </div>
+      <div className="cards overview-secondary">
+        <Metric tone="governance" label="Registered drivers" value={String(stats.drivers)} />
+        <Metric tone="operations" label="All bookings" value={String(stats.bookings)} />
+        <Metric tone="operations" label="Completed rides" value={String(stats.trips)} hint={`${completionRate}% of all bookings`} />
+        <Metric tone={stats.reports ? 'attention' : 'governance'} label="Open reports" value={String(stats.reports)} warning={Boolean(stats.reports)} />
+        <Metric tone="governance" label="Pending zone requests" value={String(stats.zones)} />
+        {isTodaAdmin && <>
+          <Metric tone="finance" label="Current commission rate" value={commission ? percentLabel(commission.percent) : '—'} />
+          <Metric tone="finance" label="Commission earned this month" value={commission ? peso(commission.summary.commissionAmount) : '—'} />
+          <Metric tone="finance" label="Commission paid this month" value={commission ? peso(commission.summary.commissionSettled) : '—'} />
+          <Metric tone="finance" label="Driver net this month" value={commission ? peso(commission.summary.driverNetEarnings) : '—'} />
+        </>}
+      </div>
+    </section>
+
+    <details className="panel overview-boundaries">
+      <summary>How these figures are scoped</summary>
+      <p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures and commission totals are restricted by Firebase to your authenticated TODA. Monthly earnings use each completed ride’s snapshotted commission rate; changing today’s rate never recalculates older rides. Marking commission paid records a separate TODA payout and never changes the passenger cash receipt.'}</p>
+    </details>
+  </div>;
 }
-function Metric({ label: title, value, warning }: { label: string; value: string; warning?: boolean }) { return <div className="metric"><p>{title}</p><strong className={warning ? 'warning' : ''}>{value}</strong></div>; }
+
+type MetricTone = 'neutral' | 'operations' | 'finance' | 'governance' | 'attention' | 'danger';
+type ChartTone = Exclude<MetricTone, 'neutral' | 'danger'> | 'danger';
+type OverviewNumericKey = Exclude<keyof OverviewAnalyticsDay, 'date'>;
+
+function Metric({ label: title, value, warning, tone = 'neutral', hint }: { label: string; value: string; warning?: boolean; tone?: MetricTone; hint?: string }) {
+  return <article className={`metric metric--${tone}`}><p>{title}</p><strong className={warning ? 'warning' : ''}>{value}</strong>{hint && <small>{hint}</small>}</article>;
+}
+
+function DailyBarChart({ title, description, days, series, valueFormatter }: {
+  title: string;
+  description: string;
+  days: OverviewAnalyticsDay[];
+  series: Array<{ key: OverviewNumericKey; label: string; tone: ChartTone }>;
+  valueFormatter: (value: number) => string;
+}) {
+  const values = days.flatMap((day) => series.map((item) => Number(day[item.key]) || 0));
+  const maximum = Math.max(0, ...values);
+  const hasData = maximum > 0;
+  return <section className="overview-chart">
+    <div className="chart-heading"><div><h3>{title}</h3><p>{description}</p></div></div>
+    <div className="chart-legend">{series.map((item) => <span key={item.key}><i className={`chart-swatch chart-swatch--${item.tone}`} />{item.label}</span>)}</div>
+    {days.length > 0
+      ? <div className="daily-chart-scroll">
+        <div className="daily-chart" role="img" aria-label={`${title}. ${description}`}>
+          {days.map((day) => <div className="daily-chart-column" key={day.date}>
+            <div className="daily-chart-bars" aria-hidden="true">
+              {series.map((item) => {
+                const value = Number(day[item.key]) || 0;
+                const height = value > 0 && maximum > 0 ? Math.max(5, (value / maximum) * 100) : 0;
+                return <span className={`daily-chart-bar chart-bar--${item.tone}`} style={{ height: `${height}%` }} key={item.key} title={`${item.label}: ${valueFormatter(value)}`} />;
+              })}
+            </div>
+            <span>{new Date(`${day.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>
+          </div>)}
+        </div>
+      </div>
+      : <p className="muted">Loading real chart data…</p>}
+    {!hasData && days.length > 0 && <p className="chart-empty">No matching activity was recorded during this period.</p>}
+    {days.length > 0 && <details className="chart-data"><summary>View exact chart values</summary><div className="chart-data-scroll"><table><thead><tr><th>Date</th>{series.map((item) => <th key={item.key}>{item.label}</th>)}</tr></thead><tbody>{days.map((day) => <tr key={day.date}><td>{day.date}</td>{series.map((item) => <td key={item.key}>{valueFormatter(Number(day[item.key]) || 0)}</td>)}</tr>)}</tbody></table></div></details>}
+  </section>;
+}
+
+function SnapshotBarChart({ title, items }: { title: string; items: Array<{ label: string; value: number; tone: ChartTone }> }) {
+  const maximum = Math.max(1, ...items.map((item) => item.value));
+  return <section className="overview-chart snapshot-chart"><div className="chart-heading"><div><h3>{title}</h3><p>Current authenticated scope, shown with exact values.</p></div></div><div className="snapshot-bars">{items.map((item) => <div className="snapshot-bar" key={item.label}><div><span>{item.label}</span><b>{item.value}</b></div><div className="snapshot-track" aria-hidden="true"><span className={`chart-bar--${item.tone}`} style={{ width: `${item.value > 0 ? Math.max(4, (item.value / maximum) * 100) : 0}%` }} /></div></div>)}</div></section>;
+}
 
 function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
   const initialRange = useMemo(currentMonthRange, []);
@@ -666,12 +836,12 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
         <p className="muted">Every driver assigned to this TODA is listed, including drivers with no completed ride in the selected date range.</p>
         <div className="table commission-table">
           {driverSummaries.map((driver) => <div className="row commission-row" key={driver.driverId}>
-            <span><b>{driver.driverName}</b><small className="technical-id">Driver: {driver.driverId}</small></span>
-            <span><b>{driver.completedRides}</b><small>completed ride{driver.completedRides === 1 ? '' : 's'}</small></span>
-            <span><b>{peso(driver.grossFare)}</b><small>gross passenger fares</small></span>
-            <span><b>{peso(driver.commissionDue)}</b><small>commission due of {peso(driver.commissionAmount)}</small></span>
-            <span><b>{peso(driver.driverNetEarnings)}</b><small>driver net earnings</small></span>
-            <span className={driver.commissionDue > 0 ? 'warning' : 'ok'}><b>{driver.commissionDue > 0 ? 'Due' : 'Settled'}</b><small>{peso(driver.commissionSettled)} paid</small><button type="button" onClick={() => void settleDriverCommission(driver)} disabled={driver.commissionDue <= 0 || settlingDriverId !== null}>{settlingDriverId === driver.driverId ? 'Settling…' : driver.commissionDue > 0 ? 'Mark commission settled' : 'Commission settled'}</button></span>
+            <span data-label="Driver"><b>{driver.driverName}</b><small className="technical-id">Driver: {driver.driverId}</small></span>
+            <span data-label="Completed rides"><b>{driver.completedRides}</b><small>completed ride{driver.completedRides === 1 ? '' : 's'}</small></span>
+            <span data-label="Gross fares"><b>{peso(driver.grossFare)}</b><small>gross passenger fares</small></span>
+            <span data-label="Commission"><b>{peso(driver.commissionDue)}</b><small>commission due of {peso(driver.commissionAmount)}</small></span>
+            <span data-label="Driver net"><b>{peso(driver.driverNetEarnings)}</b><small>driver net earnings</small></span>
+            <span data-label="Settlement" className={driver.commissionDue > 0 ? 'warning' : 'ok'}><b>{driver.commissionDue > 0 ? 'Due' : 'Settled'}</b><small>{peso(driver.commissionSettled)} paid</small><button type="button" onClick={() => void settleDriverCommission(driver)} disabled={driver.commissionDue <= 0 || settlingDriverId !== null}>{settlingDriverId === driver.driverId ? 'Settling…' : driver.commissionDue > 0 ? 'Mark commission settled' : 'Commission settled'}</button></span>
           </div>)}
           {!reportLoading && driverSummaries.length === 0 && <p className="muted">No registered drivers are available for this TODA scope.</p>}
         </div>
@@ -681,11 +851,11 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
           const disputed = item.adjustmentStatus === 'disputed'
             || item.settlementStatus === 'disputed';
           return <div className="row commission-row" key={item.bookingId}>
-            <span><b>{item.completedAt ? new Date(item.completedAt).toLocaleString('en-PH') : 'Completion time unavailable'}</b><small className="technical-id">Booking: {item.bookingId}</small>{item.receiptNumber && <small>Receipt: {item.receiptNumber}</small>}</span>
-            <span><b>{item.driverName || 'Driver name unavailable'}</b><small className="technical-id">Driver: {item.driverId}</small></span>
-            <span><b>{peso(item.grossFare)} gross</b><small>{percentLabel(item.commissionPercent)} captured rate</small></span>
-            <span><b>{peso(item.commissionAmount)} TODA</b><small>{item.commissionSettlementStatus === 'settled' ? 'Commission paid' : 'Commission due'} · {peso(item.driverNetEarnings)} driver net</small></span>
-            <span className={disputed ? 'warning' : item.settlementStatus === 'settled' ? 'ok' : ''}><b>{statusLabel(item.settlementStatus)}</b>{item.adjustmentStatus && <small>Adjustment: {statusLabel(item.adjustmentStatus)}</small>}{item.disputeReason && <small>{item.disputeReason}</small>}</span>
+            <span data-label="Completed"><b>{item.completedAt ? new Date(item.completedAt).toLocaleString('en-PH') : 'Completion time unavailable'}</b><small className="technical-id">Booking: {item.bookingId}</small>{item.receiptNumber && <small>Receipt: {item.receiptNumber}</small>}</span>
+            <span data-label="Driver"><b>{item.driverName || 'Driver name unavailable'}</b><small className="technical-id">Driver: {item.driverId}</small></span>
+            <span data-label="Gross fare"><b>{peso(item.grossFare)} gross</b><small>{percentLabel(item.commissionPercent)} captured rate</small></span>
+            <span data-label="Distribution"><b>{peso(item.commissionAmount)} TODA</b><small>{item.commissionSettlementStatus === 'settled' ? 'Commission paid' : 'Commission due'} · {peso(item.driverNetEarnings)} driver net</small></span>
+            <span data-label="Settlement" className={disputed ? 'warning' : item.settlementStatus === 'settled' ? 'ok' : ''}><b>{statusLabel(item.settlementStatus)}</b>{item.adjustmentStatus && <small>Adjustment: {statusLabel(item.adjustmentStatus)}</small>}{item.disputeReason && <small>{item.disputeReason}</small>}</span>
           </div>;
         })}
         {reportLoading && items.length === 0 && <p className="muted">Loading completed-ride commissions…</p>}
@@ -790,7 +960,7 @@ function Todas({ onMessage }: { onMessage: (value: string) => void }) {
     ['Barangay clearance', toda.documents?.barangayClearance],
     ["President's license", toda.documents?.presidentLicense],
   ].filter((entry): entry is [string, string] => Boolean(entry[1]));
-  return <section className="panel wide"><h2>TODA applications and registrations</h2><p className="muted">Review the organization details, legal identifiers, verified administrator email, and secure evidence before approving a TODA administrator.</p><div className="table">{todas.map((toda) => <div className="row toda-row" key={toda.id}><span><b>{toda.name}</b><small>{location(toda)}</small><small>President: {toda.registration?.presidentName || 'Not supplied'} · License: {toda.registration?.presidentLicenseNumber || 'Not supplied'} · TIN: {toda.registration?.presidentTin || 'Not supplied'}</small><small>SEC: {toda.registration?.secCertificateNumber || 'Not supplied'} · SP: {toda.registration?.spResolutionNumber || 'Not supplied'} · BPLO: {toda.registration?.mayorsPermitNumber || 'Not supplied'} · Barangay: {toda.registration?.barangayClearanceNumber || 'Not supplied'}</small><details><summary>Legal evidence ({evidence(toda).length}/5)</summary><div className="document-links">{evidence(toda).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details></span><span className={toda.status === 'pending' ? 'warning' : toda.isActive ? 'ok' : ''}>{toda.status || (toda.isActive ? 'approved' : 'suspended')}</span><span className="actions">{toda.status === 'pending' && <><button className="primary" onClick={() => review(toda, 'approved')}>Approve</button><button onClick={() => review(toda, 'declined')}>Decline</button></>}{toda.status !== 'pending' && <button onClick={() => toggleToda(toda)}>{toda.isActive ? 'Suspend' : 'Restore'}</button>}</span></div>)}{todas.length === 0 && <p className="muted">No TODA applications yet.</p>}</div></section>;
+  return <section className="panel wide"><h2>TODA applications and registrations</h2><p className="muted">Review the organization details, legal identifiers, verified administrator email, and secure evidence before approving a TODA administrator.</p><div className="table">{todas.map((toda) => <div className="row toda-row" key={toda.id}><span data-label="Organization"><b>{toda.name}</b><small>{location(toda)}</small><small>President: {toda.registration?.presidentName || 'Not supplied'} · License: {toda.registration?.presidentLicenseNumber || 'Not supplied'} · TIN: {toda.registration?.presidentTin || 'Not supplied'}</small><small>SEC: {toda.registration?.secCertificateNumber || 'Not supplied'} · SP: {toda.registration?.spResolutionNumber || 'Not supplied'} · BPLO: {toda.registration?.mayorsPermitNumber || 'Not supplied'} · Barangay: {toda.registration?.barangayClearanceNumber || 'Not supplied'}</small><details><summary>Legal evidence ({evidence(toda).length}/5)</summary><div className="document-links">{evidence(toda).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details></span><span data-label="Status" className={`status-cell ${toda.status === 'pending' ? 'warning' : toda.isActive ? 'ok' : ''}`}>{toda.status || (toda.isActive ? 'approved' : 'suspended')}</span><span data-label="Actions" className="actions">{toda.status === 'pending' && <><button className="primary" onClick={() => review(toda, 'approved')}>Approve</button><button className="danger-outline" onClick={() => review(toda, 'declined')}>Decline</button></>}{toda.status !== 'pending' && <button className={toda.isActive ? 'danger-outline' : 'primary'} onClick={() => toggleToda(toda)}>{toda.isActive ? 'Suspend' : 'Restore'}</button>}</span></div>)}{todas.length === 0 && <p className="muted">No TODA applications yet.</p>}</div></section>;
 }
 
 function Fares({ onMessage }: { onMessage: (value: string) => void }) {
@@ -846,7 +1016,7 @@ function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
     <h2>{todaId ? 'Driver applications assigned to this TODA' : 'All driver registrations'}</h2>
     <p className="muted">{todaId ? 'Review the camera-captured identity and vehicle documents. Record the licence details shown in the images before approval.' : 'Developer oversight can suspend active accounts; routine approval and licence verification remain with each TODA.'}</p>
     <div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}>
-      <span className="applicant">
+      <span className="applicant" data-label="Applicant and vehicle">
         <b>{fullName(driver)}</b>
         <small>{driver.applicant?.email || 'Email unavailable'} · {driver.applicant?.phoneNumber || 'Phone unavailable'}</small>
         <small>Date of birth: {driver.applicant?.dateOfBirth ? new Date(driver.applicant.dateOfBirth).toLocaleDateString('en-PH') : 'Not supplied (legacy registration)'}</small>
@@ -855,12 +1025,12 @@ function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
         <details><summary>Registration documents ({documentLinks(driver).length})</summary><div className="document-links">{documentLinks(driver).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details>
         <small className="technical-id">Firebase UID: {driver.uid}</small>
       </span>
-      <span className={driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}>{driver.driverStatus}</span>
-      <span>{todaId && <>★ {driver.rating || 0} from {driver.ratingCount || 0} ratings<br /></>}<small>{driver.completedTrips || 0} trips · {peso(driver.totalEarnings || 0)} net earnings</small></span>
-      <span className="actions">
-        {todaId && driver.vehicle && <button onClick={() => verifyVehicle(driver, !driver.vehicle?.isVerified)}>{driver.vehicle.isVerified ? 'Remove vehicle verification' : 'Verify vehicle'}</button>}
+      <span data-label="Status" className={`status-cell ${driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}`}>{driver.driverStatus}</span>
+      <span data-label="Performance">{todaId && <>★ {driver.rating || 0} from {driver.ratingCount || 0} ratings<br /></>}<small>{driver.completedTrips || 0} trips · {peso(driver.totalEarnings || 0)} net earnings</small></span>
+      <span data-label="Actions" className="actions">
+        {todaId && driver.vehicle && <button className={driver.vehicle.isVerified ? 'warning-button' : ''} onClick={() => verifyVehicle(driver, !driver.vehicle?.isVerified)}>{driver.vehicle.isVerified ? 'Remove vehicle verification' : 'Verify vehicle'}</button>}
         {todaId && (driver.driverStatus === 'pending' || driver.driverStatus === 'suspended') && <DriverReviewActions driver={driver} onApprove={(license) => update(driver, 'approved', license)} onReject={driver.driverStatus === 'pending' ? () => update(driver, 'rejected') : undefined} />}
-        {driver.driverStatus === 'approved' && <button onClick={() => update(driver, 'suspended')}>Suspend</button>}
+        {driver.driverStatus === 'approved' && <button className="danger-outline" onClick={() => update(driver, 'suspended')}>Suspend</button>}
       </span>
     </div>)}{drivers.length === 0 && <p className="muted">No driver applications are available in this scope.</p>}</div>
   </section>;
@@ -881,7 +1051,7 @@ function DriverReviewActions({ driver, onApprove, onReject }: {
       <label>Licence expiry<input type="date" min={new Date().toISOString().slice(0, 10)} value={expiry} onChange={(event) => setExpiry(event.target.value)} /></label>
     </div>}
     <button className="primary" onClick={() => onApprove(existingLicenseIsCurrent ? undefined : { number: number.trim(), expiry })} disabled={!driver.vehicle?.isVerified || (!existingLicenseIsCurrent && !suppliedLicenseIsComplete)}>{driver.driverStatus === 'suspended' ? 'Restore' : 'Approve'}</button>
-    {onReject && <button onClick={onReject}>Reject</button>}
+    {onReject && <button className="danger-outline" onClick={onReject}>Reject</button>}
   </>;
 }
 
@@ -922,7 +1092,7 @@ function RatingsPage() {
     const timer = window.setInterval(() => void reload(), 15_000);
     return () => window.clearInterval(timer);
   }, [reload]);
-  return <section className="panel wide"><h2>Passenger ratings</h2><p className="muted">Ratings are immutable trip records. TODA administrators see only feedback for drivers assigned to their TODA. This page refreshes every 15 seconds while open.</p>{error && <div className="notice">{error}</div>}{loading && <p>Loading ratings…</p>}<div className="table">{ratings.map((rating) => <div className="row report" key={rating.id}><span><b>{rating.rating} ★ for {rating.driverName || 'Driver'}</b><small>Passenger: {rating.passengerName || 'Passenger'}</small><small>TODA: {rating.todaName || rating.todaId || 'Not recorded'}</small></span><span>{rating.comment || 'Passenger left a star rating without a comment.'}</span><span><small>{rating.createdAt ? new Date(rating.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><br /><small className="technical-id">Booking: {rating.bookingId}</small></span></div>)}{!loading && ratings.length === 0 && <p className="muted">No ratings are available in this scope.</p>}{nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older ratings'}</button>}</div></section>;
+  return <section className="panel wide"><h2>Passenger ratings</h2><p className="muted">Ratings are immutable trip records. TODA administrators see only feedback for drivers assigned to their TODA. This page refreshes every 15 seconds while open.</p>{error && <div className="notice">{error}</div>}{loading && <p>Loading ratings…</p>}<div className="table">{ratings.map((rating) => <div className="row report rating-row" key={rating.id}><span data-label="Rating"><b>{rating.rating} ★ for {rating.driverName || 'Driver'}</b><small>Passenger: {rating.passengerName || 'Passenger'}</small><small>TODA: {rating.todaName || rating.todaId || 'Not recorded'}</small></span><span data-label="Passenger comment">{rating.comment || 'Passenger left a star rating without a comment.'}</span><span data-label="Recorded"><small>{rating.createdAt ? new Date(rating.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><br /><small className="technical-id">Booking: {rating.bookingId}</small></span></div>)}{!loading && ratings.length === 0 && <p className="muted">No ratings are available in this scope.</p>}{nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older ratings'}</button>}</div></section>;
 }
 
 function ReportsPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {
@@ -969,7 +1139,7 @@ function ReportsPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
   }
   const name = (person: Report['reporter'] | undefined, fallback: string) => [person?.firstName, person?.middleName, person?.lastName].filter(Boolean).join(' ') || fallback;
   const contact = (person: Report['reporter'] | undefined) => [person?.email, person?.phoneNumber].filter(Boolean).join(' · ');
-  return <section className="panel wide"><h2>{todaId ? 'Driver reports for this TODA' : 'All passenger and driver reports'}</h2><p className="muted">{todaId ? 'TODA administrators receive reports about their drivers. Passenger-account reports are evaluated by the System Admin.' : 'System Admin receives every report. Reports about drivers are also synchronized to the driver’s TODA.'}</p><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reports" aria-label="Search reports" /><div className="table">{reports.map((report) => <div className="row report report-card" key={report.id}><span><b>{report.category}</b><small>Booking {report.bookingId}</small><small>{report.reportedRole ? `Reported ${report.reportedRole}` : 'Legacy report'}</small><small className={report.status === 'open' ? 'warning' : 'ok'}>{report.status}</small></span><span className="report-parties"><b>Reported by: {name(report.reporter, 'Passenger identity restricted')}</b><small>{contact(report.reporter) || (report.reporter ? 'No contact details' : 'Restricted outside TODA scope')}</small><b>Reported account: {name(report.reportedUser, 'Driver or passenger identity restricted')}</b><small>{contact(report.reportedUser) || (report.reportedUser ? 'No contact details' : 'Restricted outside TODA scope')}</small></span><span>{report.details || 'No details provided.'}{report.action && <small>Action: {report.action}</small>}</span>{report.status === 'open' && <span className="actions"><button onClick={() => action(report.id, 'resolved')}>Resolve</button><button onClick={() => action(report.id, 'dismissed')}>Dismiss</button>{!todaId && report.reportedUser?.isActive !== false && <button onClick={() => suspendReportedUser(report)}>Suspend reported account</button>}</span>}{!todaId && report.reportedUser?.isActive === false && <span className="actions"><button className="primary" onClick={() => restoreReportedUser(report)}>Restore after evaluation</button></span>}</div>)}{reports.length === 0 && <p className="muted">No reports are available in this scope.</p>}{nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older reports'}</button>}</div></section>;
+  return <section className="panel wide"><h2>{todaId ? 'Driver reports for this TODA' : 'All passenger and driver reports'}</h2><p className="muted">{todaId ? 'TODA administrators receive reports about their drivers. Passenger-account reports are evaluated by the System Admin.' : 'System Admin receives every report. Reports about drivers are also synchronized to the driver’s TODA.'}</p><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reports" aria-label="Search reports" /><div className="table">{reports.map((report) => <div className="row report report-card" key={report.id}><span data-label="Report"><b>{report.category}</b><small>Booking {report.bookingId}</small><small>{report.reportedRole ? `Reported ${report.reportedRole}` : 'Legacy report'}</small><small className={`status-cell ${report.status === 'open' ? 'warning' : 'ok'}`}>{report.status}</small></span><span data-label="People" className="report-parties"><b>Reported by: {name(report.reporter, 'Passenger identity restricted')}</b><small>{contact(report.reporter) || (report.reporter ? 'No contact details' : 'Restricted outside TODA scope')}</small><b>Reported account: {name(report.reportedUser, 'Driver or passenger identity restricted')}</b><small>{contact(report.reportedUser) || (report.reportedUser ? 'No contact details' : 'Restricted outside TODA scope')}</small></span><span data-label="Details">{report.details || 'No details provided.'}{report.action && <small>Action: {report.action}</small>}</span>{report.status === 'open' && <span data-label="Actions" className="actions"><button className="primary" onClick={() => action(report.id, 'resolved')}>Resolve</button><button onClick={() => action(report.id, 'dismissed')}>Dismiss</button>{!todaId && report.reportedUser?.isActive !== false && <button className="danger-outline" onClick={() => suspendReportedUser(report)}>Suspend reported account</button>}</span>}{!todaId && report.reportedUser?.isActive === false && <span data-label="Actions" className="actions"><button className="primary" onClick={() => restoreReportedUser(report)}>Restore after evaluation</button></span>}</div>)}{reports.length === 0 && <p className="muted">No reports are available in this scope.</p>}{nextCursor && <button onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older reports'}</button>}</div></section>;
 }
 
 function OperationsPage({ session }: { session: AdminSession }) {
@@ -1009,10 +1179,10 @@ function OperationsPage({ session }: { session: AdminSession }) {
     {error && <div className="notice">{error}</div>}
     <div className="table">
       {items.map((booking) => <div className="row operation" key={booking.bookingId}>
-        <span><b>{booking.passengerName}</b><small>{booking.pickupName || booking.pickupAddress} → {booking.destinationName || booking.destinationAddress}</small><small className="muted">{booking.pickupName && booking.pickupAddress !== booking.pickupName ? booking.pickupAddress : ''}{booking.pickupName && booking.destinationName ? ' → ' : ''}{booking.destinationName && booking.destinationAddress !== booking.destinationName ? booking.destinationAddress : ''}</small><small className="technical-id">Booking: {booking.bookingId}</small></span>
-        <span><b>{booking.driverName || 'Searching for driver'}</b><small>{booking.plateNumber || 'No plate assigned'} · {booking.todaName || 'No TODA assigned'}</small></span>
-        <span className={booking.status === 'cancelled' ? 'warning' : booking.status === 'completed' ? 'ok' : ''}>{statusLabel(booking.status)}{booking.cancellationCode && <small>{statusLabel(booking.cancellationCode)}</small>}</span>
-        <span><b>{peso(booking.amountDue)}</b><small>{booking.paymentMethod} · {statusLabel(booking.settlementStatus)}</small><small>Adjustment: {statusLabel(booking.adjustmentStatus)}</small>{booking.receiptNumber && <small>Receipt: {booking.receiptNumber}</small>}{booking.adjustmentStatus === 'disputed' && <button onClick={() => resolveDispute(booking)}>Resolve dispute</button>}</span>
+        <span data-label="Passenger and route"><b>{booking.passengerName}</b><small>{booking.pickupName || booking.pickupAddress} → {booking.destinationName || booking.destinationAddress}</small><small className="muted">{booking.pickupName && booking.pickupAddress !== booking.pickupName ? booking.pickupAddress : ''}{booking.pickupName && booking.destinationName ? ' → ' : ''}{booking.destinationName && booking.destinationAddress !== booking.destinationName ? booking.destinationAddress : ''}</small><small className="technical-id">Booking: {booking.bookingId}</small></span>
+        <span data-label="Driver"><b>{booking.driverName || 'Searching for driver'}</b><small>{booking.plateNumber || 'No plate assigned'} · {booking.todaName || 'No TODA assigned'}</small></span>
+        <span data-label="Ride status" className={`status-cell ${booking.status === 'cancelled' ? 'warning' : booking.status === 'completed' ? 'ok' : ''}`}>{statusLabel(booking.status)}{booking.cancellationCode && <small>{statusLabel(booking.cancellationCode)}</small>}</span>
+        <span data-label="Fare and settlement"><b>{peso(booking.amountDue)}</b><small>{booking.paymentMethod} · {statusLabel(booking.settlementStatus)}</small><small>Adjustment: {statusLabel(booking.adjustmentStatus)}</small>{booking.receiptNumber && <small>Receipt: {booking.receiptNumber}</small>}{booking.adjustmentStatus === 'disputed' && <button onClick={() => resolveDispute(booking)}>Resolve dispute</button>}</span>
       </div>)}
       {loading && items.length === 0 && <p className="muted">Loading Firebase bookings…</p>}
       {!loading && !error && items.length === 0 && <p className="muted">No ride operations match this search.</p>}
@@ -1159,17 +1329,17 @@ function SafetyIncidentsPage({ session }: { session: AdminSession }) {
       </Suspense>
     </section>
     <section className="panel wide">
-      <div className="table">{incidents.map((incident) => <div className="row report" key={incident.id}>
-        <span><b>{incident.category.toUpperCase()} · {statusLabel(incident.responseStatus || incident.status)}</b><small>{incident.createdAt ? new Date(incident.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><small>Booking {incident.bookingId}</small><small>Alert: {statusLabel(incident.deliveryStatus || 'legacy record')} · escalation level {incident.escalationLevel || 0}</small></span>
-        <span><b>Reported by {incident.reporterRole}</b><small>Passenger: {incident.passengerName || incident.passengerId}</small><small>Driver: {incident.driverName || incident.driverId || 'Not assigned'}</small><small>TODA: {incident.todaName || incident.todaId || 'Not assigned'}</small></span>
-        <span className="warning">{statusLabel(incident.bookingStatus)}<small>{incident.pickupAddress || 'Pickup unavailable'} → {incident.destinationAddress || 'Destination unavailable'}</small><small>{incident.locationSource === 'live_driver_location' ? 'Live driver location' : 'SOS location snapshot'}{incident.driverLocation?.timestamp ? ` · ${new Date(incident.driverLocation.timestamp).toLocaleTimeString('en-PH')}` : ''}</small>{incident.lastResponseNote && <small>Latest note: {incident.lastResponseNote}</small>}{incident.resolutionNote && <small>Resolution: {incident.resolutionNote}</small>}</span>
-        <span className="actions">
+      <div className="table">{incidents.map((incident) => <div className="row report safety-incident-row" key={incident.id}>
+        <span data-label="Incident"><b>{incident.category.toUpperCase()} · {statusLabel(incident.responseStatus || incident.status)}</b><small>{incident.createdAt ? new Date(incident.createdAt).toLocaleString('en-PH') : 'Date unavailable'}</small><small>Booking {incident.bookingId}</small><small>Alert: {statusLabel(incident.deliveryStatus || 'legacy record')} · escalation level {incident.escalationLevel || 0}</small></span>
+        <span data-label="People"><b>Reported by {incident.reporterRole}</b><small>Passenger: {incident.passengerName || incident.passengerId}</small><small>Driver: {incident.driverName || incident.driverId || 'Not assigned'}</small><small>TODA: {incident.todaName || incident.todaId || 'Not assigned'}</small></span>
+        <span data-label="Ride and location" className="warning">{statusLabel(incident.bookingStatus)}<small>{incident.pickupAddress || 'Pickup unavailable'} → {incident.destinationAddress || 'Destination unavailable'}</small><small>{incident.locationSource === 'live_driver_location' ? 'Live driver location' : 'SOS location snapshot'}{incident.driverLocation?.timestamp ? ` · ${new Date(incident.driverLocation.timestamp).toLocaleTimeString('en-PH')}` : ''}</small>{incident.lastResponseNote && <small>Latest note: {incident.lastResponseNote}</small>}{incident.resolutionNote && <small>Resolution: {incident.resolutionNote}</small>}</span>
+        <span data-label="Response actions" className="actions">
           {incident.driverLocation && <button onClick={() => setSelectedId(incident.id)}>View location</button>}
           <button onClick={contact911}>Call 911</button>
           {!['accidental', 'resolved', 'reporter_safe'].includes(incident.status) && (incident.responseStatus || 'reported') === 'reported' && <button className="primary" onClick={() => updateResponse(incident, 'acknowledge')}>Acknowledge SOS</button>}
           {!['accidental', 'resolved', 'reporter_safe'].includes(incident.status) && !['responding', 'resolved'].includes(incident.responseStatus || 'reported') && <button onClick={() => updateResponse(incident, 'responding')}>Start response</button>}
           {!['accidental', 'resolved', 'reporter_safe'].includes(incident.status) && incident.responseStatus !== 'resolved' && <button onClick={() => updateResponse(incident, 'resolve')}>Resolve with note</button>}
-          {incident.status === 'open' && incident.bookingStatus !== 'cancelled' && !incident.bookingCancelledForSafety && <button onClick={() => cancelAfterTimeout(incident)} disabled={!timeoutReached(incident) || ['passenger_on_board', 'payment_confirmation'].includes(incident.bookingStatus)}>Cancel after 5 min unresponsive</button>}
+          {incident.status === 'open' && incident.bookingStatus !== 'cancelled' && !incident.bookingCancelledForSafety && <button className="danger-outline" onClick={() => cancelAfterTimeout(incident)} disabled={!timeoutReached(incident) || ['passenger_on_board', 'payment_confirmation'].includes(incident.bookingStatus)}>Cancel after 5 min unresponsive</button>}
           {incident.status === 'open' && !timeoutReached(incident) && <small>Five-minute contact window still active.</small>}
         </span>
       </div>)}{loading && <p className="muted">Loading safety incidents…</p>}{!loading && incidents.length === 0 && <p className="muted">No safety incidents in this scope.</p>}</div>
@@ -1324,20 +1494,20 @@ function RouteRestrictionsPage({ onMessage }: { onMessage: (value: string) => vo
               ? 'No-service MultiPolygon'
               : 'Highway group (aligned travel)';
           return <div className="row" key={item.id}>
-            <span>
+            <span data-label="Restriction">
               <b>{item.name}</b>
               <small>{itemType} | {item.geometryType === 'corridor' ? `${itemAreas.length} retained segment${itemAreas.length === 1 ? '' : 's'} | ${item.bufferMeters || 0} m buffer` : `${itemAreas.length} polygon${itemAreas.length === 1 ? '' : 's'}`} | {item.geometryVersion ? `geometry v${item.geometryVersion}` : 'legacy geometry'}</small>
               <small>{geometrySummary(itemAreas)}</small>
             </span>
-            <span>{item.notes || 'No operational guidance supplied'}</span>
-            <span className={item.isActive ? 'warning' : 'ok'}>
+            <span data-label="Guidance">{item.notes || 'No operational guidance supplied'}</span>
+            <span data-label="Status" className={`status-cell ${item.isActive ? 'warning' : 'ok'}`}>
               {item.isActive
                 ? item.type === 'prohibited_highway'
                   ? 'Active in route checks and driver highway warnings'
                   : 'Active in route and live-driver checks'
                 : 'Disabled and retained for audit'}
             </span>
-            <span className="actions"><button onClick={() => toggle(item)}>{item.isActive ? 'Disable' : 'Enable'}</button></span>
+            <span data-label="Actions" className="actions"><button onClick={() => toggle(item)}>{item.isActive ? 'Disable' : 'Enable'}</button></span>
           </div>;
         })}
         {restrictions.length === 0 && <p className="muted">No active or archived route restrictions were found.</p>}
@@ -1487,14 +1657,14 @@ function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage
         {zones.map((zone) => {
           const zoneAreas = zone.areas?.length ? zone.areas : [zone.polygon];
           return <div className="row" key={zone.id}>
-            <span>
+            <span data-label="TODA and request">
               <b>{todaNames.get(zone.todaId) || zone.todaId}</b>
               <small>Request {zone.id} | {zone.geometryVersion ? `geometry v${zone.geometryVersion}` : 'legacy geometry'}</small>
               <small>{geometrySummary(zoneAreas)}</small>
             </span>
-            <span>{zone.notes || 'No route or terminal notes supplied'}</span>
-            <span className={zone.status === 'approved' ? 'ok' : 'warning'}>{zoneStatusLabel(zone.status)}</span>
-            {canEditZone(zone) && <span className="actions">
+            <span data-label="Notes">{zone.notes || 'No route or terminal notes supplied'}</span>
+            <span data-label="Status" className={`status-cell ${zone.status === 'approved' ? 'ok' : 'warning'}`}>{zoneStatusLabel(zone.status)}</span>
+            {canEditZone(zone) && <span data-label="Actions" className="actions">
               <button onClick={() => editZone(zone)}>Edit pending request</button>
               {isDeveloper && <>
                 <button

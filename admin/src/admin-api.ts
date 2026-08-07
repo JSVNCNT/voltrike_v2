@@ -12,6 +12,7 @@ import { ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
 import type {
   AdminMetrics,
+  OverviewAnalytics,
   BookingOperation,
   Driver,
   DriverRatingRecord,
@@ -724,6 +725,7 @@ function callableErrorMessage(name: string, error: unknown): string {
 
 export const adminApi = {
   metrics: () => call<AdminMetrics>('adminGetMetrics', {}),
+  overviewAnalytics: () => call<OverviewAnalytics>('adminGetOverviewAnalytics', {}),
   bootstrap: (code: string) => call<{ role: string }>('bootstrapDeveloperAdmin', { code }),
   requestBrandedVerificationEmail: () =>
     call<{ sent: boolean; alreadyVerified: boolean }>(
