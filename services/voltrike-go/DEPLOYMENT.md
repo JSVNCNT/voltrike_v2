@@ -115,10 +115,13 @@ gcloud secrets add-iam-policy-binding ADMIN_BOOTSTRAP_CODE --member="serviceAcco
 ## 3. Deploy the Go API
 
 The service is intentionally public at the network layer. Every `/api/v2/**`
-request requires a Firebase ID token and, in production, an App Check token.
+request requires a Firebase ID token. This capstone distribution disables App
+Check only so a privately shared debug APK can work on additional phones
+without registering a debug token on every device. Set it back to `true`
+before any public release.
 
 ```powershell
-gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=true,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,LIVEKIT_SERVER_URL=$liveKitServerUrl" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
+gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=false,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,LIVEKIT_SERVER_URL=$liveKitServerUrl" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
 $apiUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
 $apiUrl
 ```
@@ -130,9 +133,11 @@ curl.exe "$apiUrl/health"
 curl.exe "$apiUrl/ready"
 ```
 
-## 4. Configure App Check for `flutter run`
+## 4. Optional App Check debugging
 
-In Firebase Console:
+In Firebase Console. This section is optional for the private capstone APK:
+the deployed Cloud Run service does not require App Check and Firebase product
+enforcement remains disabled, so Quick Shared phones do not need debug tokens.
 
 1. Open **Build/Security → App Check** and register the Android Firebase app.
    A normal `flutter run` automatically uses the Android debug provider, so
@@ -145,9 +150,9 @@ In Firebase Console:
    save its public site key for the Render configuration below.
 5. Under **Authentication → Settings → Authorized domains**, add the Render
    Admin hostname.
-6. Firebase-product enforcement can remain disabled during initial setup. Go
-   still validates App Check on protected V2 requests, and the retained
-   callable integration Functions enforce it as well.
+6. Keep Firebase-product enforcement disabled for this capstone distribution.
+   Go validates Firebase Authentication and role authorization, but does not
+   require an App Check token in this private mode.
 
 If the capstone later runs from an Apple device or simulator, register the
 Apple Firebase app and its debug token in the same App Check screen. Building
@@ -201,28 +206,24 @@ When Firebase prompts for the `VOLTRIKE_API_BASE_URL` parameter, enter the
 printed `$apiUrl`. Firebase Hosting is not deployed; Render remains the only
 Admin frontend host.
 
-## 7. Run the final capstone mobile clients
+## 7. Distribute the final capstone mobile clients
 
-There is no mobile deployment command. In each new PowerShell terminal, load
-the Cloud Run URL and start the chosen device with a normal debug run:
+Build the one private APK that can be Quick Shared to each Android phone:
 
 ```powershell
-$projectId = "voltrike-v2"
-$region = "asia-southeast1"
-$service = "voltrike-api-v2"
-$apiUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
-
-flutter devices
-flutter run -d DEVICE_ID --dart-define=VOLTRIKE_API_BASE_URL=$apiUrl
+flutter build apk --debug --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app
 ```
 
-For passenger and driver phones simultaneously, open two terminals and run the
-last command once per device ID. Register the App Check debug token from each
-device before testing registration or booking. Stopping `flutter run` stops
-only that phone client; Cloud Run, Firebase, Functions, and Render stay online.
+Quick Share `build/app/outputs/flutter-apk/app-debug.apk` to each tester. Each
+phone can register or sign in and use Cloud Run and Firebase without Flutter,
+ADB, or a connection to the development PC. Stopping a local Flutter session
+stops only that local client; Cloud Run, Firebase, Functions, and Render stay
+online.
 
-Do not add `--release`. This capstone deliberately uses the debug App Check
-provider for its `flutter run` lifecycle.
+Use `flutter run` only for later development or debugging. It is not required
+to operate the shared capstone APK. Before any public release, switch
+`GO_REQUIRE_APP_CHECK` back to `true` and use a signed release build with Play
+Integrity.
 
 ## 8. What must be redeployed after a change
 

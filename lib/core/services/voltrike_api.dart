@@ -157,7 +157,17 @@ class VoltrikeApi {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
-    final appCheckToken = await _appCheckTokenProvider?.call();
+    // App Check is enforced by the deployed API, not by the transport client.
+    // A private capstone build can therefore continue to an authenticated API
+    // when its debug provider is unavailable on a newly shared device. In a
+    // production deployment, the API rejects the request when App Check is
+    // required and no valid token is supplied.
+    String? appCheckToken;
+    try {
+      appCheckToken = await _appCheckTokenProvider?.call();
+    } catch (_) {
+      appCheckToken = null;
+    }
     if (appCheckToken != null && appCheckToken.trim().isNotEmpty) {
       headers['X-Firebase-AppCheck'] = appCheckToken.trim();
     }
