@@ -64,3 +64,7 @@ app.*.map.json
 
 # API key generated from the local build environment.
 /lib/core/config/api_keys.dart
+
+# ignore compiler
+
+android\.kotlin\sessions
