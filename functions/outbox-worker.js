@@ -1,14 +1,25 @@
 'use strict';
 
+const { createHash } = require('node:crypto');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { logger } = require('firebase-functions');
 const admin = require('firebase-admin');
-const { defineSecret } = require('firebase-functions/params');
-const { sendBrevoEmail, validEmail } = require('./brevo-communications');
+const { defineSecret, defineString } = require('firebase-functions/params');
+const {
+  safetyAlertEmail,
+  sendBrevoEmail,
+  validEmail,
+} = require('./brevo-communications');
 
 const brevoSmtpLogin = defineSecret('BREVO_SMTP_LOGIN');
 const brevoSmtpKey = defineSecret('BREVO_SMTP_KEY');
 const brevoSenderEmail = defineSecret('BREVO_SENDER_EMAIL');
+const adminPortalUrl = defineString('ADMIN_PORTAL_URL', {
+  default: 'https://voltrike-v2.web.app',
+});
+const emailLogoUrl = defineString('EMAIL_LOGO_URL', {
+  default: 'https://voltrike-v2.web.app/images/appLogo.png',
+});
 
 const BOOKING_MESSAGES = {
   driverAssigned: ['Driver assigned', 'Your driver accepted the booking.'],
@@ -18,6 +29,60 @@ const BOOKING_MESSAGES = {
   completed: ['Trip completed', 'Your receipt is ready.'],
   cancelled: ['Booking cancelled', 'Your booking was cancelled.'],
 };
+
+const LIVE_NOTIFICATION_MAX_AGE_MS = 15 * 60 * 1000;
+const CALL_NOTIFICATION_MAX_AGE_MS = 2 * 60 * 1000;
+const ADMIN_NOTIFICATION_MAX_AGE_MS = 60 * 60 * 1000;
+
+function timestampMillis(value) {
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return null;
+}
+
+function notificationMaxAgeMs(type) {
+  if (type === 'call.ringing') return CALL_NOTIFICATION_MAX_AGE_MS;
+  if (type.startsWith('booking.') || type === 'chat.message.created') {
+    return LIVE_NOTIFICATION_MAX_AGE_MS;
+  }
+  if (type === 'safety.sos.safe' || type === 'safety.sos.emergency_call_attempted') {
+    return LIVE_NOTIFICATION_MAX_AGE_MS;
+  }
+  if (type === 'report.created' || type.startsWith('violation.')) {
+    return ADMIN_NOTIFICATION_MAX_AGE_MS;
+  }
+  return null;
+}
+
+function staleNotificationReason(event, now = Date.now()) {
+  const type = String(event?.type || '');
+  const maximumAge = notificationMaxAgeMs(type);
+  if (maximumAge == null) return null;
+  const createdAt = timestampMillis(event?.createdAt);
+  if (createdAt == null || createdAt > now) return null;
+  return now - createdAt > maximumAge ? 'stale-notification-event' : null;
+}
+
+function bookingNotificationStatus(event) {
+  const payloadStatus = String(event?.payload?.status || '');
+  if (BOOKING_MESSAGES[payloadStatus]) return payloadStatus;
+  const eventStatus = String(event?.type || '').replace(/^booking\./, '');
+  return BOOKING_MESSAGES[eventStatus] ? eventStatus : '';
+}
+
+function actionableSafetyEvent(type, incident) {
+  if (!incident || typeof incident !== 'object') return false;
+  if (type === 'safety.sos.safe') {
+    return incident.responseStatus === 'resolved';
+  }
+  return incident.status === 'open' &&
+    (!incident.responseStatus || incident.responseStatus === 'reported');
+}
 
 function firestore() {
   return admin.firestore();
@@ -87,9 +152,9 @@ async function processBookingEvent(eventId, event) {
   const booking = await firestore().collection('bookings').doc(bookingId).get();
   if (!booking.exists) return { skipped: true, reason: 'booking-not-found' };
   const data = booking.data() || {};
-  const status = typeof data.status === 'string' ? data.status : '';
+  const status = bookingNotificationStatus(event);
   const message = BOOKING_MESSAGES[status];
-  if (!message) return { skipped: true, reason: 'status-not-notifiable' };
+  if (!message) return { skipped: true, reason: 'event-transition-not-notifiable' };
   const tasks = [];
   if (typeof data.passengerId === 'string') {
     tasks.push(sendToUser(data.passengerId, message[0], message[1], {
@@ -112,22 +177,93 @@ async function processBookingEvent(eventId, event) {
   };
 }
 
-async function sendToScopedAdmins(title, body, data, todaId = '') {
+async function scopedAdmins(todaId = '') {
   const roles = await firestore().collection('users')
     .where('role', 'in', ['developer_admin', 'toda_admin'])
     .where('isActive', '==', true)
     .limit(100)
     .get();
-  const recipients = roles.docs.filter((entry) => {
+  return roles.docs.filter((entry) => {
     const profile = entry.data();
     return profile.role === 'developer_admin' || !todaId || profile.todaId === todaId;
   });
+}
+
+async function sendToScopedAdmins(title, body, data, todaId = '', entries) {
+  const recipients = entries || await scopedAdmins(todaId);
   const deliveries = await Promise.all(recipients.map((entry) =>
     sendToUser(entry.id, title, body, data)));
   return deliveries.reduce((summary, delivery) => ({
     attempted: summary.attempted + delivery.attempted,
     succeeded: summary.succeeded + delivery.succeeded,
   }), { attempted: 0, succeeded: 0 });
+}
+
+function safetyEmailDeliveryId(eventId, recipientId) {
+  return createHash('sha256')
+    .update(`${eventId}:${recipientId}:email`)
+    .digest('hex');
+}
+
+async function administratorEmail(entry) {
+  const profile = entry.data() || {};
+  const preferred = String(profile.safetyContactEmail || profile.email || '').trim();
+  if (validEmail(preferred)) return preferred;
+  const user = await admin.auth().getUser(entry.id).catch(() => null);
+  return validEmail(user?.email) ? user.email.trim() : '';
+}
+
+async function sendSafetyEmailOnce({ eventId, incidentId, entry, message }) {
+  const email = await administratorEmail(entry);
+  const profile = entry.data() || {};
+  if (profile.safetyEmailEnabled === false || !email) {
+    return { skipped: true, reason: 'email-disabled-or-missing' };
+  }
+  const deliveryId = safetyEmailDeliveryId(eventId, entry.id);
+  const delivery = firestore().collection('communicationDeliveries').doc(deliveryId);
+  const claimed = await firestore().runTransaction(async (transaction) => {
+    const existing = await transaction.get(delivery);
+    if (existing.exists) return false;
+    transaction.create(delivery, {
+      recipientId: entry.id,
+      incidentId,
+      outboxEventId: eventId,
+      purpose: 'administrator_safety_alert',
+      channel: 'email',
+      provider: 'brevo',
+      status: 'sending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * 86_400_000),
+    });
+    return true;
+  });
+  if (!claimed) return { skipped: true, reason: 'already-claimed' };
+  try {
+    const name = [profile.firstName, profile.lastName].filter(Boolean).join(' ') ||
+      profile.displayName || 'Administrator';
+    const result = await sendBrevoEmail({
+      smtpLogin: brevoSmtpLogin.value(),
+      smtpKey: brevoSmtpKey.value(),
+      senderEmail: brevoSenderEmail.value(),
+      senderName: 'VolTrike',
+      to: email,
+      name,
+      ...message,
+    });
+    await delivery.update({
+      status: 'accepted',
+      providerMessageId: String(result.messageId || ''),
+      acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return { sent: true };
+  } catch (error) {
+    await delivery.update({
+      status: 'failed',
+      errorCode: String(error?.code || 'provider_error'),
+      failedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    throw error;
+  }
 }
 
 async function sendTransactionalEmail(uid, title, body) {
@@ -149,6 +285,8 @@ async function sendTransactionalEmail(uid, title, body) {
 async function processDomainEvent(eventId, event) {
   const type = String(event.type || '');
   const payload = event.payload || {};
+  const staleReason = staleNotificationReason(event);
+  if (staleReason) return { skipped: true, reason: staleReason };
   if (type.startsWith('booking.')) return processBookingEvent(eventId, event);
   if (type === 'call.ringing' && payload.recipientId) {
     return sendToUser(payload.recipientId, 'Incoming VolTrike call', 'Your ride participant is calling.', {
@@ -170,12 +308,43 @@ async function processDomainEvent(eventId, event) {
   if (type.startsWith('safety.')) {
     const incident = await firestore().collection('safetyIncidents').doc(event.aggregateId).get();
     const data = incident.data() || payload;
+    if (!actionableSafetyEvent(type, data)) {
+      return { skipped: true, reason: 'safety-incident-not-actionable' };
+    }
     const title = type === 'safety.escalated' ? 'Unacknowledged VolTrike SOS' : 'VolTrike safety alert';
     const body = `Safety incident for booking ${data.bookingId || 'unknown'} requires review.`;
-    return sendToScopedAdmins(title, body, {
+    const recipients = await scopedAdmins(data.todaId || '');
+    const push = await sendToScopedAdmins(title, body, {
       type: 'safety_incident', incidentId: event.aggregateId,
       bookingId: data.bookingId || '', escalationLevel: data.escalationLevel || 0,
-    }, data.todaId || '');
+    }, data.todaId || '', recipients);
+    const emailResults = await Promise.all(recipients.map(async (entry) => {
+      const profile = entry.data() || {};
+      const recipientName = [profile.firstName, profile.lastName]
+        .filter(Boolean).join(' ') || profile.displayName || 'Administrator';
+      const message = safetyAlertEmail({
+        recipientName,
+        eventLabel: title,
+        adminPortalUrl: adminPortalUrl.value(),
+        logoUrl: emailLogoUrl.value(),
+        incident: {
+          ...data,
+          bookingId: data.bookingId || 'unknown',
+          escalationLevel: data.escalationLevel || 0,
+        },
+      });
+      return sendSafetyEmailOnce({
+        eventId,
+        incidentId: event.aggregateId,
+        entry,
+        message,
+      });
+    }));
+    return {
+      ...push,
+      emailSent: emailResults.filter((result) => result.sent).length,
+      emailSkipped: emailResults.filter((result) => result.skipped).length,
+    };
   }
   if (type === 'report.created') {
     const report = await firestore().collection('reports').doc(event.aggregateId).get();
@@ -216,8 +385,12 @@ const processGoOutbox = onDocumentCreated({
 });
 
 module.exports = {
+  actionableSafetyEvent,
   BOOKING_MESSAGES,
+  bookingNotificationStatus,
   processBookingEvent,
   processDomainEvent,
   processGoOutbox,
+  safetyEmailDeliveryId,
+  staleNotificationReason,
 };

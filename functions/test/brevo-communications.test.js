@@ -8,6 +8,7 @@ const {
   validEmail,
   verificationEmail,
 } = require('../brevo-communications');
+const { safetyEmailDeliveryId } = require('../outbox-worker');
 
 test('transactional email validation rejects malformed addresses', () => {
   assert.equal(validEmail('admin@voltrike.ph'), true);
@@ -60,4 +61,11 @@ test('safety email contains operational context without participant secrets', ()
   assert.match(message.htmlContent, /Open Safety Incidents/);
   assert.match(message.textContent, /Booking: booking-123/);
   assert.doesNotMatch(message.textContent, /password/i);
+});
+
+test('safety email delivery IDs deduplicate one recipient per outbox event', () => {
+  const first = safetyEmailDeliveryId('event-1', 'admin-1');
+  assert.equal(first, safetyEmailDeliveryId('event-1', 'admin-1'));
+  assert.notEqual(first, safetyEmailDeliveryId('event-2', 'admin-1'));
+  assert.notEqual(first, safetyEmailDeliveryId('event-1', 'admin-2'));
 });

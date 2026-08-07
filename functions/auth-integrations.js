@@ -20,6 +20,13 @@ async function deliver(to, name, message) {
   });
 }
 
+function passwordResetMessage(user, link) {
+  return passwordResetEmail({
+    name: user.displayName || 'VolTrike user',
+    resetLink: link,
+  });
+}
+
 const options = {
   region: 'asia-southeast1',
   secrets: [smtpLogin, smtpKey, senderEmail],
@@ -98,9 +105,7 @@ const requestBrandedPasswordResetEmail = onCall(options, async (request) => {
   });
   if (!user) return { accepted: true };
   const link = await admin.auth().generatePasswordResetLink(email);
-  const message = passwordResetEmail({
-    name: user.displayName || 'VolTrike user', passwordResetLink: link,
-  });
+  const message = passwordResetMessage(user, link);
   const response = await deliver(email, user.displayName, message);
   await recordDelivery(user.uid, 'password_reset', response);
   return { accepted: true };
@@ -116,6 +121,7 @@ async function recordDelivery(uid, purpose, response) {
 }
 
 module.exports = {
+  passwordResetMessage,
   requestBrandedPasswordResetEmail,
   requestBrandedVerificationEmail,
 };
