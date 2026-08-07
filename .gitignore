@@ -1,6 +1,7 @@
 # Miscellaneous
 *.class
 *.log
+*.py
 *.pyc
 *.swp
 .DS_Store
@@ -33,6 +34,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/output/docs/
 /rust/target/
 /services/voltrike-go/.gocache/
 /.gocache/
