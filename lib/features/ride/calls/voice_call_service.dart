@@ -1,12 +1,10 @@
-// The LiveKit processing/session APIs are marked experimental upstream. Their
-// documented voice-call configuration is required here to avoid media-mode
-// routing and to request WebRTC software AEC on devices with weak platform AEC.
+// The LiveKit audio-session API is marked experimental upstream. The
+// communication route is required for two-way ride calls on Android.
 // ignore_for_file: experimental_member_use
 
 import 'dart:async';
 
 import 'package:livekit_client/livekit_client.dart';
-import 'package:livekit_noise_filter/livekit_noise_filter.dart';
 
 enum VoiceCallReconnectPhase { none, resuming, reconnecting }
 
@@ -260,22 +258,18 @@ class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
         // on speakerphone and seed an acoustic feedback loop.
         defaultAudioOutputOptions: AudioOutputOptions(speakerOn: false),
         defaultAudioCaptureOptions: AudioCaptureOptions(
-          // This runs on the caller's phone before its microphone reaches
-          // the room. Apply it to both roles: passengers may be outdoors,
-          // and e-trike drivers benefit from wind and road-noise removal.
-          // WebRTC AEC remains enabled below for speaker playback echo.
-          processor: _noiseFilter,
+          // Use LiveKit/WebRTC's proven native processing path. It keeps
+          // echo cancellation active while preserving reliable remote-track
+          // subscription on the widest range of Android devices.
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
           highPassFilter: true,
-          // Ask WebRTC's software voice processor to stay active. Some
-          // Android devices report a platform AEC capability but do not
-          // effectively cancel speaker feedback during short voice calls.
-          echoCancellationMode: AudioProcessingMode.software,
-          noiseSuppressionMode: AudioProcessingMode.software,
-          autoGainControlMode: AudioProcessingMode.software,
-          highPassFilterMode: AudioProcessingMode.software,
+          // Keep the same native capture track when the user mutes. Releasing
+          // and recreating it on each mute/unmute can make Android select a
+          // different microphone processing path, which is especially
+          // noticeable when two different handsets are in a ride call.
+          stopAudioCaptureOnMute: false,
         ),
       ),
     );
@@ -335,7 +329,6 @@ class _LiveKitVoiceCallRoomClient implements VoiceCallRoomClient {
       );
   }
 
-  final LiveKitNoiseFilter _noiseFilter = LiveKitNoiseFilter();
   late final Room _room;
   final StreamController<VoiceCallRoomEvent> _events =
       StreamController<VoiceCallRoomEvent>.broadcast(sync: true);

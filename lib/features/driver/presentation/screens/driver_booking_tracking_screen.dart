@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +37,7 @@ import '../../../ride/tracking/widgets/ride_confirmation_slider.dart';
 import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 import '../../../ride/tracking/widgets/ride_quick_actions.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
+import '../../../ride/tracking/widgets/trip_sheet_handle.dart';
 import '../../../ride/chat/ride_chat_alert_listener.dart';
 
 class DriverBookingTrackingScreen extends ConsumerStatefulWidget {
@@ -59,10 +62,14 @@ class _DriverBookingTrackingScreenState
   bool _sosSubmitting = false;
   MySafetyIncident? _safetyIncident;
   final RideSafetyService _safetyService = RideSafetyService();
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+  bool _sheetExpanded = false;
 
   @override
   void initState() {
     super.initState();
+    _sheetController.addListener(_onSheetExtentChanged);
     _bookingSubscription = ref.listenManual<Booking?>(
       driverCurrentBookingProvider,
       (previous, next) {
@@ -125,6 +132,9 @@ class _DriverBookingTrackingScreenState
   void dispose() {
     _bookingSubscription?.close();
     _mapController?.dispose();
+    _sheetController
+      ..removeListener(_onSheetExtentChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -136,6 +146,32 @@ class _DriverBookingTrackingScreenState
     return booking.status == BookingStatus.passengerOnBoard ||
         booking.status == BookingStatus.paymentConfirmation ||
         booking.status == BookingStatus.completed;
+  }
+
+  bool get _isShortTripScreen => MediaQuery.sizeOf(context).height < 720;
+
+  double get _compactSheetExtent => _isShortTripScreen ? 0.38 : 0.34;
+
+  double get _detailsSheetExtent => _isShortTripScreen ? 0.60 : 0.52;
+
+  void _onSheetExtentChanged() {
+    if (!mounted || !_sheetController.isAttached) return;
+    final isExpanded =
+        _sheetController.size > (_compactSheetExtent + _detailsSheetExtent) / 2;
+    if (isExpanded != _sheetExpanded) {
+      setState(() => _sheetExpanded = isExpanded);
+    }
+  }
+
+  void _toggleSheet() {
+    if (!_sheetController.isAttached) return;
+    unawaited(
+      _sheetController.animateTo(
+        _sheetExpanded ? _compactSheetExtent : _detailsSheetExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
+    );
   }
 
   LatLng _routeDestination(Booking booking) {
@@ -161,7 +197,30 @@ class _DriverBookingTrackingScreenState
   }
 
   String _guidanceDestinationLabel(Booking booking) {
-    return _tripStarted(booking) ? 'destination' : 'pickup';
+    final placeName = _tripStarted(booking)
+        ? booking.destinationName
+        : booking.pickupName;
+    final address = _tripStarted(booking)
+        ? booking.destinationAddress
+        : booking.pickupAddress;
+    // Navigation surfaces this label prominently. Prefer the human-readable
+    // place name, with the trusted address as a legacy-data fallback.
+    return placeName?.trim().isNotEmpty == true
+        ? placeName!.trim()
+        : tripLocationLabel(null, address);
+  }
+
+  String _nextNavigationLabel(
+    Booking booking,
+    DriverNavigationState navigation,
+  ) {
+    final nextInstruction = navigation.nextInstruction?.trim();
+    if (nextInstruction?.isNotEmpty == true) return nextInstruction!;
+
+    // A route can validly have no next maneuver when it is already at, or
+    // extremely close to, its endpoint. Do not leave the driver with a bare
+    // "Next:" label; show the actual location instead.
+    return _guidanceDestinationLabel(booking);
   }
 
   Widget _driverNavigation([Booking? activeBooking]) {
@@ -447,19 +506,7 @@ class _DriverBookingTrackingScreenState
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 6),
-            child: Center(
-              child: Container(
-                width: 42,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-          ),
+          TripSheetHandle(isExpanded: _sheetExpanded, onPressed: _toggleSheet),
           Expanded(
             child: ListView(
               controller: scrollController,
@@ -547,9 +594,9 @@ class _DriverBookingTrackingScreenState
                         color: colorScheme.primary,
                       ),
                       title: Text(navigation.instruction!),
-                      subtitle: navigation.nextInstruction == null
-                          ? null
-                          : Text('Next: ${navigation.nextInstruction}'),
+                      subtitle: Text(
+                        'Next: ${_nextNavigationLabel(booking, navigation)}',
+                      ),
                     ),
                   ),
                 ],
@@ -763,9 +810,9 @@ class _DriverBookingTrackingScreenState
                             color: colorScheme.onSecondaryContainer,
                           ),
                           title: Text(navigation.instruction!),
-                          subtitle: navigation.nextInstruction == null
-                              ? null
-                              : Text('Next: ${navigation.nextInstruction}'),
+                          subtitle: Text(
+                            'Next: ${_nextNavigationLabel(booking, navigation)}',
+                          ),
                         ),
                       ),
                     ],
@@ -805,15 +852,12 @@ class _DriverBookingTrackingScreenState
               ),
             ],
             DraggableScrollableSheet(
-              initialChildSize: MediaQuery.sizeOf(context).height < 720
-                  ? 0.66
-                  : 0.58,
-              minChildSize: 0.22,
+              controller: _sheetController,
+              initialChildSize: _compactSheetExtent,
+              minChildSize: _compactSheetExtent,
               maxChildSize: 0.90,
               snap: true,
-              snapSizes: MediaQuery.sizeOf(context).height < 720
-                  ? const [0.22, 0.66, 0.90]
-                  : const [0.22, 0.58, 0.90],
+              snapSizes: [_compactSheetExtent, _detailsSheetExtent, 0.90],
               builder: (context, scrollController) => _trackingSheet(
                 booking: booking,
                 navigation: navigation,

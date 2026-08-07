@@ -31,6 +31,7 @@ import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
+import '../../../ride/tracking/widgets/trip_sheet_handle.dart';
 import '../../../ride/tracking/models/ride_participant_role.dart';
 import '../../../ride/tracking/services/ride_marker_factory.dart';
 import '../../../ride/tracking/services/route_refresh_policy.dart';
@@ -91,6 +92,9 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   bool _sosSubmitting = false;
   MySafetyIncident? _safetyIncident;
   final RideSafetyService _safetyService = RideSafetyService();
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+  bool _sheetExpanded = false;
 
   //==========================================================================
   // Helpers
@@ -106,6 +110,32 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     return _tripStarted(booking) ? booking.destination : booking.pickup;
   }
 
+  bool get _isShortTripScreen => MediaQuery.sizeOf(context).height < 720;
+
+  double get _compactSheetExtent => _isShortTripScreen ? 0.30 : 0.26;
+
+  double get _detailsSheetExtent => _isShortTripScreen ? 0.60 : 0.52;
+
+  void _onSheetExtentChanged() {
+    if (!mounted || !_sheetController.isAttached) return;
+    final isExpanded =
+        _sheetController.size > (_compactSheetExtent + _detailsSheetExtent) / 2;
+    if (isExpanded != _sheetExpanded) {
+      setState(() => _sheetExpanded = isExpanded);
+    }
+  }
+
+  void _toggleSheet() {
+    if (!_sheetController.isAttached) return;
+    unawaited(
+      _sheetController.animateTo(
+        _sheetExpanded ? _compactSheetExtent : _detailsSheetExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
   //==========================================================================
   // Lifecycle
   //==========================================================================
@@ -113,6 +143,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   @override
   void initState() {
     super.initState();
+    _sheetController.addListener(_onSheetExtentChanged);
     _loadDriverMarker();
     unawaited(_loadSafetyIncident());
     _bookingSubscription = ref.listenManual<AsyncValue<Booking?>>(
@@ -164,6 +195,9 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
       unawaited(_activeRouteEngine.clearRoute());
     }
     _mapController?.dispose();
+    _sheetController
+      ..removeListener(_onSheetExtentChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -622,22 +656,12 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
+          TripSheetHandle(isExpanded: _sheetExpanded, onPressed: _toggleSheet),
           Expanded(
             child: ListView(
               controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
                 TripStatusCard(
                   status: booking.status,
                   role: RideParticipantRole.passenger,
@@ -903,15 +927,16 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                       ),
                     ],
                     DraggableScrollableSheet(
-                      initialChildSize: MediaQuery.sizeOf(context).height < 720
-                          ? 0.60
-                          : 0.52,
-                      minChildSize: 0.20,
+                      controller: _sheetController,
+                      initialChildSize: _compactSheetExtent,
+                      minChildSize: _compactSheetExtent,
                       maxChildSize: 0.90,
                       snap: true,
-                      snapSizes: MediaQuery.sizeOf(context).height < 720
-                          ? const [0.20, 0.60, 0.90]
-                          : const [0.20, 0.52, 0.90],
+                      snapSizes: [
+                        _compactSheetExtent,
+                        _detailsSheetExtent,
+                        0.90,
+                      ],
                       builder: (context, scrollController) => _trackingSheet(
                         booking: booking,
                         scrollController: scrollController,

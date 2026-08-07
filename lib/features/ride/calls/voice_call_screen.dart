@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proximity_screen_lock/proximity_screen_lock.dart';
 
 import '../../../core/errors/domain_error_mapper.dart';
 import '../../../data/models/booking.dart';
@@ -53,8 +54,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   String? _error;
   bool _muted = false;
   bool _speakerOn = false;
-  bool _nearbyFeedbackGuard = false;
-  bool _mutedBeforeFeedbackGuard = false;
+  bool _proximityLockActive = false;
   bool _starting = false;
   bool _joining = false;
   bool _ending = false;
@@ -271,6 +271,37 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         _error = null;
       }
     });
+    unawaited(_syncProximityScreenLock());
+  }
+
+  bool get _shouldUseProximityScreenLock =>
+      _effectiveStatus == BookingCallStatus.accepted &&
+      _service.isMediaReady &&
+      !_speakerOn;
+
+  Future<void> _syncProximityScreenLock() async {
+    final shouldActivate = _shouldUseProximityScreenLock;
+    if (shouldActivate == _proximityLockActive) return;
+    try {
+      if (!await ProximityScreenLock.isProximityLockSupported()) return;
+      // State can change while the platform checks sensor availability.
+      if (shouldActivate != _shouldUseProximityScreenLock) return;
+      await ProximityScreenLock.setActive(shouldActivate);
+      _proximityLockActive = shouldActivate;
+    } catch (_) {
+      // The call remains fully usable on devices without a proximity sensor.
+    }
+  }
+
+  Future<void> _disableProximityScreenLock() async {
+    if (!_proximityLockActive) return;
+    try {
+      await ProximityScreenLock.setActive(false);
+    } catch (_) {
+      // Avoid blocking call teardown on device-specific sensor failures.
+    } finally {
+      _proximityLockActive = false;
+    }
   }
 
   void _tick() {
@@ -325,6 +356,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     } catch (_) {
       // The Firestore timeout and backend cleanup remain authoritative.
     } finally {
+      await _disableProximityScreenLock();
       await _service.disconnect();
       _ending = false;
       if (mounted) setState(() {});
@@ -342,36 +374,6 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     if (!_effectiveStatus.isTerminal) await _endCall();
     _allowPop = true;
     if (mounted) Navigator.pop(context);
-  }
-
-  /// Nearby loudspeakers can form a physical feedback loop that no network
-  /// service can remove. This deliberately uses the earpiece and pauses this
-  /// phone's microphone until the rider turns the guard off.
-  Future<void> _setNearbyFeedbackGuard(bool enabled) async {
-    if (!_service.isConnected) return;
-    try {
-      if (enabled) {
-        _mutedBeforeFeedbackGuard = _muted;
-        await _service.setSpeakerOn(false);
-        await _service.setMuted(true);
-      } else {
-        await _service.setMuted(_mutedBeforeFeedbackGuard);
-      }
-      if (mounted) {
-        setState(() {
-          _nearbyFeedbackGuard = enabled;
-          _speakerOn = false;
-          _muted = enabled ? true : _mutedBeforeFeedbackGuard;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(
-          () => _error =
-              'Could not change nearby feedback protection. Please try again.',
-        );
-      }
-    }
   }
 
   BookingCallStatus get _effectiveStatus =>
@@ -431,6 +433,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     unawaited(_statusSubscription?.cancel());
     unawaited(_bookingSubscription?.cancel());
     unawaited(RingtoneService.instance.stopIncomingCall());
+    unawaited(_disableProximityScreenLock());
     unawaited(_service.disconnect());
     super.dispose();
   }
@@ -616,32 +619,6 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                               ],
                             ],
                           ),
-                          if (!terminal &&
-                              _effectiveStatus == BookingCallStatus.accepted &&
-                              _service.isConnected) ...[
-                            const SizedBox(height: 22),
-                            TextButton.icon(
-                              onPressed: () => unawaited(
-                                _setNearbyFeedbackGuard(!_nearbyFeedbackGuard),
-                              ),
-                              icon: Icon(
-                                _nearbyFeedbackGuard
-                                    ? Icons.hearing_rounded
-                                    : Icons.volume_off_rounded,
-                                size: 18,
-                              ),
-                              label: Text(
-                                _nearbyFeedbackGuard
-                                    ? 'Nearby Feedback Guard on — tap to resume mic'
-                                    : 'Nearby phones? Enable Feedback Guard',
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: _nearbyFeedbackGuard
-                                    ? const Color(0xFF9CF3D0)
-                                    : Colors.white70,
-                              ),
-                            ),
-                          ],
                           Padding(
                             padding: const EdgeInsets.only(top: 42),
                             child: Row(
@@ -653,10 +630,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                   icon: _muted
                                       ? Icons.mic_off_rounded
                                       : Icons.mic_rounded,
-                                  onPressed:
-                                      !_service.isConnected ||
-                                          terminal ||
-                                          _nearbyFeedbackGuard
+                                  onPressed: !_service.isConnected || terminal
                                       ? null
                                       : () async {
                                           try {
@@ -681,16 +655,11 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                 const SizedBox(width: 20),
                                 _CallControlButton(
                                   tooltip: _speakerOn
-                                      ? 'Use earpiece'
-                                      : 'Use speaker',
-                                  label: _speakerOn ? 'Speaker' : 'Earpiece',
-                                  icon: _speakerOn
-                                      ? Icons.volume_up_rounded
-                                      : Icons.hearing_rounded,
-                                  onPressed:
-                                      !_service.isConnected ||
-                                          terminal ||
-                                          _nearbyFeedbackGuard
+                                      ? 'Speaker on'
+                                      : 'Speaker off',
+                                  label: 'Speaker',
+                                  icon: Icons.volume_up_rounded,
+                                  onPressed: !_service.isConnected || terminal
                                       ? null
                                       : () async {
                                           try {
@@ -700,6 +669,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                                             if (mounted) {
                                               setState(
                                                 () => _speakerOn = !_speakerOn,
+                                              );
+                                              unawaited(
+                                                _syncProximityScreenLock(),
                                               );
                                             }
                                           } catch (_) {
