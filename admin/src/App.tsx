@@ -482,7 +482,7 @@ function Overview({ session }: { session: AdminSession }) {
   }, [session.role, session.todaId]);
   const loading = metricsLoading || commissionLoading;
   const error = [metricsError, commissionError].filter(Boolean).join(' ');
-  return <>{loading && <p className="muted">Loading Firebase overview…</p>}{error && <div className="notice">{error}</div>}<div className="cards"><Metric label="Registered drivers" value={String(stats.drivers)} /><Metric label="All bookings" value={String(stats.bookings)} /><Metric label="Completed rides" value={String(stats.trips)} /><Metric label="Open reports" value={String(stats.reports)} warning /><Metric label="Open safety incidents" value={String(stats.safetyIncidents)} warning /><Metric label="Pending zones" value={String(stats.zones)} />{session.role === 'toda_admin' && <><Metric label="Current commission rate" value={commission ? percentLabel(commission.percent) : '—'} /><Metric label="Commission this month" value={commission ? peso(commission.summary.commissionAmount) : '—'} /><Metric label="Gross completed fares this month" value={commission ? peso(commission.summary.grossFare) : '—'} /><Metric label="Driver net this month" value={commission ? peso(commission.summary.driverNetEarnings) : '—'} /><Metric label="Completed rides this month" value={commission ? String(commission.summary.completedRides) : '—'} /><Metric label="Disputed settlements this month" value={commission ? String(commission.summary.disputedSettlements) : '—'} warning={Boolean(commission?.summary.disputedSettlements)} /></>}</div><section className="panel"><h2>Operational boundaries</h2><p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures and commission totals are restricted by Firebase to your authenticated TODA. Monthly earnings use each completed ride’s snapshotted commission rate; changing today’s rate never recalculates older rides.'}</p></section></>;
+  return <>{loading && <p className="muted">Loading Firebase overview…</p>}{error && <div className="notice">{error}</div>}<div className="cards"><Metric label="Registered drivers" value={String(stats.drivers)} /><Metric label="All bookings" value={String(stats.bookings)} /><Metric label="Completed rides" value={String(stats.trips)} /><Metric label="Open reports" value={String(stats.reports)} warning /><Metric label="Open safety incidents" value={String(stats.safetyIncidents)} warning /><Metric label="Pending zones" value={String(stats.zones)} />{session.role === 'toda_admin' && <><Metric label="Current commission rate" value={commission ? percentLabel(commission.percent) : '—'} /><Metric label="Commission earned this month" value={commission ? peso(commission.summary.commissionAmount) : '—'} /><Metric label="Commission due this month" value={commission ? peso(commission.summary.commissionDue) : '—'} warning={Boolean(commission?.summary.commissionDue)} /><Metric label="Commission paid this month" value={commission ? peso(commission.summary.commissionSettled) : '—'} /><Metric label="Gross completed fares this month" value={commission ? peso(commission.summary.grossFare) : '—'} /><Metric label="Driver net this month" value={commission ? peso(commission.summary.driverNetEarnings) : '—'} /><Metric label="Completed rides this month" value={commission ? String(commission.summary.completedRides) : '—'} /><Metric label="Disputed settlements this month" value={commission ? String(commission.summary.disputedSettlements) : '—'} warning={Boolean(commission?.summary.disputedSettlements)} /></>}</div><section className="panel"><h2>Operational boundaries</h2><p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures and commission totals are restricted by Firebase to your authenticated TODA. Monthly earnings use each completed ride’s snapshotted commission rate; changing today’s rate never recalculates older rides. Marking commission paid records a separate TODA payout and never changes the passenger cash receipt.'}</p></section></>;
 }
 function Metric({ label: title, value, warning }: { label: string; value: string; warning?: boolean }) { return <div className="metric"><p>{title}</p><strong className={warning ? 'warning' : ''}>{value}</strong></div>; }
 
@@ -495,6 +495,7 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
   const [maximum, setMaximum] = useState(30);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [settlingDriverId, setSettlingDriverId] = useState<string | null>(null);
   const [startDate, setStartDate] = useState(initialRange.startDate);
   const [endDate, setEndDate] = useState(initialRange.endDate);
   const [appliedRange, setAppliedRange] = useState(initialRange);
@@ -595,6 +596,27 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
       setBusy(false);
     }
   }
+  async function settleDriverCommission(driver: TodaCommissionDriverSummary) {
+    if (driver.commissionDue <= 0 || settlingDriverId) return;
+    const confirmed = window.confirm(
+      `Mark ${peso(driver.commissionDue)} TODA commission as paid for ${driver.driverName} in the selected date range? This records a separate commission payout and does not change completed passenger receipts.`,
+    );
+    if (!confirmed) return;
+    setSettlingDriverId(driver.driverId);
+    try {
+      const result = await adminApi.settleDriverCommission(
+        driver.driverId,
+        appliedRange.startDate,
+        appliedRange.endDate,
+      );
+      onMessage(`${peso(result.commissionAmount)} commission settled for ${driver.driverName} across ${result.settledBookingCount} completed ride${result.settledBookingCount === 1 ? '' : 's'}.`);
+      await Promise.all([loadReport(), loadPeriodSummaries()]);
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : 'Unable to settle this driver commission.');
+    } finally {
+      setSettlingDriverId(null);
+    }
+  }
   return <>
     <section className="panel wide">
       <h2>Driver commission</h2>
@@ -625,7 +647,9 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
       <div className="cards commission-cards">
         <Metric label="Completed rides" value={summary ? String(summary.completedRides) : '—'} />
         <Metric label="Gross passenger fares" value={summary ? peso(summary.grossFare) : '—'} />
-        <Metric label="TODA commission" value={summary ? peso(summary.commissionAmount) : '—'} />
+        <Metric label="TODA commission earned" value={summary ? peso(summary.commissionAmount) : '—'} />
+        <Metric label="TODA commission due" value={summary ? peso(summary.commissionDue) : '—'} warning={Boolean(summary?.commissionDue)} />
+        <Metric label="TODA commission paid" value={summary ? peso(summary.commissionSettled) : '—'} />
         <Metric label="Driver net earnings" value={summary ? peso(summary.driverNetEarnings) : '—'} />
         <Metric label="Pending settlements" value={summary ? String(summary.pendingSettlements) : '—'} warning={Boolean(summary?.pendingSettlements)} />
         <Metric label="Settled rides" value={summary ? String(summary.settledSettlements) : '—'} />
@@ -633,9 +657,9 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
       </div>
       <div className="cards commission-cards">
         <Metric label="Completed rides today" value={todaySummary ? String(todaySummary.completedRides) : '—'} />
-        <Metric label="Commission due today" value={todaySummary ? peso(todaySummary.commissionAmount) : '—'} />
+        <Metric label="Commission due today" value={todaySummary ? peso(todaySummary.commissionDue) : '—'} />
         <Metric label="Completed rides this week" value={weekSummary ? String(weekSummary.completedRides) : '—'} />
-        <Metric label="Commission due this week" value={weekSummary ? peso(weekSummary.commissionAmount) : '—'} />
+        <Metric label="Commission due this week" value={weekSummary ? peso(weekSummary.commissionDue) : '—'} />
       </div>
       <section className="commission-driver-breakdown">
         <h3>Commission by registered driver</h3>
@@ -645,8 +669,9 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
             <span><b>{driver.driverName}</b><small className="technical-id">Driver: {driver.driverId}</small></span>
             <span><b>{driver.completedRides}</b><small>completed ride{driver.completedRides === 1 ? '' : 's'}</small></span>
             <span><b>{peso(driver.grossFare)}</b><small>gross passenger fares</small></span>
-            <span><b>{peso(driver.commissionAmount)}</b><small>TODA commission due</small></span>
+            <span><b>{peso(driver.commissionDue)}</b><small>commission due of {peso(driver.commissionAmount)}</small></span>
             <span><b>{peso(driver.driverNetEarnings)}</b><small>driver net earnings</small></span>
+            <span className={driver.commissionDue > 0 ? 'warning' : 'ok'}><b>{driver.commissionDue > 0 ? 'Due' : 'Settled'}</b><small>{peso(driver.commissionSettled)} paid</small><button type="button" onClick={() => void settleDriverCommission(driver)} disabled={driver.commissionDue <= 0 || settlingDriverId !== null}>{settlingDriverId === driver.driverId ? 'Settling…' : driver.commissionDue > 0 ? 'Mark commission settled' : 'Commission settled'}</button></span>
           </div>)}
           {!reportLoading && driverSummaries.length === 0 && <p className="muted">No registered drivers are available for this TODA scope.</p>}
         </div>
@@ -659,7 +684,7 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
             <span><b>{item.completedAt ? new Date(item.completedAt).toLocaleString('en-PH') : 'Completion time unavailable'}</b><small className="technical-id">Booking: {item.bookingId}</small>{item.receiptNumber && <small>Receipt: {item.receiptNumber}</small>}</span>
             <span><b>{item.driverName || 'Driver name unavailable'}</b><small className="technical-id">Driver: {item.driverId}</small></span>
             <span><b>{peso(item.grossFare)} gross</b><small>{percentLabel(item.commissionPercent)} captured rate</small></span>
-            <span><b>{peso(item.commissionAmount)} TODA</b><small>{peso(item.driverNetEarnings)} driver net</small></span>
+            <span><b>{peso(item.commissionAmount)} TODA</b><small>{item.commissionSettlementStatus === 'settled' ? 'Commission paid' : 'Commission due'} · {peso(item.driverNetEarnings)} driver net</small></span>
             <span className={disputed ? 'warning' : item.settlementStatus === 'settled' ? 'ok' : ''}><b>{statusLabel(item.settlementStatus)}</b>{item.adjustmentStatus && <small>Adjustment: {statusLabel(item.adjustmentStatus)}</small>}{item.disputeReason && <small>{item.disputeReason}</small>}</span>
           </div>;
         })}

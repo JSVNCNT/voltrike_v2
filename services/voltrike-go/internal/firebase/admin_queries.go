@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/google/uuid"
 	"github.com/voltrike/voltrike-go/internal/app"
 )
 
@@ -179,10 +180,10 @@ func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, p
 	for driverID, driver := range driverDirectory {
 		driverTotals[driverID] = map[string]any{
 			"driverId": driverID, "driverName": preferredAdminDriverName(driver, driverID),
-			"completedRides": 0, "grossFare": 0.0, "commissionAmount": 0.0, "driverNetEarnings": 0.0,
+			"completedRides": 0, "grossFare": 0.0, "commissionAmount": 0.0, "commissionDue": 0.0, "commissionSettled": 0.0, "driverNetEarnings": 0.0,
 		}
 	}
-	var gross, commission, net float64
+	var gross, commission, commissionDue, commissionSettled, net float64
 	completed, pending, settled, disputed := 0, 0, 0, 0
 	for _, document := range documents {
 		data := document.Data()
@@ -217,7 +218,7 @@ func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, p
 		if !knownDriver {
 			driverTotal = map[string]any{
 				"driverId": driverID, "driverName": preferredAdminDriverName(data, driverID),
-				"completedRides": 0, "grossFare": 0.0, "commissionAmount": 0.0, "driverNetEarnings": 0.0,
+				"completedRides": 0, "grossFare": 0.0, "commissionAmount": 0.0, "commissionDue": 0.0, "commissionSettled": 0.0, "driverNetEarnings": 0.0,
 			}
 			driverTotals[driverID] = driverTotal
 		}
@@ -229,23 +230,36 @@ func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, p
 		grossFare := number(data, "grossFare", "amountDue")
 		commissionAmount := number(data, "commissionAmount")
 		driverNetEarnings := number(data, "driverNetEarnings")
+		commissionSettlementStatus := text(data, "commissionSettlementStatus")
+		if commissionSettlementStatus != "settled" {
+			commissionSettlementStatus = "due"
+		}
 		driverTotal["completedRides"] = integer(driverTotal, "completedRides") + 1
 		driverTotal["grossFare"] = number(driverTotal, "grossFare") + grossFare
 		driverTotal["commissionAmount"] = number(driverTotal, "commissionAmount") + commissionAmount
+		if commissionSettlementStatus == "settled" {
+			driverTotal["commissionSettled"] = number(driverTotal, "commissionSettled") + commissionAmount
+			commissionSettled += commissionAmount
+		} else {
+			driverTotal["commissionDue"] = number(driverTotal, "commissionDue") + commissionAmount
+			commissionDue += commissionAmount
+		}
 		driverTotal["driverNetEarnings"] = number(driverTotal, "driverNetEarnings") + driverNetEarnings
 		item := map[string]any{
-			"bookingId":         text(data, "bookingId"),
-			"receiptNumber":     text(data, "receiptNumber"),
-			"driverId":          driverID,
-			"driverName":        driverName,
-			"completedAt":       occurredAt,
-			"grossFare":         grossFare,
-			"commissionPercent": number(data, "commissionPercent"),
-			"commissionAmount":  commissionAmount,
-			"driverNetEarnings": driverNetEarnings,
-			"settlementStatus":  settlementStatus,
-			"adjustmentStatus":  adjustmentStatus,
-			"disputeReason":     text(data, "disputeReason"),
+			"bookingId":                  text(data, "bookingId"),
+			"receiptNumber":              text(data, "receiptNumber"),
+			"driverId":                   driverID,
+			"driverName":                 driverName,
+			"completedAt":                occurredAt,
+			"grossFare":                  grossFare,
+			"commissionPercent":          number(data, "commissionPercent"),
+			"commissionAmount":           commissionAmount,
+			"commissionSettlementStatus": commissionSettlementStatus,
+			"commissionSettledAt":        data["commissionSettledAt"],
+			"driverNetEarnings":          driverNetEarnings,
+			"settlementStatus":           settlementStatus,
+			"adjustmentStatus":           adjustmentStatus,
+			"disputeReason":              text(data, "disputeReason"),
 		}
 		entries = append(entries, reportEntry{item: item, at: occurredAt})
 		gross += grossFare
@@ -264,12 +278,107 @@ func (store *Store) commissionReport(ctx context.Context, actor adminIdentity, p
 	sort.Slice(driverSummaries, func(i, j int) bool {
 		return strings.ToLower(text(driverSummaries[i], "driverName")) < strings.ToLower(text(driverSummaries[j], "driverName"))
 	})
-	result := map[string]any{"summary": map[string]any{"grossFare": gross, "commissionAmount": commission, "driverNetEarnings": net, "completedRides": completed, "pendingSettlements": pending, "settledSettlements": settled, "disputedSettlements": disputed}, "items": items, "driverSummaries": driverSummaries, "nextCursor": ""}
+	result := map[string]any{"summary": map[string]any{"grossFare": gross, "commissionAmount": commission, "commissionDue": commissionDue, "commissionSettled": commissionSettled, "driverNetEarnings": net, "completedRides": completed, "pendingSettlements": pending, "settledSettlements": settled, "disputedSettlements": disputed}, "items": items, "driverSummaries": driverSummaries, "nextCursor": ""}
 	if booleanDefault(payload, false, "summaryOnly") {
 		result["items"] = []map[string]any{}
 		result["driverSummaries"] = []map[string]any{}
 	}
 	return result, nil
+}
+
+// settleDriverCommission records a TODA payout separately from the passenger
+// cash settlement. It never changes a completed ride's fare, receipt, or the
+// immutable commission rate captured at acceptance.
+func (store *Store) settleDriverCommission(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
+	driverID := text(payload, "driverId")
+	if driverID == "" {
+		return nil, fmt.Errorf("%w: driverId is required", app.ErrInvalidArgument)
+	}
+	location, err := time.LoadLocation("Asia/Manila")
+	if err != nil {
+		return nil, err
+	}
+	start, err := time.ParseInLocation("2006-01-02", text(payload, "startDate"), location)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid start date", app.ErrInvalidArgument)
+	}
+	end, err := time.ParseInLocation("2006-01-02", text(payload, "endDate"), location)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid end date", app.ErrInvalidArgument)
+	}
+	if end.Before(start) {
+		return nil, fmt.Errorf("%w: end date must not be before start date", app.ErrInvalidArgument)
+	}
+	end = end.AddDate(0, 0, 1)
+	driverDirectory, err := store.adminDriverDirectory(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	driver, exists := driverDirectory[driverID]
+	if !exists {
+		return nil, fmt.Errorf("%w: driver is outside administrator scope", app.ErrPrecondition)
+	}
+	documents, err := store.firestore.Collection("settlements").Limit(499).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	payoutID := "commission_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	batch := store.firestore.Batch()
+	bookingIDs := make([]string, 0)
+	commissionAmount := 0.0
+	for _, document := range documents {
+		data := document.Data()
+		if text(data, "driverId") != driverID || text(data, "status", "settlementStatus") != "settled" || text(data, "commissionSettlementStatus") == "settled" {
+			continue
+		}
+		settlementTodaID := text(data, "todaId", "driverTodaId")
+		if settlementTodaID == "" {
+			settlementTodaID = text(driver, "todaId", "ownerTodaId", "driverTodaId")
+		}
+		if !actor.canAccessToda(settlementTodaID) {
+			continue
+		}
+		occurredAt := reportTimestamp(data)
+		if occurredAt.IsZero() || occurredAt.Before(start) || !occurredAt.Before(end) {
+			continue
+		}
+		amount := number(data, "commissionAmount")
+		if amount <= 0 {
+			continue
+		}
+		batch.Set(document.Ref, map[string]any{
+			"commissionSettlementStatus": "settled",
+			"commissionSettledAt":        now,
+			"commissionSettledBy":        actor.UID,
+			"commissionPayoutId":         payoutID,
+			"updatedAt":                  now,
+		}, firestore.MergeAll)
+		bookingIDs = append(bookingIDs, text(data, "bookingId", "bookingID", "id"))
+		commissionAmount += amount
+	}
+	if len(bookingIDs) == 0 {
+		return nil, fmt.Errorf("%w: no unpaid commission is available for this driver and date range", app.ErrPrecondition)
+	}
+	batch.Create(store.firestore.Collection("commissionPayouts").Doc(payoutID), map[string]any{
+		"payoutId":            payoutID,
+		"driverId":            driverID,
+		"driverName":          preferredAdminDriverName(driver, driverID),
+		"todaId":              text(driver, "todaId", "ownerTodaId", "driverTodaId"),
+		"startDate":           text(payload, "startDate"),
+		"endDate":             text(payload, "endDate"),
+		"commissionAmount":    commissionAmount,
+		"settledBookingCount": len(bookingIDs),
+		"bookingIds":          bookingIDs,
+		"settledBy":           actor.UID,
+		"settledAt":           now,
+	})
+	if _, err := batch.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"payoutId": payoutID, "settledBookingCount": len(bookingIDs), "commissionAmount": commissionAmount,
+	}, nil
 }
 
 func reportTimestamp(data map[string]any) time.Time {

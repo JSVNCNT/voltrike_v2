@@ -136,6 +136,8 @@ export interface TodaCommission {
 export interface TodaCommissionReportSummary {
   grossFare: number;
   commissionAmount: number;
+  commissionDue: number;
+  commissionSettled: number;
   driverNetEarnings: number;
   completedRides: number;
   pendingSettlements: number;
@@ -152,6 +154,8 @@ export interface TodaCommissionReportItem {
   grossFare: number;
   commissionPercent: number;
   commissionAmount: number;
+  commissionSettlementStatus: 'due' | 'settled';
+  commissionSettledAt?: string | null;
   driverNetEarnings: number;
   settlementStatus: string;
   adjustmentStatus?: string | null;
@@ -164,6 +168,8 @@ export interface TodaCommissionDriverSummary {
   completedRides: number;
   grossFare: number;
   commissionAmount: number;
+  commissionDue: number;
+  commissionSettled: number;
   driverNetEarnings: number;
 }
 

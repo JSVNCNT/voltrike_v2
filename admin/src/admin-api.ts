@@ -372,6 +372,8 @@ function normalizeCommissionReport(value: unknown): TodaCommissionReport {
     summary: {
       grossFare: finiteNumber(summary.grossFare) ?? 0,
       commissionAmount: finiteNumber(summary.commissionAmount) ?? 0,
+      commissionDue: finiteNumber(summary.commissionDue) ?? 0,
+      commissionSettled: finiteNumber(summary.commissionSettled) ?? 0,
       driverNetEarnings: finiteNumber(summary.driverNetEarnings) ?? 0,
       completedRides: finiteNumber(summary.completedRides ?? summary.tripCount) ?? 0,
       pendingSettlements: finiteNumber(summary.pendingSettlements) ?? 0,
@@ -389,6 +391,10 @@ function normalizeCommissionReport(value: unknown): TodaCommissionReport {
         grossFare: finiteNumber(item.grossFare ?? item.amountDue) ?? 0,
         commissionPercent: finiteNumber(item.commissionPercent) ?? 0,
         commissionAmount: finiteNumber(item.commissionAmount) ?? 0,
+        commissionSettlementStatus: item.commissionSettlementStatus === 'settled'
+          ? 'settled' as const
+          : 'due' as const,
+        commissionSettledAt: dateString(item.commissionSettledAt),
         driverNetEarnings: finiteNumber(item.driverNetEarnings) ?? 0,
         settlementStatus: textValue(item.settlementStatus ?? item.status, 'not_recorded'),
         adjustmentStatus: textValue(item.adjustmentStatus) || null,
@@ -404,6 +410,8 @@ function normalizeCommissionReport(value: unknown): TodaCommissionReport {
         completedRides: finiteNumber(item.completedRides ?? item.tripCount) ?? 0,
         grossFare: finiteNumber(item.grossFare) ?? 0,
         commissionAmount: finiteNumber(item.commissionAmount) ?? 0,
+        commissionDue: finiteNumber(item.commissionDue) ?? 0,
+        commissionSettled: finiteNumber(item.commissionSettled) ?? 0,
         driverNetEarnings: finiteNumber(item.driverNetEarnings) ?? 0,
       };
     }).filter((item) => Boolean(item.driverId)),
@@ -827,6 +835,11 @@ export const adminApi = {
   todaCommission: () => call<TodaCommission>('adminGetTodaCommission', {}),
   setTodaCommission: (percent: number) =>
     call<TodaCommission>('adminSetTodaCommission', { percent }),
+  settleDriverCommission: (driverId: string, startDate: string, endDate: string) =>
+    call<{ settledBookingCount: number; commissionAmount: number }>(
+      'adminSettleDriverCommission',
+      { driverId, startDate, endDate },
+    ),
   async todaCommissionReport(
     startDate: string,
     endDate: string,

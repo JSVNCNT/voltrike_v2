@@ -89,6 +89,8 @@ func (store *Store) executeAdminOperation(ctx context.Context, principal app.Pri
 		return store.getTodaCommission(ctx, actor)
 	case "adminSetTodaCommission":
 		return store.setTodaCommission(ctx, actor, command.Payload)
+	case "adminSettleDriverCommission":
+		return store.settleDriverCommission(ctx, actor, command.Payload)
 	case "adminGetTodaCommissionReport":
 		return store.commissionReport(ctx, actor, command.Payload)
 	case "adminGetMetrics":
