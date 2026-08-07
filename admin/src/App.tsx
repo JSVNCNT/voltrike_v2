@@ -264,7 +264,7 @@ export default function App() {
       <nav aria-label="Admin sections">{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => navigate(key)}>{text}</button>)}</nav>
       <div className="sidebar-footer"><span>{session.displayName}</span><button onClick={signOutAdmin}>Sign out</button></div>
     </aside>
-    <main className="content"><header><div><p className="eyebrow">Bacolod City TNVS operations</p><h1>{visiblePages.find(([key]) => key === page)?.[1]}</h1></div><div className="status">{isDeveloper ? 'Platform-wide access' : 'TODA-scoped access'}</div></header>
+    <main className="content"><header><div><p className="eyebrow">{isDeveloper ? 'PLATFORM OPERATIONS' : 'TODA OPERATIONS'}</p><h1>{visiblePages.find(([key]) => key === page)?.[1]}</h1></div><div className="status">{isDeveloper ? 'Platform-wide access' : 'TODA-scoped access'}</div></header>
       {message && <div className="notice" role="status">{message}<button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
       {pushAlert && <div className="violation-alert-strip global-push-alert" role="alert"><span><b>{pushAlert.title}</b><br />{pushAlert.body}</span><span className="actions">{pushAlert.violationId && <button onClick={() => { setPage('violations'); selectViolation(pushAlert.violationId); setPushAlert(null); }}>Open case</button>}<button aria-label="Dismiss push alert" onClick={() => setPushAlert(null)}>×</button></span></div>}
       {page === 'overview' && <Overview session={session} />}
@@ -831,11 +831,17 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
         <Metric label="Completed rides this week" value={weekSummary ? String(weekSummary.completedRides) : '—'} />
         <Metric label="Commission due this week" value={weekSummary ? peso(weekSummary.commissionDue) : '—'} />
       </div>
-      <section className="commission-driver-breakdown">
-        <h3>Commission by registered driver</h3>
-        <p className="muted">Every driver assigned to this TODA is listed, including drivers with no completed ride in the selected date range.</p>
+      <section className="commission-report-section commission-driver-breakdown" aria-labelledby="commission-driver-heading">
+        <div className="commission-report-heading">
+          <div>
+            <span className="commission-section-kicker">Driver totals</span>
+            <h3 id="commission-driver-heading">Commission by registered driver</h3>
+            <p className="muted">Every driver assigned to this TODA is listed, including drivers with no completed ride in the selected date range.</p>
+          </div>
+          <span className="commission-section-count">{driverSummaries.length} driver{driverSummaries.length === 1 ? '' : 's'}</span>
+        </div>
         <div className="table commission-table">
-          {driverSummaries.map((driver) => <div className="row commission-row" key={driver.driverId}>
+          {driverSummaries.map((driver) => <div className="row commission-row commission-driver-row" key={driver.driverId}>
             <span data-label="Driver"><b>{driver.driverName}</b><small className="technical-id">Driver: {driver.driverId}</small></span>
             <span data-label="Completed rides"><b>{driver.completedRides}</b><small>completed ride{driver.completedRides === 1 ? '' : 's'}</small></span>
             <span data-label="Gross fares"><b>{peso(driver.grossFare)}</b><small>gross passenger fares</small></span>
@@ -846,22 +852,34 @@ function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
           {!reportLoading && driverSummaries.length === 0 && <p className="muted">No registered drivers are available for this TODA scope.</p>}
         </div>
       </section>
-      <div className="table commission-table">
-        {items.map((item) => {
-          const disputed = item.adjustmentStatus === 'disputed'
-            || item.settlementStatus === 'disputed';
-          return <div className="row commission-row" key={item.bookingId}>
-            <span data-label="Completed"><b>{item.completedAt ? new Date(item.completedAt).toLocaleString('en-PH') : 'Completion time unavailable'}</b><small className="technical-id">Booking: {item.bookingId}</small>{item.receiptNumber && <small>Receipt: {item.receiptNumber}</small>}</span>
-            <span data-label="Driver"><b>{item.driverName || 'Driver name unavailable'}</b><small className="technical-id">Driver: {item.driverId}</small></span>
-            <span data-label="Gross fare"><b>{peso(item.grossFare)} gross</b><small>{percentLabel(item.commissionPercent)} captured rate</small></span>
-            <span data-label="Distribution"><b>{peso(item.commissionAmount)} TODA</b><small>{item.commissionSettlementStatus === 'settled' ? 'Commission paid' : 'Commission due'} · {peso(item.driverNetEarnings)} driver net</small></span>
-            <span data-label="Settlement" className={disputed ? 'warning' : item.settlementStatus === 'settled' ? 'ok' : ''}><b>{statusLabel(item.settlementStatus)}</b>{item.adjustmentStatus && <small>Adjustment: {statusLabel(item.adjustmentStatus)}</small>}{item.disputeReason && <small>{item.disputeReason}</small>}</span>
-          </div>;
-        })}
-        {reportLoading && items.length === 0 && <p className="muted">Loading completed-ride commissions…</p>}
-        {!reportLoading && !reportError && items.length === 0 && <p className="muted">No completed rides were recorded in this date range.</p>}
-      </div>
-      <button type="button" onClick={() => void loadReport(nextCursor, true)} disabled={reportLoading || !nextCursor}>{reportLoading && items.length > 0 ? 'Loading…' : nextCursor ? 'Load older completed rides' : 'End of results'}</button>
+      <section className="commission-report-section commission-trip-history" aria-labelledby="commission-trip-heading">
+        <div className="commission-report-heading">
+          <div>
+            <span className="commission-section-kicker">Ride ledger</span>
+            <h3 id="commission-trip-heading">Trip commission history</h3>
+            <p className="muted">Each row is one completed ride, with its captured rate, TODA share, driver net earnings, receipt, and settlement status.</p>
+          </div>
+          <span className="commission-section-count">{items.length} ride{items.length === 1 ? '' : 's'} shown</span>
+        </div>
+        <div className="table commission-table">
+          {items.map((item) => {
+            const disputed = item.adjustmentStatus === 'disputed'
+              || item.settlementStatus === 'disputed';
+            return <div className="row commission-row commission-trip-row" key={item.bookingId}>
+              <span data-label="Completed"><b>{item.completedAt ? new Date(item.completedAt).toLocaleString('en-PH') : 'Completion time unavailable'}</b><small className="technical-id">Booking: {item.bookingId}</small>{item.receiptNumber && <small>Receipt: {item.receiptNumber}</small>}</span>
+              <span data-label="Driver"><b>{item.driverName || 'Driver name unavailable'}</b><small className="technical-id">Driver: {item.driverId}</small></span>
+              <span data-label="Gross fare"><b>{peso(item.grossFare)} gross</b><small>{percentLabel(item.commissionPercent)} captured rate</small></span>
+              <span data-label="Distribution"><b>{peso(item.commissionAmount)} TODA</b><small>{item.commissionSettlementStatus === 'settled' ? 'Commission paid' : 'Commission due'} · {peso(item.driverNetEarnings)} driver net</small></span>
+              <span data-label="Settlement" className={disputed ? 'warning' : item.settlementStatus === 'settled' ? 'ok' : ''}><b>{statusLabel(item.settlementStatus)}</b>{item.adjustmentStatus && <small>Adjustment: {statusLabel(item.adjustmentStatus)}</small>}{item.disputeReason && <small>{item.disputeReason}</small>}</span>
+            </div>;
+          })}
+          {reportLoading && items.length === 0 && <p className="muted">Loading completed-ride commissions…</p>}
+          {!reportLoading && !reportError && items.length === 0 && <p className="muted">No completed rides were recorded in this date range.</p>}
+        </div>
+        <div className="commission-pagination">
+          <button type="button" onClick={() => void loadReport(nextCursor, true)} disabled={reportLoading || !nextCursor}>{reportLoading && items.length > 0 ? 'Loading…' : nextCursor ? 'Load older completed rides' : 'End of results'}</button>
+        </div>
+      </section>
     </section>
   </>;
 }

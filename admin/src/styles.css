@@ -985,7 +985,70 @@ textarea {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.row.commission-row {
+.commission-report-section {
+  margin-top: 28px;
+  padding: 22px;
+  border: 2px solid var(--outline);
+  border-radius: 16px;
+  box-shadow: 0 5px 14px rgb(16 46 48 / 9%);
+}
+
+.commission-driver-breakdown {
+  border-color: #6eaaa0;
+  background: linear-gradient(135deg, #eef8f5, var(--surface) 38%);
+}
+
+.commission-trip-history {
+  margin-top: 24px;
+  border-color: #789eb6;
+  background: linear-gradient(135deg, #eef5f9, var(--surface) 38%);
+}
+
+.commission-report-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--outline-soft);
+}
+
+.commission-report-heading h3 {
+  margin: 4px 0 0;
+  color: var(--brand-dark);
+  font-size: 20px;
+}
+
+.commission-report-heading p {
+  max-width: 780px;
+  margin: 6px 0 0;
+}
+
+.commission-section-kicker {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.commission-trip-history .commission-section-kicker {
+  color: #315f7a;
+}
+
+.commission-section-count {
+  flex: none;
+  padding: 7px 11px;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--brand-dark);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.row.commission-driver-row {
   grid-template-columns:
     minmax(190px, 1.2fr)
     minmax(125px, 0.7fr)
@@ -994,6 +1057,25 @@ textarea {
     minmax(140px, 0.75fr)
     minmax(160px, 0.85fr);
   border-left-color: var(--success);
+}
+
+.row.commission-trip-row {
+  grid-template-columns:
+    minmax(190px, 1.15fr)
+    minmax(155px, 0.9fr)
+    minmax(135px, 0.72fr)
+    minmax(160px, 0.9fr)
+    minmax(120px, 0.65fr);
+  border-left-color: var(--info);
+  background: #fbfdff;
+}
+
+.commission-pagination {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--outline-soft);
+  display: flex;
+  justify-content: flex-end;
 }
 
 .live-layout {
@@ -1721,6 +1803,28 @@ summary {
 
   .commission-filters {
     grid-template-columns: 1fr;
+  }
+
+  .commission-report-section {
+    padding: 16px;
+  }
+
+  .commission-report-heading {
+    display: block;
+  }
+
+  .commission-section-count {
+    width: max-content;
+    margin-top: 12px;
+    display: block;
+  }
+
+  .commission-pagination {
+    justify-content: stretch;
+  }
+
+  .commission-pagination button {
+    width: 100%;
   }
 
   .safety-actions {
