@@ -6,6 +6,7 @@ import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/booking_repository.dart';
 import '../../../../data/repositories/driver_repository.dart';
 import '../../../../data/repositories/user_repository.dart';
+import '../../../../core/config/mobile_security_config.dart';
 
 enum SplashDestination {
   intro,
@@ -55,7 +56,8 @@ class SplashController extends StateNotifier<AsyncValue<SplashRecovery>> {
 
       await _authRepository.reloadUser();
 
-      if (!_authRepository.isEmailVerified) {
+      if (MobileSecurityConfig.requireEmailVerification &&
+          !_authRepository.isEmailVerified) {
         _setDestination(SplashDestination.verifyEmail);
         return;
       }

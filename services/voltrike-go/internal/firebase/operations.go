@@ -832,6 +832,10 @@ func (store *Store) createDriverRegistration(ctx context.Context, principal app.
 		}
 		if isNotFound(driverErr) {
 			tx.Create(driverRef, driver)
+			writeOutbox(tx, store, "driver.registration.submitted", principal.UID, map[string]any{
+				"driverId": principal.UID,
+				"todaId":   todaID,
+			})
 		}
 		created = true
 		return nil

@@ -18,6 +18,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'app/app.dart';
 import 'config/firebase_emulator_config.dart';
 import 'config/firebase_options.dart';
+import 'core/config/mobile_security_config.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_preference_store.dart';
@@ -133,6 +134,7 @@ Future<void> _initializeOptionalServices() async {
 
 Future<void> _activateAppCheck() async {
   if (FirebaseEmulatorConfig.enabled) return;
+  if (!MobileSecurityConfig.enableAppCheck) return;
   if (kIsWeb) {
     const siteKey = String.fromEnvironment('FIREBASE_APP_CHECK_WEB_SITE_KEY');
     if (siteKey.isEmpty) {

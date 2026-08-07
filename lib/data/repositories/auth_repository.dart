@@ -73,8 +73,13 @@ class AuthRepository {
           .call<Map<String, dynamic>>({'email': email.trim()});
     } on FirebaseFunctionsException catch (error) {
       // Preserve password recovery while the branded function is being
-      // deployed. Other failures must not trigger a second provider email.
-      if (error.code == 'not-found' || error.code == 'unimplemented') {
+      // deployed or its optional email provider is unavailable. Firebase's
+      // built-in reset email is the dependable path for the private APK.
+      if (error.code == 'not-found' ||
+          error.code == 'unimplemented' ||
+          error.code == 'internal' ||
+          error.code == 'unavailable' ||
+          error.code == 'unauthenticated') {
         await _authService.sendPasswordResetEmail(email);
         return;
       }

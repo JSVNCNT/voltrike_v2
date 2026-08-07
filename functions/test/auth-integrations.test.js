@@ -2,7 +2,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { passwordResetMessage } = require('../auth-integrations');
+const {
+  authCallableOptions,
+  passwordResetMessage,
+} = require('../auth-integrations');
+
+test('private APK auth email callables do not require per-device App Check', () => {
+  assert.equal(authCallableOptions.enforceAppCheck, false);
+});
 
 test('password reset wiring passes the generated Firebase link to the template', () => {
   const link = 'https://example.test/reset?oobCode=secure';

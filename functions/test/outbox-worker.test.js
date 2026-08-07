@@ -22,6 +22,10 @@ test('live notification events are skipped after their delivery window', () => {
     type: 'call.ringing',
     createdAt: '2026-08-07T07:57:59Z',
   }, now), 'stale-notification-event');
+  assert.equal(staleNotificationReason({
+    type: 'driver.registration.submitted',
+    createdAt: '2026-08-07T06:59:59Z',
+  }, now), 'stale-notification-event');
 });
 
 test('booking notification uses the recorded transition instead of current projection', () => {

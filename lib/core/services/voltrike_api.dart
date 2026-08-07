@@ -6,6 +6,8 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
+import '../config/mobile_security_config.dart';
+
 typedef VoltrikeTokenProvider = Future<String?> Function();
 
 class VoltrikeApiException implements Exception {
@@ -33,7 +35,10 @@ class VoltrikeApi {
          '',
        ),
        _appCheckTokenProvider =
-           appCheckTokenProvider ?? FirebaseAppCheck.instance.getToken,
+           appCheckTokenProvider ??
+           (MobileSecurityConfig.enableAppCheck
+               ? FirebaseAppCheck.instance.getToken
+               : null),
        _requestTimeout = requestTimeout;
 
   static final VoltrikeApi instance = VoltrikeApi();
