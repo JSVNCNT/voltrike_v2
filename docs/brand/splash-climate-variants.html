@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VolTrike Climate Splash Concepts</title>
+  <style>
+    @font-face {
+      font-family: "Poppins";
+      src: url("../../assets/fonts/Poppins-Regular.ttf") format("truetype");
+      font-weight: 400;
+    }
+
+    @font-face {
+      font-family: "Poppins";
+      src: url("../../assets/fonts/Poppins-Bold.ttf") format("truetype");
+      font-weight: 700;
+    }
+
+    :root {
+      color-scheme: dark;
+      font-family: "Poppins", system-ui, sans-serif;
+      background: #07191a;
+      color: #f4fbfb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 50% 28%, rgba(45, 212, 191, 0.12), transparent 30%),
+        #07191a;
+    }
+
+    .climate-preview {
+      display: grid;
+      justify-items: center;
+      gap: 16px;
+      width: min(100%, 440px);
+    }
+
+    .phone-stage {
+      position: relative;
+      width: min(100%, 390px);
+      aspect-ratio: 9 / 16;
+      overflow: hidden;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      padding: 30px;
+      border: 1px solid rgba(168, 220, 217, 0.38);
+      border-radius: 32px;
+      background: linear-gradient(180deg, #023f40 0%, #042e30 100%);
+      box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+      isolation: isolate;
+    }
+
+    .environment-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 180ms ease-out;
+    }
+
+    .phone-stage[data-variant="leaves"] .leaf-layer,
+    .phone-stage[data-variant="air"] .air-layer {
+      opacity: 1;
+    }
+
+    .leaf {
+      position: absolute;
+      top: -7%;
+      width: var(--leaf-width);
+      aspect-ratio: 1.65;
+      border-radius: 100% 0 100% 0;
+      background: rgba(0, 8, 8, 0.16);
+      transform: rotate(var(--leaf-angle));
+      animation: leaf-fall var(--leaf-duration) var(--leaf-delay) ease-in-out infinite;
+    }
+
+    .leaf::after {
+      content: "";
+      position: absolute;
+      left: 46%;
+      top: 6%;
+      width: 1px;
+      height: 92%;
+      background: rgba(0, 8, 8, 0.12);
+      transform: rotate(-42deg);
+      transform-origin: center;
+    }
+
+    .leaf-one { left: 10%; --leaf-width: 18px; --leaf-angle: -18deg; --leaf-duration: 3.7s; --leaf-delay: -1.4s; }
+    .leaf-two { left: 27%; --leaf-width: 12px; --leaf-angle: 24deg; --leaf-duration: 4.1s; --leaf-delay: -2.8s; }
+    .leaf-three { left: 46%; --leaf-width: 16px; --leaf-angle: 6deg; --leaf-duration: 3.5s; --leaf-delay: -0.7s; }
+    .leaf-four { left: 63%; --leaf-width: 11px; --leaf-angle: -28deg; --leaf-duration: 4.3s; --leaf-delay: -3.2s; }
+    .leaf-five { left: 82%; --leaf-width: 15px; --leaf-angle: 18deg; --leaf-duration: 3.9s; --leaf-delay: -2s; }
+    .leaf-six { left: 36%; --leaf-width: 9px; --leaf-angle: -8deg; --leaf-duration: 4.6s; --leaf-delay: -3.8s; }
+
+    .air-layer svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .air-line {
+      fill: none;
+      stroke: rgba(235, 245, 245, 0.13);
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-dasharray: 24 16;
+      animation: air-flow 2.8s linear infinite;
+    }
+
+    .air-line:nth-child(2) { opacity: 0.72; animation-duration: 3.4s; animation-delay: -1.2s; }
+    .air-line:nth-child(3) { opacity: 0.58; animation-duration: 3.8s; animation-delay: -2.1s; }
+    .air-line:nth-child(4) { opacity: 0.46; animation-duration: 4.2s; animation-delay: -2.8s; }
+
+    .brand-mark {
+      position: relative;
+      z-index: 1;
+      width: 230px;
+      height: 210px;
+      transform: scale(0.985);
+    }
+
+    .brand-mark::before {
+      content: "";
+      position: absolute;
+      inset: -30px;
+      opacity: 0;
+      background: radial-gradient(circle, rgba(83, 225, 210, 0.18), transparent 68%);
+      animation: climate-glow-in 320ms 1120ms ease-out forwards;
+    }
+
+    .logo-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .logo-piece {
+      opacity: 0;
+      animation-name: climate-assemble-piece;
+      animation-duration: var(--duration);
+      animation-delay: var(--delay);
+      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+      animation-fill-mode: forwards;
+      transform: translate(var(--offset-x), var(--offset-y)) rotate(var(--rotation)) scale(0.9);
+    }
+
+    .piece-one {
+      --offset-x: -14px;
+      --offset-y: -10px;
+      --rotation: -3.15deg;
+      --delay: 0ms;
+      --duration: 600ms;
+      clip-path: polygon(0 0, 62% 0, 53% 43%, 0 50%);
+    }
+
+    .piece-two {
+      --offset-x: -16px;
+      --offset-y: 8px;
+      --rotation: 2.58deg;
+      --delay: 160ms;
+      --duration: 640ms;
+      clip-path: polygon(0 42%, 45% 35%, 52% 100%, 0 100%);
+    }
+
+    .piece-three {
+      --offset-x: 0;
+      --offset-y: 15px;
+      --rotation: -2deg;
+      --delay: 320ms;
+      --duration: 680ms;
+      clip-path: polygon(40% 30%, 72% 26%, 68% 100%, 48% 100%);
+    }
+
+    .piece-four {
+      --offset-x: 14px;
+      --offset-y: -12px;
+      --rotation: 3.44deg;
+      --delay: 480ms;
+      --duration: 640ms;
+      clip-path: polygon(58% 0, 100% 0, 100% 60%, 65% 54%);
+    }
+
+    .piece-five {
+      --offset-x: 17px;
+      --offset-y: 10px;
+      --rotation: -2.58deg;
+      --delay: 640ms;
+      --duration: 640ms;
+      clip-path: polygon(62% 48%, 100% 42%, 100% 100%, 64% 100%);
+    }
+
+    .whole-logo {
+      opacity: 0;
+      animation: climate-reveal-logo 320ms 1120ms ease-out forwards;
+    }
+
+    .brand-name,
+    .brand-tagline,
+    .loading-status {
+      position: relative;
+      z-index: 1;
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    .brand-name {
+      margin-top: -4px;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      animation: climate-rise-in 320ms 1280ms ease-out forwards;
+    }
+
+    .brand-tagline {
+      margin-top: 6px;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 14px;
+      letter-spacing: 1px;
+      animation: climate-rise-in 280ms 1440ms ease-out forwards;
+    }
+
+    .loading-status {
+      display: grid;
+      justify-items: center;
+      gap: 13px;
+      margin-top: 34px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 13px;
+      animation: climate-rise-in 240ms 1600ms ease-out forwards;
+    }
+
+    .spinner {
+      width: 23px;
+      height: 23px;
+      border: 2.25px solid rgba(255, 255, 255, 0.22);
+      border-top-color: #6adbd0;
+      border-radius: 50%;
+      animation: spinner-rotation 720ms linear infinite;
+    }
+
+    .preview-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 9px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(137, 222, 215, 0.55);
+      border-radius: 999px;
+      padding: 9px 14px;
+      background: transparent;
+      color: #f4fbfb;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button[aria-pressed="true"],
+    button:hover {
+      background: #0b5556;
+    }
+
+    button:focus-visible { outline: 3px solid #69ddd2; outline-offset: 3px; }
+
+    @keyframes leaf-fall {
+      0% { transform: translate3d(0, -8%, 0) rotate(var(--leaf-angle)); opacity: 0; }
+      12% { opacity: 0.78; }
+      48% { transform: translate3d(13px, 52vh, 0) rotate(calc(var(--leaf-angle) + 110deg)); }
+      100% { transform: translate3d(-9px, 112vh, 0) rotate(calc(var(--leaf-angle) + 230deg)); opacity: 0; }
+    }
+
+    @keyframes air-flow {
+      to { stroke-dashoffset: -80; }
+    }
+
+    @keyframes climate-assemble-piece {
+      to { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); }
+    }
+
+    @keyframes climate-reveal-logo {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes climate-glow-in {
+      from { opacity: 0; transform: scale(0.94); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes climate-rise-in {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes spinner-rotation { to { transform: rotate(360deg); } }
+
+    @media (max-width: 420px) {
+      body { padding: 12px; }
+      .phone-stage { border-radius: 24px; }
+      .brand-mark { width: 210px; height: 192px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="climate-preview">
+    <section class="phone-stage" id="climate-stage" data-variant="leaves" aria-label="VolTrike climate-action splash concept">
+      <div class="environment-layer leaf-layer" aria-hidden="true">
+        <span class="leaf leaf-one"></span>
+        <span class="leaf leaf-two"></span>
+        <span class="leaf leaf-three"></span>
+        <span class="leaf leaf-four"></span>
+        <span class="leaf leaf-five"></span>
+        <span class="leaf leaf-six"></span>
+      </div>
+      <div class="environment-layer air-layer" aria-hidden="true">
+        <svg viewBox="0 0 390 694" preserveAspectRatio="none">
+          <path class="air-line" d="M-35 148 C72 102 136 188 236 142 S360 92 433 136"></path>
+          <path class="air-line" d="M-42 286 C44 242 124 316 220 278 S346 225 436 266"></path>
+          <path class="air-line" d="M-28 430 C82 374 150 462 252 416 S365 364 432 402"></path>
+          <path class="air-line" d="M-36 560 C70 520 142 586 236 548 S354 502 430 536"></path>
+        </svg>
+      </div>
+      <div class="brand-mark" aria-hidden="true">
+        <img class="logo-layer logo-piece piece-one" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-two" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-three" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-four" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-five" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer whole-logo" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+      </div>
+      <div class="brand-name">VolTrike</div>
+      <div class="brand-tagline">Clean Community Mobility</div>
+      <div class="loading-status" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Restoring your session…</span>
+      </div>
+    </section>
+    <div class="preview-controls" aria-label="Splash concept controls">
+      <button type="button" data-variant-button="leaves" aria-pressed="true">Subtle leaves</button>
+      <button type="button" data-variant-button="air" aria-pressed="false">Clean-air lines</button>
+      <button type="button" id="climate-replay-button">Replay</button>
+    </div>
+  </main>
+  <script>
+    let climateStage = document.getElementById('climate-stage');
+    const climateReplayButton = document.getElementById('climate-replay-button');
+    const variantButtons = [...document.querySelectorAll('[data-variant-button]')];
+
+    function restartClimateStage() {
+      const replacement = climateStage.cloneNode(true);
+      climateStage.replaceWith(replacement);
+      replacement.id = 'climate-stage';
+      climateStage = replacement;
+    }
+
+    function selectVariant(variant) {
+      climateStage.dataset.variant = variant;
+      variantButtons.forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.variantButton === variant));
+      });
+      restartClimateStage();
+    }
+
+    variantButtons.forEach((button) => {
+      button.addEventListener('click', () => selectVariant(button.dataset.variantButton));
+    });
+
+    climateReplayButton.addEventListener('click', restartClimateStage);
+  </script>
+</body>
+</html>

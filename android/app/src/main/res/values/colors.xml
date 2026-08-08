@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="voltrike_splash_background">#063B3C</color>
+	<color name="ic_launcher_background">#084E4F</color>
 </resources>

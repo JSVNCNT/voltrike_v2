@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VolTrike Aerodynamic Splash Concept</title>
+  <style>
+    @font-face {
+      font-family: "Poppins";
+      src: url("../../assets/fonts/Poppins-Regular.ttf") format("truetype");
+      font-weight: 400;
+    }
+
+    @font-face {
+      font-family: "Poppins";
+      src: url("../../assets/fonts/Poppins-Bold.ttf") format("truetype");
+      font-weight: 700;
+    }
+
+    :root {
+      color-scheme: dark;
+      font-family: "Poppins", system-ui, sans-serif;
+      background: #07191a;
+      color: #f4fbfb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 50% 28%, rgba(45, 212, 191, 0.12), transparent 30%),
+        #07191a;
+    }
+
+    .aerodynamic-preview {
+      display: grid;
+      justify-items: center;
+      gap: 16px;
+      width: min(100%, 440px);
+    }
+
+    .phone-stage {
+      position: relative;
+      width: min(100%, 390px);
+      aspect-ratio: 9 / 16;
+      overflow: hidden;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      padding: 30px;
+      border: 1px solid rgba(168, 220, 217, 0.38);
+      border-radius: 32px;
+      background: linear-gradient(180deg, #023f40 0%, #042e30 100%);
+      box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+      isolation: isolate;
+    }
+
+    .aero-motif {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .aero-dark,
+    .aero-teal,
+    .aero-pale {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .aero-dark {
+      stroke: rgba(0, 8, 8, 0.2);
+      stroke-width: 7;
+    }
+
+    .aero-teal {
+      stroke: rgba(93, 224, 211, 0.26);
+      stroke-width: 5;
+    }
+
+    .aero-pale {
+      stroke: rgba(235, 245, 245, 0.12);
+      stroke-width: 2;
+    }
+
+    .draw-line {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      animation: draw-aero-line 920ms var(--draw-delay) cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    .flow-line {
+      stroke-dasharray: 34 20;
+      animation: drift-aero-line 2.8s var(--flow-delay) linear infinite;
+    }
+
+    .leaf-shape {
+      transform-box: fill-box;
+      transform-origin: center;
+      opacity: 0;
+      animation: settle-aero-leaf 720ms var(--leaf-delay) cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    .brand-mark,
+    .brand-name,
+    .brand-tagline,
+    .loading-status {
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand-mark {
+      width: 230px;
+      height: 210px;
+      transform: scale(0.985);
+    }
+
+    .brand-mark::before {
+      content: "";
+      position: absolute;
+      inset: -30px;
+      opacity: 0;
+      background: radial-gradient(circle, rgba(83, 225, 210, 0.18), transparent 68%);
+      animation: aero-glow-in 320ms 1120ms ease-out forwards;
+    }
+
+    .logo-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .logo-piece {
+      opacity: 0;
+      animation-name: aero-assemble-piece;
+      animation-duration: var(--duration);
+      animation-delay: var(--delay);
+      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+      animation-fill-mode: forwards;
+      transform: translate(var(--offset-x), var(--offset-y)) rotate(var(--rotation)) scale(0.9);
+    }
+
+    .piece-one {
+      --offset-x: -14px;
+      --offset-y: -10px;
+      --rotation: -3.15deg;
+      --delay: 0ms;
+      --duration: 600ms;
+      clip-path: polygon(0 0, 62% 0, 53% 43%, 0 50%);
+    }
+
+    .piece-two {
+      --offset-x: -16px;
+      --offset-y: 8px;
+      --rotation: 2.58deg;
+      --delay: 160ms;
+      --duration: 640ms;
+      clip-path: polygon(0 42%, 45% 35%, 52% 100%, 0 100%);
+    }
+
+    .piece-three {
+      --offset-x: 0;
+      --offset-y: 15px;
+      --rotation: -2deg;
+      --delay: 320ms;
+      --duration: 680ms;
+      clip-path: polygon(40% 30%, 72% 26%, 68% 100%, 48% 100%);
+    }
+
+    .piece-four {
+      --offset-x: 14px;
+      --offset-y: -12px;
+      --rotation: 3.44deg;
+      --delay: 480ms;
+      --duration: 640ms;
+      clip-path: polygon(58% 0, 100% 0, 100% 60%, 65% 54%);
+    }
+
+    .piece-five {
+      --offset-x: 17px;
+      --offset-y: 10px;
+      --rotation: -2.58deg;
+      --delay: 640ms;
+      --duration: 640ms;
+      clip-path: polygon(62% 48%, 100% 42%, 100% 100%, 64% 100%);
+    }
+
+    .whole-logo {
+      opacity: 0;
+      animation: aero-reveal-logo 320ms 1120ms ease-out forwards;
+    }
+
+    .brand-name,
+    .brand-tagline,
+    .loading-status {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    .brand-name {
+      margin-top: -4px;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      animation: aero-rise-in 320ms 1280ms ease-out forwards;
+    }
+
+    .brand-tagline {
+      margin-top: 6px;
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 13px;
+      letter-spacing: 0.7px;
+      animation: aero-rise-in 280ms 1440ms ease-out forwards;
+    }
+
+    .loading-status {
+      display: grid;
+      justify-items: center;
+      gap: 13px;
+      margin-top: 34px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 13px;
+      animation: aero-rise-in 240ms 1600ms ease-out forwards;
+    }
+
+    .loader-visual {
+      position: relative;
+      display: none;
+      width: 68px;
+      height: 24px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .phone-stage[data-loader="bars"] .loader-bars,
+    .phone-stage[data-loader="streaks"] .loader-streaks,
+    .phone-stage[data-loader="ribbon"] .loader-ribbon {
+      display: flex;
+    }
+
+    .loader-bars {
+      gap: 3px;
+      align-items: center;
+    }
+
+    .loader-bars span {
+      width: 4px;
+      height: 20px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      transform: scaleY(0.14);
+      animation: white-wind-bars 800ms infinite ease-in-out;
+    }
+
+    .loader-bars span:nth-child(1) { animation-delay: -100ms; opacity: 0.48; }
+    .loader-bars span:nth-child(2) { animation-delay: -220ms; opacity: 0.56; }
+    .loader-bars span:nth-child(3) { animation-delay: -340ms; opacity: 0.66; }
+    .loader-bars span:nth-child(4) { animation-delay: -460ms; opacity: 0.76; }
+    .loader-bars span:nth-child(5) { animation-delay: -580ms; opacity: 0.86; }
+    .loader-bars span:nth-child(6) { animation-delay: -700ms; opacity: 0.96; }
+
+    .loader-streaks {
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 5px;
+    }
+
+    .loader-streaks span {
+      display: block;
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.86);
+      animation: reverse-wind-streak 920ms infinite ease-in-out;
+    }
+
+    .loader-streaks span:nth-child(1) { width: 48px; animation-delay: -610ms; opacity: 0.52; }
+    .loader-streaks span:nth-child(2) { width: 32px; animation-delay: -310ms; opacity: 0.9; }
+    .loader-streaks span:nth-child(3) { width: 54px; animation-delay: -50ms; opacity: 0.64; }
+
+    .loader-ribbon svg {
+      width: 68px;
+      height: 24px;
+      overflow: visible;
+      transform: scaleX(-1);
+    }
+
+    .loader-ribbon path {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.86);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-dasharray: 34 46;
+      animation: reverse-air-ribbon 1050ms infinite linear;
+    }
+
+    .loader-ribbon path:nth-child(2) { opacity: 0.66; animation-delay: -350ms; }
+    .loader-ribbon path:nth-child(3) { opacity: 0.46; animation-delay: -700ms; }
+
+    .phone-stage.is-static .draw-line,
+    .phone-stage.is-static .flow-line,
+    .phone-stage.is-static .leaf-shape,
+    .phone-stage.is-static .whole-logo,
+    .phone-stage.is-static .brand-name,
+    .phone-stage.is-static .brand-tagline,
+    .phone-stage.is-static .brand-mark::before {
+      animation: none;
+    }
+
+    .phone-stage.is-static .draw-line { stroke-dashoffset: 0; }
+    .phone-stage.is-static .leaf-shape { opacity: 1; transform: none; }
+    .phone-stage.is-static .logo-piece { display: none; }
+    .phone-stage.is-static .whole-logo { opacity: 1; }
+    .phone-stage.is-static .brand-mark::before { opacity: 1; }
+    .phone-stage.is-static .brand-name,
+    .phone-stage.is-static .brand-tagline { opacity: 1; transform: none; }
+    .phone-stage.is-static .loading-status { display: none; }
+
+    .preview-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 9px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(137, 222, 215, 0.55);
+      border-radius: 999px;
+      padding: 9px 14px;
+      background: transparent;
+      color: #f4fbfb;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button[aria-pressed="true"],
+    button:hover {
+      background: #0b5556;
+    }
+
+    button:focus-visible { outline: 3px solid #69ddd2; outline-offset: 3px; }
+
+    @keyframes draw-aero-line { to { stroke-dashoffset: 0; } }
+    @keyframes drift-aero-line { to { stroke-dashoffset: 108; } }
+
+    @keyframes settle-aero-leaf {
+      from { opacity: 0; transform: translateY(-9px) rotate(-6deg) scale(0.94); }
+      to { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+    }
+
+    @keyframes aero-assemble-piece {
+      to { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); }
+    }
+
+    @keyframes aero-reveal-logo {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes aero-glow-in {
+      from { opacity: 0; transform: scale(0.94); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes aero-rise-in {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes white-wind-bars {
+      0%, 40%, 100% { transform: scaleY(0.14); }
+      20% { transform: scaleY(1); }
+    }
+
+    @keyframes reverse-wind-streak {
+      0% { opacity: 0; transform: translateX(18px) scaleX(0.45); }
+      35% { opacity: 1; transform: translateX(0) scaleX(1); }
+      100% { opacity: 0; transform: translateX(-18px) scaleX(0.62); }
+    }
+
+    @keyframes reverse-air-ribbon { to { stroke-dashoffset: 80; } }
+
+    @media (max-width: 420px) {
+      body { padding: 12px; }
+      .phone-stage { border-radius: 24px; }
+      .brand-mark { width: 210px; height: 192px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="aerodynamic-preview">
+    <section class="phone-stage" id="aerodynamic-stage" data-loader="bars" aria-label="VolTrike aerodynamic splash concept">
+      <svg class="aero-motif" viewBox="0 0 390 694" preserveAspectRatio="none" aria-hidden="true">
+        <path class="aero-dark draw-line" pathLength="1" style="--draw-delay: 80ms" d="M12 188 H82 C111 188 124 205 117 220 C112 230 104 234 94 234"></path>
+        <path class="aero-dark draw-line" pathLength="1" style="--draw-delay: 210ms" d="M8 486 H100 C130 486 143 503 136 519 C131 530 122 534 112 534"></path>
+        <path class="aero-dark draw-line" pathLength="1" style="--draw-delay: 340ms" d="M302 226 H340 C360 226 368 239 363 251 C359 259 353 263 346 263"></path>
+        <path class="aero-teal flow-line" style="--flow-delay: -900ms" d="M8 216 H68 C96 216 106 226 102 237"></path>
+        <path class="aero-pale flow-line" style="--flow-delay: -1600ms" d="M12 454 H72 C99 454 109 446 118 434"></path>
+        <path class="aero-teal flow-line" style="--flow-delay: -2300ms" d="M288 508 H390"></path>
+        <path class="aero-pale flow-line" style="--flow-delay: -400ms" d="M292 178 H390"></path>
+        <g class="leaf-shape" style="--leaf-delay: 340ms">
+          <path class="aero-teal" d="M279 113 C309 84 351 83 365 87 C364 125 353 166 316 175 C292 181 269 168 268 145 C267 133 272 122 279 113 Z"></path>
+          <path class="aero-teal" d="M265 182 L327 117"></path>
+        </g>
+        <g class="leaf-shape" style="--leaf-delay: 510ms">
+          <path class="aero-teal" d="M30 523 C48 502 74 497 92 511 C85 532 64 545 44 535 C38 532 33 528 30 523 Z"></path>
+          <path class="aero-teal" d="M32 523 L75 522"></path>
+        </g>
+        <path class="aero-teal draw-line" pathLength="1" style="--draw-delay: 620ms" d="M56 313 H84"></path>
+        <path class="aero-pale draw-line" pathLength="1" style="--draw-delay: 720ms" d="M306 351 H329"></path>
+        <path class="aero-teal draw-line" pathLength="1" style="--draw-delay: 820ms" d="M78 386 H98"></path>
+      </svg>
+      <div class="brand-mark" aria-hidden="true">
+        <img class="logo-layer logo-piece piece-one" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-two" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-three" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-four" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-five" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer whole-logo" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+      </div>
+      <div class="brand-name">VolTrike</div>
+      <div class="brand-tagline">Clean Community Mobility</div>
+      <div class="loading-status" aria-live="polite">
+        <div class="loader-visual loader-bars" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="loader-visual loader-streaks" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="loader-visual loader-ribbon" aria-hidden="true">
+          <svg viewBox="0 0 82 24">
+            <path d="M2 6 C22 0 42 12 80 5"></path>
+            <path d="M2 12 C28 6 48 18 80 11"></path>
+            <path d="M2 19 C25 13 48 25 80 18"></path>
+          </svg>
+        </div>
+        <span>Restoring session…</span>
+      </div>
+    </section>
+    <div class="preview-controls" aria-label="Aerodynamic preview controls">
+      <button type="button" data-loader-button="bars" aria-pressed="true">Wind bars</button>
+      <button type="button" data-loader-button="streaks" aria-pressed="false">Reverse streaks</button>
+      <button type="button" data-loader-button="ribbon" aria-pressed="false">Air ribbon</button>
+      <button type="button" id="aero-animated-button" aria-pressed="true">Replay animation</button>
+      <button type="button" id="aero-static-button" aria-pressed="false">Static end frame</button>
+    </div>
+  </main>
+  <script>
+    let aerodynamicStage = document.getElementById('aerodynamic-stage');
+    const animatedButton = document.getElementById('aero-animated-button');
+    const staticButton = document.getElementById('aero-static-button');
+    const loaderButtons = [...document.querySelectorAll('[data-loader-button]')];
+
+    function replaceAerodynamicStage(staticMode) {
+      const replacement = aerodynamicStage.cloneNode(true);
+      replacement.classList.toggle('is-static', staticMode);
+      aerodynamicStage.replaceWith(replacement);
+      replacement.id = 'aerodynamic-stage';
+      aerodynamicStage = replacement;
+      animatedButton.setAttribute('aria-pressed', String(!staticMode));
+      staticButton.setAttribute('aria-pressed', String(staticMode));
+    }
+
+    function selectLoader(loader) {
+      aerodynamicStage.dataset.loader = loader;
+      loaderButtons.forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.loaderButton === loader));
+      });
+      replaceAerodynamicStage(false);
+    }
+
+    loaderButtons.forEach((button) => {
+      button.addEventListener('click', () => selectLoader(button.dataset.loaderButton));
+    });
+
+    animatedButton.addEventListener('click', () => replaceAerodynamicStage(false));
+    staticButton.addEventListener('click', () => replaceAerodynamicStage(true));
+  </script>
+</body>
+</html>

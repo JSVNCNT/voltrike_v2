@@ -19,29 +19,54 @@ class AnimatedSplashBrand extends StatelessWidget {
         animation: animation,
         builder: (context, _) {
           final progress = animation.value;
-          final finalImageOpacity = _interval(progress, 0.76, 1);
-          final titleProgress = _interval(progress, 0.58, 0.9);
-          final taglineProgress = _interval(progress, 0.72, 1);
+          final finalImageOpacity = Curves.easeOutCubic.transform(
+            _interval(progress, 0.56, 0.72),
+          );
+          final titleProgress = Curves.easeOutCubic.transform(
+            _interval(progress, 0.64, 0.8),
+          );
+          final taglineProgress = Curves.easeOutCubic.transform(
+            _interval(progress, 0.72, 0.86),
+          );
+          final settleProgress = Curves.easeOutBack.transform(
+            _interval(progress, 0.54, 0.76),
+          );
 
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: 230,
-                height: 210,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    for (final piece in _pieces)
-                      _AnimatedLogoPiece(
-                        piece: piece,
-                        progress: _interval(progress, piece.begin, piece.end),
+              Transform.scale(
+                scale: 0.985 + (0.015 * settleProgress),
+                child: SizedBox(
+                  width: 230,
+                  height: 210,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Opacity(
+                        opacity: finalImageOpacity * 0.16,
+                        child: const DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: RadialGradient(
+                              colors: [
+                                AppColors.primaryLight,
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    Opacity(
-                      opacity: finalImageOpacity,
-                      child: const _LogoImage(),
-                    ),
-                  ],
+                      for (final piece in _pieces)
+                        _AnimatedLogoPiece(
+                          piece: piece,
+                          progress: _interval(progress, piece.begin, piece.end),
+                        ),
+                      Opacity(
+                        opacity: finalImageOpacity,
+                        child: const _LogoImage(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               Transform.translate(
@@ -172,7 +197,7 @@ const _pieces = <_LogoPiece>[
     offset: Offset(-14, -10),
     rotation: -0.055,
     begin: 0,
-    end: 0.42,
+    end: 0.3,
   ),
   _LogoPiece(
     points: [
@@ -183,8 +208,8 @@ const _pieces = <_LogoPiece>[
     ],
     offset: Offset(-16, 8),
     rotation: 0.045,
-    begin: 0.1,
-    end: 0.56,
+    begin: 0.08,
+    end: 0.4,
   ),
   _LogoPiece(
     points: [
@@ -195,15 +220,15 @@ const _pieces = <_LogoPiece>[
     ],
     offset: Offset(0, 15),
     rotation: -0.035,
-    begin: 0.2,
-    end: 0.66,
+    begin: 0.16,
+    end: 0.5,
   ),
   _LogoPiece(
     points: [Offset(0.58, 0), Offset(1, 0), Offset(1, 0.6), Offset(0.65, 0.54)],
     offset: Offset(14, -12),
     rotation: 0.06,
-    begin: 0.28,
-    end: 0.72,
+    begin: 0.24,
+    end: 0.56,
   ),
   _LogoPiece(
     points: [
@@ -214,8 +239,8 @@ const _pieces = <_LogoPiece>[
     ],
     offset: Offset(17, 10),
     rotation: -0.045,
-    begin: 0.36,
-    end: 0.8,
+    begin: 0.32,
+    end: 0.64,
   ),
 ];
 

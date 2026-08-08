@@ -170,5 +170,9 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/images/appLogo.png
+  image_path: assets/images/VolTrikeAppLogo.png
+  adaptive_icon_background: "#084E4F"
+  adaptive_icon_foreground: assets/images/VolTrikeAppLogo.png
+  adaptive_icon_foreground_inset: 0
+  remove_alpha_ios: true
   min_sdk_android: 24

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VolTrike Square Brand Animation</title>
+  <style>
+    @font-face {
+      font-family: "Poppins";
+      src: url("../../assets/fonts/Poppins-Regular.ttf") format("truetype");
+      font-weight: 400;
+    }
+
+    @font-face {
+      font-family: "Poppins";
+      src: url("../../assets/fonts/Poppins-Bold.ttf") format("truetype");
+      font-weight: 700;
+    }
+
+    :root {
+      color-scheme: dark;
+      font-family: "Poppins", system-ui, sans-serif;
+      background: #07191a;
+      color: #f4fbfb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #07191a;
+    }
+
+    .square-preview {
+      display: grid;
+      justify-items: center;
+      gap: 16px;
+      width: min(100%, 620px);
+    }
+
+    .square-stage {
+      position: relative;
+      width: min(100%, 560px);
+      aspect-ratio: 1;
+      overflow: hidden;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      padding: 56px;
+      border: 1px solid rgba(168, 220, 217, 0.38);
+      background:
+        radial-gradient(circle at 50% 42%, rgba(83, 225, 210, 0.12), transparent 38%),
+        linear-gradient(180deg, #023f40 0%, #042e30 100%);
+      box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 270px;
+      height: 246px;
+      transform: scale(0.985);
+    }
+
+    .brand-mark::before {
+      content: "";
+      position: absolute;
+      inset: -34px;
+      opacity: 0;
+      background: radial-gradient(circle, rgba(83, 225, 210, 0.18), transparent 68%);
+      animation: square-glow-in 320ms 1120ms ease-out forwards;
+    }
+
+    .logo-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .logo-piece {
+      opacity: 0;
+      animation-name: square-assemble-piece;
+      animation-duration: var(--duration);
+      animation-delay: var(--delay);
+      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+      animation-fill-mode: forwards;
+      transform: translate(var(--offset-x), var(--offset-y)) rotate(var(--rotation)) scale(0.9);
+    }
+
+    .piece-one {
+      --offset-x: -16px;
+      --offset-y: -12px;
+      --rotation: -3.15deg;
+      --delay: 0ms;
+      --duration: 600ms;
+      clip-path: polygon(0 0, 62% 0, 53% 43%, 0 50%);
+    }
+
+    .piece-two {
+      --offset-x: -19px;
+      --offset-y: 9px;
+      --rotation: 2.58deg;
+      --delay: 160ms;
+      --duration: 640ms;
+      clip-path: polygon(0 42%, 45% 35%, 52% 100%, 0 100%);
+    }
+
+    .piece-three {
+      --offset-x: 0;
+      --offset-y: 18px;
+      --rotation: -2deg;
+      --delay: 320ms;
+      --duration: 680ms;
+      clip-path: polygon(40% 30%, 72% 26%, 68% 100%, 48% 100%);
+    }
+
+    .piece-four {
+      --offset-x: 16px;
+      --offset-y: -14px;
+      --rotation: 3.44deg;
+      --delay: 480ms;
+      --duration: 640ms;
+      clip-path: polygon(58% 0, 100% 0, 100% 60%, 65% 54%);
+    }
+
+    .piece-five {
+      --offset-x: 20px;
+      --offset-y: 12px;
+      --rotation: -2.58deg;
+      --delay: 640ms;
+      --duration: 640ms;
+      clip-path: polygon(62% 48%, 100% 42%, 100% 100%, 64% 100%);
+    }
+
+    .whole-logo {
+      opacity: 0;
+      animation: square-reveal-logo 320ms 1120ms ease-out forwards;
+    }
+
+    .brand-name,
+    .brand-tagline {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    .brand-name {
+      margin-top: -8px;
+      font-size: clamp(30px, 7vw, 40px);
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      animation: square-rise-in 320ms 1280ms ease-out forwards;
+    }
+
+    .brand-tagline {
+      margin-top: 6px;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: clamp(12px, 3vw, 16px);
+      letter-spacing: 1px;
+      text-align: center;
+      animation: square-rise-in 280ms 1440ms ease-out forwards;
+    }
+
+    .preview-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 13px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(137, 222, 215, 0.55);
+      border-radius: 999px;
+      padding: 9px 16px;
+      background: #0b5556;
+      color: #f4fbfb;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { background: #0d6666; }
+    button:focus-visible { outline: 3px solid #69ddd2; outline-offset: 3px; }
+
+    @keyframes square-assemble-piece {
+      to { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); }
+    }
+
+    @keyframes square-reveal-logo {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes square-glow-in {
+      from { opacity: 0; transform: scale(0.94); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes square-rise-in {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      .square-stage { padding: 34px; }
+      .brand-mark { width: 220px; height: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="square-preview">
+    <section class="square-stage" id="square-stage" aria-label="Square VolTrike animated brand lockup">
+      <div class="brand-mark" aria-hidden="true">
+        <img class="logo-layer logo-piece piece-one" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-two" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-three" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-four" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer logo-piece piece-five" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+        <img class="logo-layer whole-logo" src="../../assets/images/VolTrikeLogo-Light.png" alt="">
+      </div>
+      <div class="brand-name">VolTrike</div>
+      <div class="brand-tagline">Clean Community Mobility</div>
+    </section>
+    <div class="preview-actions">
+      <button type="button" id="square-replay-button">Replay animation</button>
+      <span>1:1 brand lockup</span>
+    </div>
+  </main>
+  <script>
+    let squareStage = document.getElementById('square-stage');
+    const squareReplayButton = document.getElementById('square-replay-button');
+
+    squareReplayButton.addEventListener('click', () => {
+      const replacement = squareStage.cloneNode(true);
+      squareStage.replaceWith(replacement);
+      replacement.id = 'square-stage';
+      squareStage = replacement;
+    });
+  </script>
+</body>
+</html>
