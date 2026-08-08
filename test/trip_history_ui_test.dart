@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
+import 'package:voltrike_v2/core/theme/app_semantic_colors.dart';
 import 'package:voltrike_v2/core/theme/app_theme.dart';
+import 'package:voltrike_v2/core/widgets/cards/app_card.dart';
 import 'package:voltrike_v2/data/models/booking.dart';
 import 'package:voltrike_v2/features/ride/tracking/screens/trip_history_detail_screen.dart';
 import 'package:voltrike_v2/features/ride/tracking/widgets/trip_history_card.dart';
@@ -44,6 +46,19 @@ void main() {
     expect(find.text('Yesterday'), findsOneWidget);
     expect(find.text('completed-trip'), findsOneWidget);
     expect(find.text('cancelled-trip'), findsOneWidget);
+    final historyCards = tester.widgetList<AppCard>(find.byType(AppCard));
+    expect(
+      historyCards.any(
+        (card) => card.accentColor == AppSemanticColors.light.success,
+      ),
+      isTrue,
+    );
+    expect(
+      historyCards.any(
+        (card) => card.accentColor == AppTheme.lightTheme.colorScheme.error,
+      ),
+      isTrue,
+    );
 
     await tester.tap(find.text('cancelled-trip'));
     expect(openedBookingId, 'cancelled-trip');

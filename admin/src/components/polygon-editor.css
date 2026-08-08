@@ -67,5 +67,7 @@
 
 @media (max-width: 680px) {
   .polygon-editor .map-search { width: calc(100% - 24px); }
-  .polygon-editor .map-guide { right: 12px; bottom: 26px; left: 12px; max-width: none; }
+  .polygon-editor .map-search form { align-items: stretch; flex-direction: column; }
+  .polygon-editor .map-search button { width: 100%; }
+  .polygon-editor .map-guide { right: 12px; bottom: 12px; left: 12px; max-width: none; font-size: 11px; }
 }

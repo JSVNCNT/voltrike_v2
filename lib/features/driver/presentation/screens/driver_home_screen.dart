@@ -481,7 +481,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     final displayBooking = activeBooking ?? incomingBooking;
 
     return Scaffold(
-      appBar: const AppAppBar(title: 'Driver', showNotifications: true),
+      appBar: const AppAppBar(title: 'Driver'),
       body: Stack(
         children: [
           //------------------------------------------------------------------

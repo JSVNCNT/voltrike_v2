@@ -5,10 +5,15 @@ const assert = require('node:assert/strict');
 const {
   authCallableOptions,
   passwordResetMessage,
+  syncMyEmailVerification,
 } = require('../auth-integrations');
 
 test('private APK auth email callables do not require per-device App Check', () => {
   assert.equal(authCallableOptions.enforceAppCheck, false);
+});
+
+test('verified-email profile synchronization is exported as a callable', () => {
+  assert.equal(typeof syncMyEmailVerification, 'function');
 });
 
 test('password reset wiring passes the generated Firebase link to the template', () => {

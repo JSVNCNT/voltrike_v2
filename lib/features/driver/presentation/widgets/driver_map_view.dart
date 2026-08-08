@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:voltrike_v2/core/maps/restricted_area_legend.dart';
 import 'package:voltrike_v2/core/maps/restriction_polygons.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:voltrike_v2/core/providers/route_restrictions_provider.dart';
@@ -52,8 +53,7 @@ class _DriverMapViewState extends ConsumerState<DriverMapView> {
 
   @override
   Widget build(BuildContext context) {
-    final restrictions =
-        ref.watch(routeRestrictionsProvider).value ?? const [];
+    final restrictions = ref.watch(routeRestrictionsProvider).value ?? const [];
     return Stack(
       children: [
         GoogleMap(
@@ -119,6 +119,8 @@ class _DriverMapViewState extends ConsumerState<DriverMapView> {
               ),
           },
         ),
+        if (restrictions.isNotEmpty)
+          const Positioned(left: 12, top: 12, child: RestrictedAreaLegend()),
       ],
     );
   }

@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/auth_service.dart';
 
+enum VerificationEmailDelivery { branded, firebaseFallback, alreadyVerified }
+
 class AuthRepository {
   AuthRepository({AuthService? authService, FirebaseFunctions? functions})
     : _authService = authService ?? AuthService.instance,
@@ -40,11 +42,19 @@ class AuthRepository {
     return _authService.signOut();
   }
 
-  Future<void> sendEmailVerification() async {
+  Future<VerificationEmailDelivery> sendEmailVerification() async {
+    // Refresh first so pressing resend after opening the verification link
+    // recognizes the completed verification instead of sending another email.
+    await reloadUser();
+    if (isEmailVerified) return VerificationEmailDelivery.alreadyVerified;
+
     try {
-      await _functions
+      final result = await _functions
           .httpsCallable('requestBrandedVerificationEmail')
           .call<Map<String, dynamic>>();
+      return result.data['alreadyVerified'] == true
+          ? VerificationEmailDelivery.alreadyVerified
+          : VerificationEmailDelivery.branded;
     } on FirebaseFunctionsException catch (error) {
       // A new account must never be blocked from verification just because
       // the optional branded provider is unavailable. Firebase Auth sends the
@@ -56,14 +66,25 @@ class AuthRepository {
           error.code == 'internal' ||
           error.code == 'unavailable') {
         await _authService.sendEmailVerification();
-        return;
+        return VerificationEmailDelivery.firebaseFallback;
       }
       rethrow;
     }
   }
 
-  Future<void> reloadUser() {
-    return _authService.reloadUser();
+  Future<void> reloadUser() async {
+    await _authService.reloadUser();
+
+    // The callable copies Firebase Auth's authoritative status into the user
+    // profile for profile/admin displays. This denormalized display update must
+    // never prevent sign-in or app recovery when Functions is unavailable.
+    try {
+      await _functions
+          .httpsCallable('syncMyEmailVerification')
+          .call<Map<String, dynamic>>();
+    } on FirebaseFunctionsException {
+      // Best-effort synchronization; access checks use Firebase Auth directly.
+    }
   }
 
   Future<void> sendPasswordResetEmail(String email) async {

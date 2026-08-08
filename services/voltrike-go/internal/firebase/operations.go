@@ -351,14 +351,18 @@ func (store *Store) getDriverEarningsSummary(ctx context.Context, principal app.
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	manila := time.FixedZone("Asia/Manila", 8*60*60)
+	now := time.Now().In(manila)
 	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	week := day.AddDate(0, 0, 1-int(day.Weekday()+6)%7)
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	var todayTotal, weekTotal, monthTotal, total float64
+	var todayTotal, weekTotal, monthTotal, total, completedTripAmount float64
 	for _, document := range documents {
-		data, amount := document.Data(), number(document.Data(), "driverNetEarnings")
+		data := document.Data()
+		amount := number(data, "driverNetEarnings", "grossFare", "amountDue", "estimatedFare")
+		grossFare := number(data, "grossFare", "amountDue", "estimatedFare")
 		total += amount
+		completedTripAmount += grossFare
 		completed, ok := data["completedAt"].(time.Time)
 		if !ok {
 			continue
@@ -377,7 +381,7 @@ func (store *Store) getDriverEarningsSummary(ctx context.Context, principal app.
 	if len(documents) > 0 {
 		average = total / float64(len(documents))
 	}
-	return map[string]any{"today": todayTotal, "week": weekTotal, "month": monthTotal, "total": total, "completedTrips": len(documents), "averageNetEarnings": average}, nil
+	return map[string]any{"today": todayTotal, "week": weekTotal, "month": monthTotal, "total": total, "completedTripAmount": completedTripAmount, "completedTrips": len(documents), "averageNetEarnings": average}, nil
 }
 
 func (store *Store) startBookingCall(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {

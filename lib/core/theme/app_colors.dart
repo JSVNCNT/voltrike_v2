@@ -66,6 +66,7 @@ class AppColors {
   // ---------------------------------------------------------------------------
 
   static const Color border = Color(0xFFD8E4E4);
+  static const Color structuralBorder = Color(0xFF718889);
 
   // ---------------------------------------------------------------------------
   // Misc

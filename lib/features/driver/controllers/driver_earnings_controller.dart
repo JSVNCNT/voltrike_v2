@@ -11,6 +11,7 @@ class DriverEarningsSummary {
     required this.week,
     required this.month,
     required this.total,
+    required this.completedTripAmount,
     required this.completedTrips,
     required this.averageFare,
   });
@@ -19,6 +20,7 @@ class DriverEarningsSummary {
   final double week;
   final double month;
   final double total;
+  final double completedTripAmount;
   final int completedTrips;
   final double averageFare;
 }
@@ -46,6 +48,7 @@ class DriverEarningsController {
       week: aggregate.week,
       month: aggregate.month,
       total: aggregate.total,
+      completedTripAmount: aggregate.completedTripAmount,
       completedTrips: aggregate.completedTrips,
       averageFare: aggregate.averageNetEarnings,
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:voltrike_v2/core/maps/restricted_area_legend.dart';
 import 'package:voltrike_v2/core/maps/restriction_polygons.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:voltrike_v2/core/providers/route_restrictions_provider.dart';
@@ -52,8 +53,7 @@ class _MapViewState extends ConsumerState<MapView> {
   @override
   Widget build(BuildContext context) {
     final location = ref.watch(passengerLocationProvider);
-    final restrictions =
-        ref.watch(routeRestrictionsProvider).value ?? const [];
+    final restrictions = ref.watch(routeRestrictionsProvider).value ?? const [];
     final position = location.value;
     final currentLocation = position == null
         ? null
@@ -142,11 +142,7 @@ class _MapViewState extends ConsumerState<MapView> {
           polylines: polylines,
         ),
         if (restrictions.isNotEmpty)
-          const Positioned(
-            left: 12,
-            top: 12,
-            child: _RestrictedAreaLegend(),
-          ),
+          const Positioned(left: 12, top: 12, child: RestrictedAreaLegend()),
         if (location.isLoading)
           const Positioned(
             top: 12,
@@ -175,42 +171,5 @@ class _MapViewState extends ConsumerState<MapView> {
   void dispose() {
     _mapController?.dispose();
     super.dispose();
-  }
-}
-
-class _RestrictedAreaLegend extends StatelessWidget {
-  const _RestrictedAreaLegend();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 6)],
-      ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 14,
-              height: 14,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: AppColors.restrictedAreaFill,
-                  border: Border.fromBorderSide(
-                    BorderSide(color: AppColors.restrictedAreaBorder, width: 2),
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(width: 6),
-            Text('Restricted area'),
-          ],
-        ),
-      ),
-    );
   }
 }

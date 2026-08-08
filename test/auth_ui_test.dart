@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/theme/app_theme.dart';
+import 'package:voltrike_v2/features/auth/presentation/screens/driver_registration/under_review_screen.dart';
 import 'package:voltrike_v2/features/auth/presentation/screens/intro/intro_screen.dart';
 import 'package:voltrike_v2/features/auth/presentation/widgets/loading_overlay.dart';
 import 'package:voltrike_v2/features/auth/presentation/widgets/registration_step_indicator.dart';
@@ -50,6 +52,25 @@ void main() {
       find.byType(LinearProgressIndicator),
     );
     expect(progress.value, 0.8);
+  });
+
+  testWidgets('driver review offers a dependable verification resend', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const ProviderScope(child: DriverUnderReviewScreen()),
+      ),
+    );
+
+    expect(find.text('Application under review'), findsOneWidget);
+    expect(find.text('Email verification optional'), findsOneWidget);
+    expect(find.text('Resend verification email'), findsOneWidget);
+    expect(find.textContaining('Brevo'), findsNothing);
+    expect(find.textContaining('standard Firebase'), findsNothing);
+    expect(find.text('Return to sign in'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('compact image preparation overlay stays small at large text', (

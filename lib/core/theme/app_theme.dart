@@ -53,7 +53,7 @@ class AppTheme {
     surface: AppColors.surface,
     onSurface: AppColors.textPrimary,
     onSurfaceVariant: AppColors.textSecondary,
-    outline: AppColors.border,
+    outline: AppColors.structuralBorder,
     outlineVariant: AppColors.divider,
     shadow: Color(0x1A173234),
   );
@@ -283,13 +283,13 @@ class AppTheme {
 
       cardTheme: CardThemeData(
         color: cardColor,
-        elevation: 0,
+        elevation: isDark ? 0 : 1,
         margin: EdgeInsets.zero,
         surfaceTintColor: Colors.transparent,
-        shadowColor: colorScheme.shadow.withValues(alpha: isDark ? 0.12 : 0.1),
+        shadowColor: colorScheme.shadow.withValues(alpha: isDark ? 0.18 : 0.16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          side: BorderSide(color: colorScheme.outlineVariant),
+          side: BorderSide(color: colorScheme.outline),
         ),
       ),
 
@@ -298,6 +298,9 @@ class AppTheme {
         textColor: colorScheme.onSurface,
         subtitleTextStyle: textTheme.bodyMedium,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
       ),
 
       switchTheme: SwitchThemeData(
@@ -334,6 +337,7 @@ class AppTheme {
         indicatorColor: colorScheme.primaryContainer,
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
+          side: BorderSide(color: colorScheme.outline),
         ),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           return IconThemeData(
@@ -362,6 +366,12 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
         dragHandleColor: colorScheme.outline,
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadius.lg),
+          ),
+          side: BorderSide(color: colorScheme.outline, width: 1.5),
+        ),
       ),
 
       dialogTheme: DialogThemeData(
@@ -379,7 +389,7 @@ class AppTheme {
         backgroundColor: cardColor,
         selectedColor: colorScheme.primaryContainer,
         disabledColor: colorScheme.onSurface.withValues(alpha: 0.12),
-        side: BorderSide(color: colorScheme.outlineVariant),
+        side: BorderSide(color: colorScheme.outline),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
@@ -401,7 +411,7 @@ class AppTheme {
                 : cardColor;
           }),
           side: WidgetStatePropertyAll(
-            BorderSide(color: colorScheme.outlineVariant),
+            BorderSide(color: colorScheme.outline, width: 1.2),
           ),
           textStyle: const WidgetStatePropertyAll(
             TextStyle(
@@ -414,9 +424,9 @@ class AppTheme {
       ),
 
       dividerTheme: DividerThemeData(
-        color: colorScheme.outlineVariant,
+        color: colorScheme.outline,
         space: 1,
-        thickness: 1,
+        thickness: 1.2,
       ),
 
       snackBarTheme: SnackBarThemeData(

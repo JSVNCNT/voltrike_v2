@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_radius.dart';
 import '../../../../core/theme/app_semantic_colors.dart';
+import '../../../../core/widgets/cards/app_card.dart';
 import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import '../../../../data/models/booking_state_machine.dart';
@@ -43,125 +44,118 @@ class TripHistoryCard extends StatelessWidget {
           '${tripLocationLabel(booking.pickupName, booking.pickupAddress)} to '
           '${tripLocationLabel(booking.destinationName, booking.destinationAddress)}, '
           '${DateFormat('MMM d, yyyy h:mm a').format(terminalDate)}',
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+      child: AppCard(
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
+        onTap: onTap,
+        accentColor: statusColor,
+        accentEdge: AppCardAccentEdge.leading,
+        tintColor: statusColor,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: colors.primaryContainer,
-                      foregroundImage: photoUrl?.isNotEmpty == true
-                          ? NetworkImage(photoUrl!)
-                          : null,
-                      child: photoUrl?.isNotEmpty == true
-                          ? null
-                          : Icon(
-                              Icons.person_outline_rounded,
-                              color: colors.onPrimaryContainer,
-                            ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AdaptiveParticipantName(
-                            name: otherPartyLabel,
-                            style:
-                                theme.textTheme.titleMedium?.copyWith(
-                                  fontSize: 16,
-                                ) ??
-                                const TextStyle(fontSize: 16),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            DateFormat('h:mm a').format(terminalDate),
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _StatusBadge(label: statusLabel, color: statusColor),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _RouteLine(
-                  icon: Icons.trip_origin_rounded,
-                  iconColor: colors.primary,
-                  address: tripLocationLabel(
-                    booking.pickupName,
-                    booking.pickupAddress,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 9),
-                  child: Container(
-                    width: 2,
-                    height: 12,
-                    color: colors.outlineVariant,
-                  ),
-                ),
-                _RouteLine(
-                  icon: Icons.location_on_rounded,
-                  iconColor: colors.secondary,
-                  address: tripLocationLabel(
-                    booking.destinationName,
-                    booking.destinationAddress,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Divider(),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text(
-                      NumberFormat.currency(
-                        locale: 'en_PH',
-                        symbol: '₱',
-                      ).format(booking.amountDue),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const Spacer(),
-                    if (completed && submittedRating != null) ...[
-                      Icon(
-                        Icons.star_rounded,
-                        size: 18,
-                        color: semantic.rating,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        '$submittedRating',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: colors.primaryContainer,
+                  foregroundImage: photoUrl?.isNotEmpty == true
+                      ? NetworkImage(photoUrl!)
+                      : null,
+                  child: photoUrl?.isNotEmpty == true
+                      ? null
+                      : Icon(
+                          Icons.person_outline_rounded,
+                          color: colors.onPrimaryContainer,
                         ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AdaptiveParticipantName(
+                        name: otherPartyLabel,
+                        style:
+                            theme.textTheme.titleMedium?.copyWith(
+                              fontSize: 16,
+                            ) ??
+                            const TextStyle(fontSize: 16),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormat('h:mm a').format(terminalDate),
+                        style: theme.textTheme.bodyMedium,
+                      ),
                     ],
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _StatusBadge(label: statusLabel, color: statusColor),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _RouteLine(
+              icon: Icons.trip_origin_rounded,
+              iconColor: colors.primary,
+              address: tripLocationLabel(
+                booking.pickupName,
+                booking.pickupAddress,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 9),
+              child: Container(
+                width: 2,
+                height: 12,
+                color: colors.outlineVariant,
+              ),
+            ),
+            _RouteLine(
+              icon: Icons.location_on_rounded,
+              iconColor: colors.secondary,
+              address: tripLocationLabel(
+                booking.destinationName,
+                booking.destinationAddress,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Divider(),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text(
+                  NumberFormat.currency(
+                    locale: 'en_PH',
+                    symbol: '₱',
+                  ).format(booking.amountDue),
+                  style: theme.textTheme.titleMedium?.copyWith(fontSize: 16),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const Spacer(),
+                if (completed && submittedRating != null) ...[
+                  Icon(Icons.star_rounded, size: 18, color: semantic.rating),
+                  const SizedBox(width: 2),
+                  Text(
+                    '$submittedRating',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: colors.onSurfaceVariant,
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -190,6 +184,7 @@ class _StatusBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: color.withValues(alpha: 0.78)),
       ),
       child: Text(
         label,

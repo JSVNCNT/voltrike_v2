@@ -208,6 +208,7 @@ class _RequestMetric extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: theme.colorScheme.outline),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

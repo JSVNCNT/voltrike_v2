@@ -118,7 +118,7 @@ function geometrySummary(areas: Point[][]): string {
 function zoneStatusLabel(status: ZoneRequest['status']): string {
   if (status === 'approved') return 'Approved coverage';
   if (status === 'declined') return 'Declined';
-  return 'Pending developer review';
+  return 'Pending System Admin review';
 }
 
 export default function App() {
@@ -262,7 +262,7 @@ export default function App() {
   return <div className="shell">
     <aside className="sidebar"><div className="brand"><img src="/images/VolTrikeLogo-Light.png" alt="VolTrike" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>VolTrike<br /><b>Admin</b></span></div><div className="role-pill">{isDeveloper ? 'System Admin' : 'TODA Admin'}</div>
       <nav aria-label="Admin sections">{visiblePages.map(([key, text]) => <button className={page === key ? 'nav-active' : ''} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => navigate(key)}>{text}</button>)}</nav>
-      <div className="sidebar-footer"><span>{session.displayName}</span><button onClick={signOutAdmin}>Sign out</button></div>
+      <div className="sidebar-footer"><span>{isDeveloper ? 'System Admin' : session.displayName}</span><button onClick={signOutAdmin}>Sign out</button></div>
     </aside>
     <main className="content"><header><div><p className="eyebrow">{isDeveloper ? 'PLATFORM OPERATIONS' : 'TODA OPERATIONS'}</p><h1>{visiblePages.find(([key]) => key === page)?.[1]}</h1></div><div className="status">{isDeveloper ? 'Platform-wide access' : 'TODA-scoped access'}</div></header>
       {message && <div className="notice" role="status">{message}<button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
@@ -296,7 +296,7 @@ function Login({ message, onMessage }: { message: string; onMessage: (value: str
     finally { setBusy(false); }
   }
   if (registering) return <TodaSignUp onBack={() => setRegistering(false)} onMessage={onMessage} />;
-  return <main className="auth"><section><img src="/images/VolTrikeLogo-Dark.png" className="auth-logo" alt="VolTrike" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized TODA and developer operations only.</p>{message && <div className="notice" role="alert">{message}</div>}<form onSubmit={submit}><label>Email address<input type="email" placeholder="admin@example.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" placeholder="Enter your password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" onClick={() => { onMessage(''); setRegistering(true); }}>Register a TODA</button></form></section></main>;
+  return <main className="auth"><section><img src="/images/VolTrikeLogo-Dark.png" className="auth-logo" alt="VolTrike" /><p className="eyebrow">VolTrike operations</p><h1>Admin Portal</h1><p>Authorized TODA and System Admin operations only.</p>{message && <div className="notice" role="alert">{message}</div>}<form onSubmit={submit}><label>Email address<input type="email" placeholder="admin@example.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" placeholder="Enter your password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" onClick={() => { onMessage(''); setRegistering(true); }}>Register a TODA</button></form></section></main>;
 }
 
 function TodaSignUp({ onBack, onMessage }: { onBack: () => void; onMessage: (value: string) => void }) {
@@ -624,23 +624,45 @@ function DailyBarChart({ title, description, days, series, valueFormatter }: {
   series: Array<{ key: OverviewNumericKey; label: string; tone: ChartTone }>;
   valueFormatter: (value: number) => string;
 }) {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const values = days.flatMap((day) => series.map((item) => Number(day[item.key]) || 0));
   const maximum = Math.max(0, ...values);
   const hasData = maximum > 0;
+  const selectedDay = days.find((day) => day.date === selectedDate);
+  const fullDate = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString('en-PH', {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+  });
+  const daySummary = (day: OverviewAnalyticsDay) => series
+    .map((item) => `${item.label}: ${valueFormatter(Number(day[item.key]) || 0)}`)
+    .join(', ');
   return <section className="overview-chart">
     <div className="chart-heading"><div><h3>{title}</h3><p>{description}</p></div></div>
     <div className="chart-legend">{series.map((item) => <span key={item.key}><i className={`chart-swatch chart-swatch--${item.tone}`} />{item.label}</span>)}</div>
+    <div className={`chart-readout${selectedDay ? ' chart-readout--active' : ''}`} aria-live="polite">
+      {selectedDay
+        ? <><strong>{fullDate(selectedDay.date)}</strong><span>{series.map((item) => <span key={item.key}><i className={`chart-swatch chart-swatch--${item.tone}`} />{item.label}: <b>{valueFormatter(Number(selectedDay[item.key]) || 0)}</b></span>)}</span></>
+        : <span>Hover, focus, or tap a day’s bars to view its exact values.</span>}
+    </div>
     {days.length > 0
       ? <div className="daily-chart-scroll">
-        <div className="daily-chart" role="img" aria-label={`${title}. ${description}`}>
-          {days.map((day) => <div className="daily-chart-column" key={day.date}>
-            <div className="daily-chart-bars" aria-hidden="true">
+        <div className="daily-chart" role="group" aria-label={`${title}. ${description}`}>
+          {days.map((day) => <div className={`daily-chart-column${selectedDate === day.date ? ' daily-chart-column--selected' : ''}`} key={day.date}>
+            <button
+              type="button"
+              className="daily-chart-bars"
+              aria-label={`${fullDate(day.date)}. ${daySummary(day)}`}
+              aria-pressed={selectedDate === day.date}
+              title={`${fullDate(day.date)} — ${daySummary(day)}`}
+              onClick={() => setSelectedDate(day.date)}
+              onFocus={() => setSelectedDate(day.date)}
+              onPointerEnter={() => setSelectedDate(day.date)}
+            >
               {series.map((item) => {
                 const value = Number(day[item.key]) || 0;
                 const height = value > 0 && maximum > 0 ? Math.max(5, (value / maximum) * 100) : 0;
-                return <span className={`daily-chart-bar chart-bar--${item.tone}`} style={{ height: `${height}%` }} key={item.key} title={`${item.label}: ${valueFormatter(value)}`} />;
+                return <span aria-hidden="true" className={`daily-chart-bar chart-bar--${item.tone}`} style={{ height: `${height}%` }} key={item.key} />;
               })}
-            </div>
+            </button>
             <span>{new Date(`${day.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>
           </div>)}
         </div>
@@ -1032,7 +1054,7 @@ function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
   ].filter((entry): entry is [string, string] => Boolean(entry[1]));
   return <section className="panel wide">
     <h2>{todaId ? 'Driver applications assigned to this TODA' : 'All driver registrations'}</h2>
-    <p className="muted">{todaId ? 'Review the camera-captured identity and vehicle documents. Record the licence details shown in the images before approval.' : 'Developer oversight can suspend active accounts; routine approval and licence verification remain with each TODA.'}</p>
+    <p className="muted">{todaId ? 'Review the camera-captured identity and vehicle documents. Record the licence details shown in the images before approval.' : 'System Admin oversight can suspend active accounts; routine approval and licence verification remain with each TODA.'}</p>
     <div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}>
       <span className="applicant" data-label="Applicant and vehicle">
         <b>{fullName(driver)}</b>
@@ -1598,11 +1620,11 @@ function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage
       if (wasEditing) {
         onMessage(isDeveloper
           ? 'Coverage request polygons updated. The request remains pending until it is approved or declined.'
-          : 'Your pending coverage request was updated and sent back for developer review.');
+          : 'Your pending coverage request was updated and sent back for System Admin review.');
       } else {
         onMessage(isDeveloper
-          ? `Coverage request created for ${selectedName}; it remains pending developer review.`
-          : 'Coverage request submitted for developer review.');
+          ? `Coverage request created for ${selectedName}; it remains pending System Admin review.`
+          : 'Coverage request submitted for System Admin review.');
       }
       await reload();
     } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to save coverage polygons.'); }
@@ -1650,7 +1672,7 @@ function CoveragePage({ session, onMessage }: { session: AdminSession; onMessage
   return <>
     <section className="panel wide">
       <h2>{isDeveloper ? 'Create or review coverage areas' : 'Request TODA coverage area'}</h2>
-      <p className="muted">Create one or several disconnected operating polygons. Select Add another area after finishing each shape; the developer approves the complete TODA coverage request together. A TODA administrator may revise its own request while it is pending; approved and declined requests are read-only.</p>
+      <p className="muted">Create one or several disconnected operating polygons. Select Add another area after finishing each shape; the System Admin approves the complete TODA coverage request together. A TODA administrator may revise its own request while it is pending; approved and declined requests are read-only.</p>
       {isDeveloper && <select value={todaId} onChange={(event) => changeToda(event.target.value)} disabled={editingZoneId !== null}>
         <option value="">Select TODA</option>
         {todas.map((toda) => <option key={toda.id} value={toda.id}>{toda.name}</option>)}

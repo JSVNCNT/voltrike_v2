@@ -65,11 +65,8 @@ class _PassengerTripHistoryScreenState
                     otherPartyLabel: booking.driverName ?? 'Driver',
                     otherPartyPhotoUrl: booking.driverPhotoUrl,
                     submittedRating: submittedRating?.rating,
-                    onTap: () => _openTripDetails(
-                      context,
-                      booking,
-                      submittedRating,
-                    ),
+                    onTap: () =>
+                        _openTripDetails(context, booking, submittedRating),
                   );
                 },
               );
@@ -103,8 +100,7 @@ class _PassengerTripHistoryScreenState
           onRate: completed && submittedRating == null
               ? () => Navigator.of(detailContext).push(
                   MaterialPageRoute(
-                    builder: (_) =>
-                        RatingScreen(bookingId: booking.bookingId),
+                    builder: (_) => RatingScreen(bookingId: booking.bookingId),
                   ),
                 )
               : null,

@@ -65,6 +65,13 @@
   box-sizing: border-box;
 }
 
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
 html {
   min-width: 320px;
   background: var(--canvas);
@@ -504,6 +511,45 @@ h3 {
   border-radius: 3px;
 }
 
+.chart-readout {
+  min-height: 52px;
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border: 1px dashed var(--outline);
+  border-radius: 9px;
+  background: #f4f8f8;
+  color: var(--muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chart-readout--active {
+  border-style: solid;
+  background: var(--info-container);
+  color: var(--text);
+}
+
+.chart-readout > strong {
+  flex: 0 0 auto;
+  color: var(--brand-dark);
+  font-size: 12px;
+}
+
+.chart-readout > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.chart-readout > span > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .daily-chart-scroll,
 .chart-data-scroll {
   overflow-x: auto;
@@ -538,11 +584,29 @@ h3 {
 }
 
 .daily-chart-bars {
+  width: 100%;
   min-width: 0;
+  height: 190px;
+  margin: 0;
+  padding: 5px 2px 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
   display: flex;
   align-items: end;
   justify-content: center;
   gap: 3px;
+  cursor: pointer;
+}
+
+button.daily-chart-bars:hover:not(:disabled),
+button.daily-chart-bars:active:not(:disabled),
+button.daily-chart-bars:focus-visible,
+button.daily-chart-bars[aria-pressed="true"] {
+  border-color: var(--info);
+  background: rgb(33 91 134 / 8%);
+  box-shadow: 0 0 0 2px rgb(33 91 134 / 10%);
+  outline: none;
 }
 
 .daily-chart-bar {
@@ -774,12 +838,14 @@ textarea {
 }
 
 .table {
+  min-width: 0;
   margin-top: 14px;
   display: grid;
   gap: 10px;
 }
 
 .row {
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(220px, 1.3fr) minmax(130px, 0.9fr) minmax(100px, 0.55fr) minmax(130px, auto);
   gap: 16px;
@@ -792,6 +858,10 @@ textarea {
   box-shadow: 0 2px 7px rgb(16 46 48 / 8%);
   font-size: 14px;
   transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.row > * {
+  min-width: 0;
 }
 
 .row:hover {
@@ -1716,6 +1786,9 @@ summary {
     min-height: auto;
     padding: 14px;
     gap: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
   }
 
   .brand {
@@ -1723,22 +1796,28 @@ summary {
   }
 
   .role-pill {
-    margin-left: 0;
+    margin: 0;
   }
 
   .sidebar nav {
+    grid-column: 1 / -1;
     grid-auto-flow: column;
     grid-auto-columns: max-content;
     overflow-x: auto;
     padding-bottom: 4px;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-color: rgb(255 255 255 / 35%) transparent;
   }
 
   .sidebar nav button {
     width: auto;
     white-space: nowrap;
+    scroll-snap-align: start;
   }
 
   .sidebar-footer {
+    grid-column: 1 / -1;
     margin: 0;
     padding: 10px 0 0;
     grid-template-columns: 1fr auto;
@@ -1767,8 +1846,17 @@ summary {
 }
 
 @media (max-width: 620px) {
+  .content {
+    padding: 22px 12px 42px;
+  }
+
   .content > header {
     display: block;
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-size: 28px;
   }
 
   .status {
@@ -1779,6 +1867,17 @@ summary {
   .cards,
   .fare-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .panel {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .metric {
+    min-height: 108px;
+    padding: 16px;
   }
 
   .overview-intro,
@@ -1794,7 +1893,32 @@ summary {
   }
 
   .overview-chart {
-    padding: 16px;
+    padding: 14px;
+  }
+
+  .chart-readout {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .daily-chart-scroll,
+  .chart-data-scroll,
+  .sidebar nav {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .daily-chart-scroll {
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+
+  .daily-chart-column {
+    scroll-snap-align: center;
+  }
+
+  .chart-data table {
+    min-width: 520px;
   }
 
   .commission-form {
@@ -1844,12 +1968,40 @@ summary {
   .row.commission-row,
   .row.toda-row {
     grid-template-columns: 1fr;
-    gap: 8px;
-    padding: 18px 2px;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .actions > button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+
+  .status-cell {
+    width: fit-content;
+    white-space: normal;
   }
 
   .map-shell {
-    height: 340px;
+    height: 360px;
+    margin-inline: -4px;
+  }
+
+  .map-actions {
+    align-items: stretch;
+  }
+
+  .map-actions span {
+    flex: 1 0 100%;
+    margin-right: 0;
+  }
+
+  .map-actions button {
+    flex: 1 1 150px;
   }
 
   .section-heading,
@@ -1868,11 +2020,39 @@ summary {
   }
 
   .auth {
-    padding: 14px;
+    padding: 12px;
   }
 
   .auth section {
+    padding: 22px 18px;
     border-radius: 16px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .notice {
+    align-items: flex-start;
+  }
+
+  .case-chat-compose > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .case-chat-compose > div button {
+    width: 100%;
+  }
+
+  .case-message {
+    max-width: 96%;
+  }
+
+  .technical-id {
+    overflow-wrap: anywhere;
   }
 }
 

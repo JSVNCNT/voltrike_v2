@@ -27,16 +27,19 @@ function passwordResetMessage(user, link) {
   });
 }
 
-const options = {
+const authCallableOptions = {
   region: 'asia-southeast1',
-  secrets: [smtpLogin, smtpKey, senderEmail],
   // This client is privately distributed by Quick Share. Requiring the debug
   // provider would make every new phone depend on a manually registered
   // Firebase Console token. Firebase Auth and the callable's own checks remain.
   enforceAppCheck: false,
 };
+const emailOptions = {
+  ...authCallableOptions,
+  secrets: [smtpLogin, smtpKey, senderEmail],
+};
 
-const requestBrandedVerificationEmail = onCall(options, async (request) => {
+const requestBrandedVerificationEmail = onCall(emailOptions, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
   const user = await admin.auth().getUser(request.auth.uid);
   if (user.emailVerified) return { sent: false, alreadyVerified: true };
@@ -83,7 +86,7 @@ const requestBrandedVerificationEmail = onCall(options, async (request) => {
   return { sent: true, alreadyVerified: false };
 });
 
-const requestBrandedPasswordResetEmail = onCall(options, async (request) => {
+const requestBrandedPasswordResetEmail = onCall(emailOptions, async (request) => {
   const email = String(request.data?.email || '').trim().toLowerCase();
   if (!validEmail(email)) throw new HttpsError('invalid-argument', 'Enter a valid email.');
   const hash = createHash('sha256').update(email).digest('hex');
@@ -114,6 +117,31 @@ const requestBrandedPasswordResetEmail = onCall(options, async (request) => {
   return { accepted: true };
 });
 
+// Firebase Authentication owns the verified-email state. Firestore keeps a
+// denormalized copy for profile and admin displays, updated only by trusted
+// server code so a client cannot claim an unverified address is verified.
+const syncMyEmailVerification = onCall(authCallableOptions, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+
+  const user = await admin.auth().getUser(request.auth.uid);
+  const profile = admin.firestore().collection('users').doc(request.auth.uid);
+  const snapshot = await profile.get();
+  if (!snapshot.exists) {
+    throw new HttpsError('failed-precondition', 'The account profile was not found.');
+  }
+
+  const emailVerified = user.emailVerified === true;
+  const changed = snapshot.data()?.emailVerified !== emailVerified;
+  if (changed) {
+    await profile.update({
+      emailVerified,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  return { emailVerified, changed };
+});
+
 async function recordDelivery(uid, purpose, response) {
   await admin.firestore().collection('communicationDeliveries').add({
     recipientId: uid, purpose, channel: 'email', provider: 'brevo',
@@ -124,8 +152,9 @@ async function recordDelivery(uid, purpose, response) {
 }
 
 module.exports = {
-  authCallableOptions: options,
+  authCallableOptions,
   passwordResetMessage,
   requestBrandedPasswordResetEmail,
   requestBrandedVerificationEmail,
+  syncMyEmailVerification,
 };

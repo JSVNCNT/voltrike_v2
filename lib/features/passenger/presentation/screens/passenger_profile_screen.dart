@@ -48,6 +48,11 @@ class PassengerProfileScreen extends ConsumerWidget {
           );
         }
 
+        // Firebase Authentication is authoritative. The Firestore profile copy
+        // is synchronized after auth reloads but must not be used as a security
+        // or display source while an older account is catching up.
+        final emailVerified = AuthRepository().isEmailVerified;
+
         return StreamBuilder<Passenger?>(
           stream: PassengerRepository().passengerStream(appUser.uid),
           builder: (context, passengerSnapshot) {
@@ -109,14 +114,12 @@ class PassengerProfileScreen extends ConsumerWidget {
                             value: _date(appUser.dateOfBirth!),
                           ),
                         ProfileInfoTile(
-                          icon: appUser.emailVerified
+                          icon: emailVerified
                               ? Icons.verified_outlined
                               : Icons.warning_amber_rounded,
                           label: 'Email verification',
-                          value: appUser.emailVerified
-                              ? 'Verified'
-                              : 'Not verified',
-                          iconColor: appUser.emailVerified
+                          value: emailVerified ? 'Verified' : 'Not verified',
+                          iconColor: emailVerified
                               ? semantic.success
                               : semantic.warning,
                         ),

@@ -3,18 +3,65 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../app/routes.dart';
+import '../../../../../core/errors/domain_error_mapper.dart';
 import '../../../../../core/theme/app_colors.dart';
 import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/widgets/buttons/primary_button.dart';
+import '../../../../../data/repositories/auth_repository.dart';
+import '../../providers/email_verification_provider.dart';
 import '../../widgets/auth_header.dart';
 import '../../widgets/auth_logo.dart';
 import '../../widgets/auth_scaffold.dart';
+import '../../widgets/validation_message.dart';
 
-class DriverUnderReviewScreen extends ConsumerWidget {
+class DriverUnderReviewScreen extends ConsumerStatefulWidget {
   const DriverUnderReviewScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DriverUnderReviewScreen> createState() =>
+      _DriverUnderReviewScreenState();
+}
+
+class _DriverUnderReviewScreenState
+    extends ConsumerState<DriverUnderReviewScreen> {
+  bool _isSending = false;
+  String? _message;
+  bool _messageIsError = false;
+
+  Future<void> _sendVerification() async {
+    setState(() {
+      _isSending = true;
+      _message = null;
+      _messageIsError = false;
+    });
+
+    try {
+      final controller = ref.read(emailVerificationControllerProvider.notifier);
+      final delivery = await controller.resendVerificationEmail();
+      if (!mounted) return;
+      setState(() {
+        _message = switch (delivery) {
+          VerificationEmailDelivery.branded =>
+            'Verification email sent. Check your inbox and Spam or Junk folder.',
+          VerificationEmailDelivery.firebaseFallback =>
+            'Verification email sent through Firebase. Check your inbox and Spam or Junk folder.',
+          VerificationEmailDelivery.alreadyVerified =>
+            'Email verified. Your driver access will activate after TODA approval.',
+        };
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _message = DomainErrorMapper.message(error);
+        _messageIsError = true;
+      });
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return AuthScaffold(
       child: Column(
         children: [
@@ -55,7 +102,7 @@ class DriverUnderReviewScreen extends ConsumerWidget {
                   _ReviewStep(
                     icon: Icons.mark_email_read_outlined,
                     color: AppColors.primary,
-                    label: 'Verification email sent',
+                    label: 'Email verification optional',
                   ),
                   Divider(height: 28),
                   _ReviewStep(
@@ -75,15 +122,32 @@ class DriverUnderReviewScreen extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           Text(
-            'Verify your email and wait for approval. Account access will update '
-            'when your TODA completes its review.',
+            'Email verification is optional during private testing but is '
+            'recommended for account recovery. Driver access updates when '
+            'your TODA completes its review.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
+          if (_message != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            ValidationMessage(
+              message: _message!,
+              type: _messageIsError
+                  ? ValidationType.error
+                  : ValidationType.success,
+            ),
+          ],
           const SizedBox(height: AppSpacing.xl),
           PrimaryButton(
-            text: 'Return to sign in',
-            icon: Icons.login_rounded,
+            text: 'Resend verification email',
+            icon: Icons.mark_email_read_outlined,
+            isLoading: _isSending,
+            onPressed: _isSending ? null : _sendVerification,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TextButton.icon(
+            label: const Text('Return to sign in'),
+            icon: const Icon(Icons.login_rounded),
             onPressed: () => context.go(AppRoutes.login),
           ),
         ],

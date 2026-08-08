@@ -10,6 +10,7 @@ class DriverEarningsAggregate {
     required this.week,
     required this.month,
     required this.total,
+    required this.completedTripAmount,
     required this.completedTrips,
     required this.averageNetEarnings,
   });
@@ -18,6 +19,7 @@ class DriverEarningsAggregate {
   final double week;
   final double month;
   final double total;
+  final double completedTripAmount;
   final int completedTrips;
   final double averageNetEarnings;
 }
@@ -179,7 +181,22 @@ class DriverEarningsRepository {
           'getDriverEarningsSummary',
           const <String, dynamic>{},
         );
-        return _aggregateFromCallable(response);
+        final aggregate = _aggregateFromCallable(response);
+        if (_hasCompletedTripAmount(response)) return aggregate;
+
+        // Older Cloud Run revisions did not return the gross completed-fare
+        // total. Keep installed/private-test apps compatible while the new
+        // revision rolls out by deriving only that missing value locally.
+        final bookings = await _loadCompleted(driverId);
+        return DriverEarningsAggregate(
+          today: aggregate.today,
+          week: aggregate.week,
+          month: aggregate.month,
+          total: aggregate.total,
+          completedTripAmount: _completedTripAmount(bookings),
+          completedTrips: aggregate.completedTrips,
+          averageNetEarnings: aggregate.averageNetEarnings,
+        );
       } on VoltrikeApiException catch (error) {
         if (!const {
           'not_found',
@@ -193,7 +210,7 @@ class DriverEarningsRepository {
       }
     }
     final bookings = await _loadCompleted(driverId);
-    final current = now ?? DateTime.now();
+    final current = now ?? _manilaTime(DateTime.now());
     final dayStart = DateTime(current.year, current.month, current.day);
     final weekStart = dayStart.subtract(Duration(days: current.weekday - 1));
     final monthStart = DateTime(current.year, current.month);
@@ -202,10 +219,14 @@ class DriverEarningsRepository {
     var week = 0.0;
     var month = 0.0;
     var total = 0.0;
+    var completedTripAmount = 0.0;
     for (final booking in bookings) {
       final net = booking.driverNetEarnings;
       total += net;
-      final completed = booking.completedAt;
+      completedTripAmount += booking.grossFare;
+      final completed = booking.completedAt == null
+          ? null
+          : _manilaTime(booking.completedAt!);
       if (completed == null) continue;
       if (!completed.isBefore(dayStart)) today += net;
       if (!completed.isBefore(weekStart)) week += net;
@@ -217,6 +238,7 @@ class DriverEarningsRepository {
       week: week,
       month: month,
       total: total,
+      completedTripAmount: completedTripAmount,
       completedTrips: bookings.length,
       averageNetEarnings: bookings.isEmpty ? 0 : total / bookings.length,
     );
@@ -243,9 +265,29 @@ class DriverEarningsRepository {
       week: money('week'),
       month: money('month'),
       total: money('total'),
+      completedTripAmount: data['completedTripAmount'] is num
+          ? money('completedTripAmount')
+          : money('total'),
       completedTrips: completed.toInt(),
       averageNetEarnings: money('averageNetEarnings'),
     );
+  }
+
+  bool _hasCompletedTripAmount(Object? value) {
+    if (value is! Map) return false;
+    final amount = value['completedTripAmount'];
+    return amount is num && amount.isFinite;
+  }
+
+  double _completedTripAmount(List<Booking> bookings) {
+    return bookings.fold<double>(
+      0,
+      (total, booking) => total + booking.grossFare,
+    );
+  }
+
+  DateTime _manilaTime(DateTime value) {
+    return value.toUtc().add(const Duration(hours: 8));
   }
 
   //==========================================================================

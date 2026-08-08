@@ -114,6 +114,7 @@ class _Metric extends StatelessWidget {
       decoration: BoxDecoration(
         color: colorScheme.surface.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: colorScheme.outline),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

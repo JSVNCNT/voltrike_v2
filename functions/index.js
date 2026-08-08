@@ -12,6 +12,7 @@ const { processGoOutbox } = require('./outbox-worker');
 const {
   requestBrandedPasswordResetEmail,
   requestBrandedVerificationEmail,
+  syncMyEmailVerification,
 } = require('./auth-integrations');
 const {
   registerAdminWebPushToken,
@@ -22,6 +23,7 @@ const { runGoMaintenance } = require('./maintenance-trigger');
 exports.processGoOutbox = wrapCloudEvent(processGoOutbox);
 exports.requestBrandedPasswordResetEmail = wrapCallable(requestBrandedPasswordResetEmail);
 exports.requestBrandedVerificationEmail = wrapCallable(requestBrandedVerificationEmail);
+exports.syncMyEmailVerification = wrapCallable(syncMyEmailVerification);
 exports.registerAdminWebPushToken = wrapCallable(registerAdminWebPushToken);
 exports.unregisterAdminWebPushToken = wrapCallable(unregisterAdminWebPushToken);
 exports.runGoMaintenance = wrapCloudEvent(runGoMaintenance);

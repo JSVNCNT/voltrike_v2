@@ -11,8 +11,7 @@ import 'package:flutter/material.dart';
 ///
 /// Can optionally display notification and profile actions.
 /// ===========================================================================
-class AppAppBar extends StatelessWidget
-    implements PreferredSizeWidget {
+class AppAppBar extends StatelessWidget implements PreferredSizeWidget {
   const AppAppBar({
     super.key,
     required this.title,
@@ -39,29 +38,26 @@ class AppAppBar extends StatelessWidget
   final bool centerTitle;
 
   @override
-  Size get preferredSize =>
-      const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return AppBar(
       centerTitle: centerTitle,
       elevation: 0,
+      shape: Border(bottom: BorderSide(color: colors.outline, width: 1.5)),
       leading: leading,
       title: Text(title),
       actions: [
         if (showNotifications)
           IconButton(
-            icon: const Icon(
-              Icons.notifications_outlined,
-            ),
+            icon: const Icon(Icons.notifications_outlined),
             onPressed: onNotificationPressed,
           ),
         if (showProfile)
           IconButton(
-            icon: const Icon(
-              Icons.account_circle_outlined,
-            ),
+            icon: const Icon(Icons.account_circle_outlined),
             onPressed: onProfilePressed,
           ),
         ...actions,

@@ -652,7 +652,10 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     return Material(
       elevation: 10,
       color: colorScheme.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        side: BorderSide(color: colorScheme.outline, width: 1.5),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [

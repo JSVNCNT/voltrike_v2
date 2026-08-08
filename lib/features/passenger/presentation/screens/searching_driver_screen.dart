@@ -416,7 +416,10 @@ class _DriverSearchBottomSheet extends StatelessWidget {
       color: colors.surface,
       elevation: 18,
       surfaceTintColor: Colors.transparent,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        side: BorderSide(color: colors.outline, width: 1.5),
+      ),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,

@@ -42,7 +42,14 @@ class AuthService {
   }
 
   Future<void> sendEmailVerification() async {
-    await currentUser?.sendEmailVerification();
+    final user = currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'unauthenticated',
+        message: 'Sign in before requesting email verification.',
+      );
+    }
+    await user.sendEmailVerification();
   }
 
   Future<void> reloadUser() async {
@@ -53,17 +60,11 @@ class AuthService {
     return currentUser?.emailVerified ?? false;
   }
 
-  Future<void> sendPasswordResetEmail(
-    String email,
-  ) {
-    return _auth.sendPasswordResetEmail(
-      email: email.trim(),
-    );
+  Future<void> sendPasswordResetEmail(String email) {
+    return _auth.sendPasswordResetEmail(email: email.trim());
   }
 
-  Future<void> updatePassword(
-    String newPassword,
-  ) async {
+  Future<void> updatePassword(String newPassword) async {
     await currentUser?.updatePassword(newPassword);
   }
 

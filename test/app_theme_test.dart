@@ -65,6 +65,31 @@ void main() {
         _contrast(semantic.onChatAction, semantic.chatAction),
         greaterThan(4.5),
       );
+      expect(
+        _contrast(
+          AppTheme.lightTheme.colorScheme.outline,
+          AppTheme.lightTheme.colorScheme.surface,
+        ),
+        greaterThan(3),
+      );
+    });
+
+    test('interactive pills and sheets use structural outlines', () {
+      final theme = AppTheme.lightTheme;
+      final outline = theme.colorScheme.outline;
+      final segmentedSide = theme.segmentedButtonTheme.style?.side?.resolve(
+        const <WidgetState>{},
+      );
+      final navigationShape =
+          theme.navigationBarTheme.indicatorShape as RoundedRectangleBorder;
+      final sheetShape = theme.bottomSheetTheme.shape as RoundedRectangleBorder;
+
+      expect(segmentedSide?.color, outline);
+      expect(segmentedSide?.width, 1.2);
+      expect(theme.chipTheme.side?.color, outline);
+      expect(navigationShape.side.color, outline);
+      expect(sheetShape.side.color, outline);
+      expect(sheetShape.side.width, 1.5);
     });
   });
 

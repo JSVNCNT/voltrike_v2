@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
@@ -45,8 +47,50 @@ class PassengerHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
+  static const double _initialSheetExtent = 0.42;
+  static const double _compactSheetExtent = 0.18;
+  static const double _expandedSheetExtent = 0.85;
+
   int _routeCalculationGeneration = 0;
   bool _bookingCreationInProgress = false;
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+  bool _sheetExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheetController.addListener(_onSheetExtentChanged);
+  }
+
+  void _onSheetExtentChanged() {
+    if (!mounted || !_sheetController.isAttached) return;
+    final isExpanded =
+        _sheetController.size >
+        (_compactSheetExtent + _expandedSheetExtent) / 2;
+    if (isExpanded != _sheetExpanded) {
+      setState(() => _sheetExpanded = isExpanded);
+    }
+  }
+
+  void _toggleSheet() {
+    if (!_sheetController.isAttached) return;
+    unawaited(
+      _sheetController.animateTo(
+        _sheetExpanded ? _compactSheetExtent : _expandedSheetExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _sheetController
+      ..removeListener(_onSheetExtentChanged)
+      ..dispose();
+    super.dispose();
+  }
 
   FareConfiguration get _fareConfiguration =>
       ref.read(fareConfigurationProvider).value ?? devFareConfiguration;
@@ -571,7 +615,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         bookingState == PassengerBookingState.searchingDriver;
 
     return Scaffold(
-      appBar: const AppAppBar(title: 'VolTrike', showNotifications: true),
+      appBar: const AppAppBar(title: 'Passenger'),
       body: Stack(
         children: [
           Positioned.fill(
@@ -583,12 +627,15 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
           ),
 
           DraggableScrollableSheet(
-            initialChildSize: 0.42,
-            minChildSize: 0.18,
-            maxChildSize: 0.85,
+            controller: _sheetController,
+            initialChildSize: _initialSheetExtent,
+            minChildSize: _compactSheetExtent,
+            maxChildSize: _expandedSheetExtent,
             builder: (context, scrollController) {
               return HomeBottomSheet(
                 scrollController: scrollController,
+                isExpanded: _sheetExpanded,
+                onToggleExpanded: _toggleSheet,
 
                 pickup: session.pickupName ?? 'Select pickup',
 

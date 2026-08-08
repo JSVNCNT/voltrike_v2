@@ -83,4 +83,4 @@ jobs:
           API_URL="$(gcloud run services describe voltrike-api-v2 --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')"
           printf 'VOLTRIKE_API_BASE_URL=%s\nSENTRY_DSN=%s\nSENTRY_ENVIRONMENT=%s\nSENTRY_RELEASE=%s\nSENTRY_TRACES_SAMPLE_RATE=0.05\n' "$API_URL" "$SENTRY_FUNCTIONS_DSN" "$SENTRY_ENVIRONMENT" "$GITHUB_SHA" > "functions/.env.$PROJECT_ID"
           firebase deploy --only firestore,database,storage --project "$PROJECT_ID" --non-interactive
-          firebase deploy --only functions:processGoOutbox,functions:requestBrandedPasswordResetEmail,functions:requestBrandedVerificationEmail,functions:registerAdminWebPushToken,functions:unregisterAdminWebPushToken,functions:runGoMaintenance --project "$PROJECT_ID" --non-interactive
+          firebase deploy --only functions:processGoOutbox,functions:requestBrandedPasswordResetEmail,functions:requestBrandedVerificationEmail,functions:syncMyEmailVerification,functions:registerAdminWebPushToken,functions:unregisterAdminWebPushToken,functions:runGoMaintenance --project "$PROJECT_ID" --non-interactive

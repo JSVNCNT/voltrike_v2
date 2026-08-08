@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voltrike_v2/core/maps/restricted_area_legend.dart';
 import 'package:voltrike_v2/features/passenger/presentation/widgets/fare_card.dart';
 import 'package:voltrike_v2/features/passenger/presentation/widgets/home_bottom_sheet.dart';
 
@@ -50,6 +51,8 @@ void main() {
       app(
         HomeBottomSheet(
           scrollController: controller,
+          isExpanded: false,
+          onToggleExpanded: () {},
           pickup: 'Barangay 40',
           destination: 'Bacolod City Hall',
           hasRoute: true,
@@ -61,5 +64,43 @@ void main() {
     expect(find.text('Route advisory'), findsOneWidget);
     expect(find.text(advisory), findsOneWidget);
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+  });
+
+  testWidgets('book ride sheet exposes an accessible expand control', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    var toggled = false;
+
+    await tester.pumpWidget(
+      app(
+        HomeBottomSheet(
+          scrollController: controller,
+          isExpanded: false,
+          onToggleExpanded: () => toggled = true,
+          pickup: 'Current location',
+          destination: 'Where are you going?',
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Show booking form'), findsOneWidget);
+    await tester.tap(find.byTooltip('Show booking form'));
+    expect(toggled, isTrue);
+  });
+
+  testWidgets('restricted-area legend remains visible in dark mode', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: const Scaffold(body: RestrictedAreaLegend()),
+      ),
+    );
+
+    expect(find.text('Restricted area'), findsOneWidget);
+    expect(find.byType(Material), findsWidgets);
   });
 }

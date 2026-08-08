@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_semantic_colors.dart';
+import '../../../../core/widgets/cards/app_card.dart';
 import '../../../../core/utils/trip_location_label.dart';
 import '../../../../data/models/booking.dart';
 import 'adaptive_participant_name.dart';
@@ -24,43 +25,68 @@ class DashboardIdentityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            ProfileAvatar(
-              imageUrl: photoUrl?.trim(),
-              radius: 24,
-              showBorder: true,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(eyebrow, style: Theme.of(context).textTheme.bodyMedium),
-                  const SizedBox(height: 3),
-                  AdaptiveParticipantName(
-                    name: name,
-                    style:
-                        Theme.of(context).textTheme.titleLarge ??
-                        const TextStyle(fontSize: 22),
+    final colors = Theme.of(context).colorScheme;
+    return AppCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(20),
+      accentColor: colors.primary,
+      tintColor: colors.primary,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 290;
+          final identity = Row(
+            children: [
+              ProfileAvatar(
+                imageUrl: photoUrl?.trim(),
+                radius: 24,
+                showBorder: true,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      eyebrow,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 3),
+                    AdaptiveParticipantName(
+                      name: name,
+                      style:
+                          Theme.of(context).textTheme.titleLarge ??
+                          const TextStyle(fontSize: 22),
+                    ),
+                  ],
+                ),
+              ),
+              if (statusLabel != null) ...[
+                if (!compact) ...[
+                  const SizedBox(width: 10),
+                  _DashboardStatusBadge(
+                    label: statusLabel!,
+                    color: statusColor ?? colors.onSurfaceVariant,
                   ),
                 ],
-              ),
-            ),
-            if (statusLabel != null) ...[
-              const SizedBox(width: 10),
-              _DashboardStatusBadge(
-                label: statusLabel!,
-                color:
-                    statusColor ??
-                    Theme.of(context).colorScheme.onSurfaceVariant,
+              ],
+            ],
+          );
+          if (!compact || statusLabel == null) return identity;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              identity,
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _DashboardStatusBadge(
+                  label: statusLabel!,
+                  color: statusColor ?? colors.onSurfaceVariant,
+                ),
               ),
             ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -138,43 +164,44 @@ class DashboardMetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolvedColor = color ?? Theme.of(context).colorScheme.primary;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: resolvedColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: resolvedColor, size: 22),
+    return AppCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(16),
+      accentColor: resolvedColor,
+      tintColor: resolvedColor,
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: resolvedColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
+            child: Icon(icon, color: resolvedColor, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -199,59 +226,60 @@ class DashboardMoneySummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final semanticColors = AppSemanticColors.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: semanticColors.successContainer,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: semanticColors.onSuccessContainer),
+    return AppCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(20),
+      accentColor: semanticColors.success,
+      tintColor: semanticColors.success,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: semanticColors.successContainer,
+              borderRadius: BorderRadius.circular(14),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    primaryLabel,
-                    style: Theme.of(context).textTheme.bodyMedium,
+            child: Icon(icon, color: semanticColors.onSuccessContainer),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  primaryLabel,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  primaryValue,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: semanticColors.success,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    primaryValue,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: semanticColors.success,
-                    ),
+                ),
+                if (secondaryLabel != null && secondaryValue != null) ...[
+                  const Divider(height: 28),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          secondaryLabel!,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                      Text(
+                        secondaryValue!,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ],
                   ),
-                  if (secondaryLabel != null && secondaryValue != null) ...[
-                    const Divider(height: 28),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            secondaryLabel!,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                        Text(
-                          secondaryValue!,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -277,75 +305,77 @@ class DashboardTripCard extends StatelessWidget {
     final semanticColors = AppSemanticColors.of(context);
     final trip = booking;
     if (trip == null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Row(
-            children: [
-              Icon(Icons.route_outlined, color: colorScheme.onSurfaceVariant),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  emptyMessage,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+      return AppCard(
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.all(24),
+        accentColor: colorScheme.primary,
+        tintColor: colorScheme.primary,
+        child: Row(
+          children: [
+            Icon(Icons.route_outlined, color: colorScheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                emptyMessage,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _DashboardTripLocation(
-              icon: Icons.trip_origin_rounded,
-              label: 'Pickup',
-              value: tripLocationLabel(trip.pickupName, trip.pickupAddress),
+    final statusColor = _statusColor(context, trip.status);
+    return AppCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(18),
+      accentColor: statusColor,
+      tintColor: statusColor,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _DashboardTripLocation(
+            icon: Icons.trip_origin_rounded,
+            label: 'Pickup',
+            value: tripLocationLabel(trip.pickupName, trip.pickupAddress),
+          ),
+          const SizedBox(height: 16),
+          _DashboardTripLocation(
+            icon: Icons.location_on_rounded,
+            label: 'Destination',
+            value: tripLocationLabel(
+              trip.destinationName,
+              trip.destinationAddress,
             ),
-            const SizedBox(height: 16),
-            _DashboardTripLocation(
-              icon: Icons.location_on_rounded,
-              label: 'Destination',
-              value: tripLocationLabel(
-                trip.destinationName,
-                trip.destinationAddress,
+          ),
+          const Divider(height: 28),
+          Row(
+            children: [
+              _DashboardStatusBadge(
+                label: _readableStatus(trip.status),
+                color: statusColor,
               ),
-            ),
-            const Divider(height: 28),
-            Row(
-              children: [
-                _DashboardStatusBadge(
-                  label: _readableStatus(trip.status),
-                  color: _statusColor(context, trip.status),
+              const Spacer(),
+              Text(
+                '₱${trip.amountDue.toStringAsFixed(2)}',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: semanticColors.success,
                 ),
-                const Spacer(),
-                Text(
-                  '₱${trip.amountDue.toStringAsFixed(2)}',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: semanticColors.success,
-                  ),
-                ),
-              ],
-            ),
-            if (primaryAction != null || secondaryAction != null) ...[
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  if (primaryAction != null) Expanded(child: primaryAction!),
-                  if (primaryAction != null && secondaryAction != null)
-                    const SizedBox(width: 10),
-                  if (secondaryAction != null)
-                    Expanded(child: secondaryAction!),
-                ],
               ),
             ],
+          ),
+          if (primaryAction != null || secondaryAction != null) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                if (primaryAction != null) Expanded(child: primaryAction!),
+                if (primaryAction != null && secondaryAction != null)
+                  const SizedBox(width: 10),
+                if (secondaryAction != null) Expanded(child: secondaryAction!),
+              ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -398,6 +428,7 @@ class _DashboardStatusBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: color.withValues(alpha: 0.78)),
       ),
       child: Text(
         label,

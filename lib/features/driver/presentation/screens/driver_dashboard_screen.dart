@@ -16,6 +16,7 @@ import '../../../../data/repositories/user_repository.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../../common/presentation/widgets/dashboard_widgets.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
+import '../../controllers/driver_earnings_controller.dart';
 import '../../providers/driver_booking_listener_provider.dart';
 import '../../providers/driver_booking_provider.dart';
 import '../../providers/driver_status_provider.dart';
@@ -33,6 +34,7 @@ class DriverDashboardScreen extends ConsumerWidget {
     if (user == null) {
       return const Scaffold(body: Center(child: Text('Driver not signed in.')));
     }
+    final earnings = ref.watch(driverEarningsProvider(user.uid));
 
     final driverRepository = DriverRepository();
     return Scaffold(
@@ -91,11 +93,7 @@ class DriverDashboardScreen extends ConsumerWidget {
                   .where((booking) => booking.status == BookingStatus.cancelled)
                   .length;
               final currentBooking = _activeBooking(bookings);
-              final totalEarnings = bookings.fold<double>(0, (total, booking) {
-                return booking.status == BookingStatus.completed
-                    ? total + booking.driverNetEarnings
-                    : total;
-              });
+              final fallbackToday = _todayNetEarnings(bookings);
 
               return SafeArea(
                 child: ListView(
@@ -158,8 +156,11 @@ class DriverDashboardScreen extends ConsumerWidget {
                     DashboardSection(
                       title: 'Earnings',
                       child: DashboardMoneySummary(
-                        primaryLabel: 'Completed-trip amount',
-                        primaryValue: _currency(totalEarnings),
+                        primaryLabel: "Today's earnings",
+                        primaryValue: earnings.maybeWhen(
+                          data: (summary) => _currency(summary.today),
+                          orElse: () => _currency(fallbackToday),
+                        ),
                         icon: Icons.account_balance_wallet_outlined,
                       ),
                     ),
@@ -422,6 +423,27 @@ Booking? _activeBooking(List<Booking> bookings) {
     }
   }
   return null;
+}
+
+double _todayNetEarnings(List<Booking> bookings) {
+  final now = _manilaTime(DateTime.now());
+  return bookings.fold<double>(0, (total, booking) {
+    final completed = booking.completedAt == null
+        ? null
+        : _manilaTime(booking.completedAt!);
+    if (booking.status != BookingStatus.completed || completed == null) {
+      return total;
+    }
+    final completedToday =
+        completed.year == now.year &&
+        completed.month == now.month &&
+        completed.day == now.day;
+    return completedToday ? total + booking.driverNetEarnings : total;
+  });
+}
+
+DateTime _manilaTime(DateTime value) {
+  return value.toUtc().add(const Duration(hours: 8));
 }
 
 String _currency(double value) {

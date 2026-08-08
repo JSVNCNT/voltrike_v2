@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../ride/tracking/widgets/trip_sheet_handle.dart';
 import 'fare_card.dart';
 import 'location_search_bar.dart';
 import 'trip_options_card.dart';
@@ -18,6 +19,8 @@ class HomeBottomSheet extends StatelessWidget {
   const HomeBottomSheet({
     super.key,
     required this.scrollController,
+    required this.isExpanded,
+    required this.onToggleExpanded,
     required this.pickup,
     required this.destination,
     this.onPickupTap,
@@ -48,6 +51,8 @@ class HomeBottomSheet extends StatelessWidget {
   });
 
   final ScrollController scrollController;
+  final bool isExpanded;
+  final VoidCallback onToggleExpanded;
 
   final VoidCallback? onPickupTap;
   final VoidCallback? onDestinationTap;
@@ -87,116 +92,119 @@ class HomeBottomSheet extends StatelessWidget {
       child: Material(
         color: theme.colorScheme.surface,
         elevation: 10,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 48,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outline,
-                    borderRadius: BorderRadius.circular(100),
-                  ),
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          side: BorderSide(color: theme.colorScheme.outline, width: 1.5),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            TripSheetHandle(
+              isExpanded: isExpanded,
+              onPressed: onToggleExpanded,
+              expandLabel: 'Show booking form',
+              collapseLabel: 'Hide booking form',
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Book a Ride', style: theme.textTheme.titleLarge),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      hasRoute
+                          ? 'Review your trip before booking.'
+                          : 'Select your pickup and destination.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    Text('Pickup', style: theme.textTheme.labelLarge),
+
+                    const SizedBox(height: 8),
+
+                    LocationSearchBar(
+                      hintText: pickup,
+                      icon: Icons.my_location,
+                      onTap: onPickupTap,
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Text('Destination', style: theme.textTheme.labelLarge),
+
+                    const SizedBox(height: 8),
+
+                    LocationSearchBar(
+                      hintText: destination,
+                      icon: Icons.location_on,
+                      onTap: onDestinationTap,
+                    ),
+
+                    if (hasRoute) ...[
+                      const SizedBox(height: 28),
+
+                      Text('Ride Summary', style: theme.textTheme.titleMedium),
+
+                      const SizedBox(height: 12),
+
+                      if (routeAdvisory.isNotEmpty) ...[
+                        _RouteAdvisoryCard(message: routeAdvisory),
+                        const SizedBox(height: 12),
+                      ],
+
+                      FareCard(
+                        estimatedFare: estimatedFare,
+                        baseFare: baseFare,
+                        distanceFare: distanceFare,
+                        distance: distance,
+                        eta: eta,
+                        additionalPassengers: additionalPassengers,
+                        additionalPassengerFee: additionalPassengerFee,
+                        baggageFee: baggageFee,
+                        boundarySurcharge: boundarySurcharge,
+                        isOutsideToda: isOutsideToda,
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      TripOptionsCard(
+                        additionalPassengers: additionalPassengers,
+                        baggageCount: baggageCount,
+
+                        onIncreasePassengers: onIncreasePassengers,
+                        onDecreasePassengers: onDecreasePassengers,
+
+                        onIncreaseBaggage: onIncreaseBaggage,
+                        onDecreaseBaggage: onDecreaseBaggage,
+                      ),
+                    ],
+
+                    const SizedBox(height: 28),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: hasRoute ? onBookRide : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
+                        ),
+                        child: const Text('Book Ride'),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
-
-              const SizedBox(height: 20),
-
-              Text('Book a Ride', style: theme.textTheme.titleLarge),
-
-              const SizedBox(height: 6),
-
-              Text(
-                hasRoute
-                    ? 'Review your trip before booking.'
-                    : 'Select your pickup and destination.',
-                style: theme.textTheme.bodyMedium,
-              ),
-
-              const SizedBox(height: 24),
-
-              Text('Pickup', style: theme.textTheme.labelLarge),
-
-              const SizedBox(height: 8),
-
-              LocationSearchBar(
-                hintText: pickup,
-                icon: Icons.my_location,
-                onTap: onPickupTap,
-              ),
-
-              const SizedBox(height: 20),
-
-              Text('Destination', style: theme.textTheme.labelLarge),
-
-              const SizedBox(height: 8),
-
-              LocationSearchBar(
-                hintText: destination,
-                icon: Icons.location_on,
-                onTap: onDestinationTap,
-              ),
-
-              if (hasRoute) ...[
-                const SizedBox(height: 28),
-
-                Text('Ride Summary', style: theme.textTheme.titleMedium),
-
-                const SizedBox(height: 12),
-
-                if (routeAdvisory.isNotEmpty) ...[
-                  _RouteAdvisoryCard(message: routeAdvisory),
-                  const SizedBox(height: 12),
-                ],
-
-                FareCard(
-                  estimatedFare: estimatedFare,
-                  baseFare: baseFare,
-                  distanceFare: distanceFare,
-                  distance: distance,
-                  eta: eta,
-                  additionalPassengers: additionalPassengers,
-                  additionalPassengerFee: additionalPassengerFee,
-                  baggageFee: baggageFee,
-                  boundarySurcharge: boundarySurcharge,
-                  isOutsideToda: isOutsideToda,
-                ),
-
-                const SizedBox(height: 16),
-
-                TripOptionsCard(
-                  additionalPassengers: additionalPassengers,
-                  baggageCount: baggageCount,
-
-                  onIncreasePassengers: onIncreasePassengers,
-                  onDecreasePassengers: onDecreasePassengers,
-
-                  onIncreaseBaggage: onIncreaseBaggage,
-                  onDecreaseBaggage: onDecreaseBaggage,
-                ),
-              ],
-
-              const SizedBox(height: 28),
-
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: hasRoute ? onBookRide : null,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(56),
-                  ),
-                  child: const Text('Book Ride'),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

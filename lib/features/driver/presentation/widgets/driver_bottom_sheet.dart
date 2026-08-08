@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_semantic_colors.dart';
+import '../../../../core/widgets/cards/app_card.dart';
 import '../../../../data/models/booking.dart';
 import '../../../common/presentation/widgets/adaptive_participant_name.dart';
 import '../../../ride/tracking/models/ride_action.dart';
@@ -49,6 +51,7 @@ class DriverBottomSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOffer = onAcceptBooking != null || onDeclineBooking != null;
     final colors = Theme.of(context).colorScheme;
+    final semantic = AppSemanticColors.of(context);
     // Treat malformed legacy state as idle. The offer card is the only path
     // that may show a request before it is accepted; active-trip details need
     // both trusted addresses.
@@ -61,7 +64,11 @@ class DriverBottomSheet extends StatelessWidget {
 
     return Material(
       color: colors.surface,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: colors.outline, width: 1.5),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: SizedBox(
         width: double.infinity,
         child: Padding(
@@ -83,11 +90,35 @@ class DriverBottomSheet extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 20),
-                SwitchListTile(
-                  value: isOnline,
-                  onChanged: onOnlineChanged,
-                  title: const Text('Driver Online'),
-                  subtitle: Text(isOnline ? 'Receiving bookings' : 'Offline'),
+                AppCard(
+                  margin: EdgeInsets.zero,
+                  padding: EdgeInsets.zero,
+                  accentColor: isOnline
+                      ? semantic.success
+                      : colors.onSurfaceVariant,
+                  accentEdge: AppCardAccentEdge.leading,
+                  tintColor: isOnline
+                      ? semantic.success
+                      : colors.onSurfaceVariant,
+                  child: SwitchListTile(
+                    minTileHeight: 72,
+                    value: isOnline,
+                    onChanged: onOnlineChanged,
+                    secondary: Icon(
+                      isOnline
+                          ? Icons.location_on_rounded
+                          : Icons.location_off_outlined,
+                      color: isOnline
+                          ? semantic.success
+                          : colors.onSurfaceVariant,
+                    ),
+                    title: Text(isOnline ? 'Driver online' : 'Driver offline'),
+                    subtitle: Text(
+                      isOnline
+                          ? 'Receiving bookings'
+                          : 'Not receiving bookings',
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 if (!hasBooking)

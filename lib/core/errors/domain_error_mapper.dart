@@ -50,7 +50,7 @@ class DomainErrorMapper {
         'Service is temporarily unavailable. Check your connection.',
       'invalid-argument' => 'Review the information and try again.',
       'quota-exceeded' => 'The service limit was reached. Try again later.',
-      'resource_exhausted' =>
+      'resource-exhausted' || 'resource_exhausted' =>
         'Too many requests were sent. Wait briefly and try again.',
       'canceled' => 'The operation was canceled. Please try again.',
       _ => 'Something went wrong. Please try again or contact support.',
