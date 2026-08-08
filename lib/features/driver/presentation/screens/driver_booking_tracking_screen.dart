@@ -455,10 +455,7 @@ class _DriverBookingTrackingScreenState
                   AppRoutes.bookingChat,
                   booking.bookingId,
                 ),
-                extra: {
-                  'bookingId': booking.bookingId,
-                  'members': [booking.passengerId, booking.driverId!],
-                },
+                extra: booking.bookingId,
               )
             : null,
         onReport: stage.allowReport ? () => _reportPassenger(booking) : null,
@@ -708,10 +705,7 @@ class _DriverBookingTrackingScreenState
         bookingId: booking.bookingId,
         onOpenChat: () => context.push(
           AppRoutes.withBookingId(AppRoutes.bookingChat, booking.bookingId),
-          extra: {
-            'bookingId': booking.bookingId,
-            'members': [booking.passengerId, booking.driverId!],
-          },
+          extra: booking.bookingId,
         ),
         child: Stack(
           children: [

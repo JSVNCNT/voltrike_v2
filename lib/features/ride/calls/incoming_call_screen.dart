@@ -78,10 +78,23 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
 
   void _onCallChanged(BookingCallSession? session) {
     if (!mounted || session == null) return;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final expectedCallId = widget.callId;
     if (expectedCallId != null && !session.matches(expectedCallId)) {
       setState(() => _error = 'This call invitation is no longer current.');
       unawaited(RingtoneService.instance.stopIncomingCall());
+      return;
+    }
+    if (currentUserId == null ||
+        !session.isIncomingFor(currentUserId, expectedCallId: expectedCallId)) {
+      unawaited(RingtoneService.instance.stopIncomingCall());
+      setState(() {
+        _session = null;
+        _error = session.isCaller(currentUserId ?? '')
+            ? 'You started this call. Returning to the calling screen.'
+            : 'This call invitation is not for this account.';
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _close());
       return;
     }
     final status = session.effectiveStatus();

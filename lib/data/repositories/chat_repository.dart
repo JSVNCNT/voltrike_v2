@@ -51,12 +51,7 @@ class ChatRepository {
                 .toList(),
           );
 
-  Future<void> send({
-    required String bookingId,
-    required String senderId,
-    required List<String> members,
-    required String text,
-  }) async {
+  Future<void> send({required String bookingId, required String text}) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     await _api.operation('sendRideChatMessage', {
@@ -65,15 +60,11 @@ class ChatRepository {
     }, commandId: _uuid.v4());
   }
 
-  Future<void> markSeen(String bookingId, String userId) async {
+  Future<void> markSeen(String bookingId) async {
     await _api.operation('markRideChatSeen', {'bookingId': bookingId});
   }
 
-  Future<void> setTyping({
-    required String bookingId,
-    required String userId,
-    required bool isTyping,
-  }) {
+  Future<void> setTyping({required String bookingId, required bool isTyping}) {
     return _api.operation('setRideChatTyping', {
       'bookingId': bookingId,
       'isTyping': isTyping,

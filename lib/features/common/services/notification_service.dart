@@ -41,6 +41,7 @@ class NotificationService {
   String? _lastOpenedCallId;
   Map<Object?, Object?>? _pendingIncomingData;
   int _notificationId = 0;
+  int _userSyncGeneration = 0;
 
   static const _bookingChannel = AndroidNotificationChannel(
     'booking_updates',
@@ -179,6 +180,14 @@ class NotificationService {
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {
     final type = message.data['type'];
+    if (type == 'incoming_call' &&
+        await _validatedIncomingSession(message.data) == null) {
+      await _stopIncomingCallAlert();
+      return;
+    }
+    if (type == 'chat_message' && !_targetsCurrentUser(message.data)) {
+      return;
+    }
     if (type == 'booking_offer' ||
         type == 'driverAssigned' ||
         type == 'safety_incident') {
@@ -257,21 +266,33 @@ class NotificationService {
   }
 
   Future<void> syncUser(String userId) async {
+    final generation = ++_userSyncGeneration;
+    final previousUserId = _userId;
     _userId = userId;
+    final previousSubscription = _incomingCallSubscription;
+    _incomingCallSubscription = null;
+    await previousSubscription?.cancel();
+    if (generation != _userSyncGeneration || _userId != userId) return;
+    final token = await _messaging.getToken();
+    if (generation != _userSyncGeneration || _userId != userId) return;
+    if (token != null && previousUserId != null && previousUserId != userId) {
+      await _deleteToken(previousUserId, token);
+    }
+    if (token != null) await _saveToken(userId, token);
+    if (generation != _userSyncGeneration || _userId != userId) return;
     final pendingIncomingData = _pendingIncomingData;
     _pendingIncomingData = null;
     if (pendingIncomingData != null) {
       _scheduleData(pendingIncomingData);
     }
-    final token = await _messaging.getToken();
-    if (token != null) await _saveToken(userId, token);
-    await _incomingCallSubscription?.cancel();
     _incomingCallSubscription = BookingVoiceCallRepository()
         .watchIncomingCall(userId)
         .listen(
           (session) {
-            if (session == null ||
-                session.effectiveStatus() != BookingCallStatus.ringing) {
+            if (generation != _userSyncGeneration || _userId != userId) {
+              return;
+            }
+            if (session == null || !session.isIncomingFor(userId)) {
               unawaited(_stopIncomingCallAlert());
               return;
             }
@@ -288,22 +309,33 @@ class NotificationService {
   }
 
   Future<void> clearUser() async {
+    final generation = ++_userSyncGeneration;
     final userId = _userId;
-    await _incomingCallSubscription?.cancel();
+    _userId = null;
+    final previousSubscription = _incomingCallSubscription;
     _incomingCallSubscription = null;
+    await previousSubscription?.cancel();
+    final token = await _messaging.getToken();
+    if (userId != null && token != null) {
+      await _deleteToken(userId, token);
+    }
+    if (generation != _userSyncGeneration || _userId != null) return;
     await _stopIncomingCallAlert();
     _lastOpenedCallId = null;
     _pendingIncomingData = null;
-    final token = await _messaging.getToken();
-    if (userId != null && token != null) {
+  }
+
+  Future<void> _deleteToken(String userId, String token) async {
+    try {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
           .collection('devices')
           .doc(token)
           .delete();
+    } catch (error) {
+      debugPrint('Unable to remove the previous notification token: $error');
     }
-    _userId = null;
   }
 
   Future<void> _saveToken(String userId, String token) {
@@ -324,10 +356,12 @@ class NotificationService {
   }
 
   void _scheduleData(Map<Object?, Object?> data) {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _navigateData(data));
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(_navigateData(data)),
+    );
   }
 
-  void _navigateData(Map<Object?, Object?> data) {
+  Future<void> _navigateData(Map<Object?, Object?> data) async {
     final bookingId = data['bookingId'] as String?;
     final target = data['target'] as String?;
     final type = data['type'] as String?;
@@ -355,20 +389,26 @@ class NotificationService {
         return;
       }
       final callId = data['callId'] as String?;
+      final session = await _validatedIncomingSession(data);
+      if (session == null) {
+        await _stopIncomingCallAlert();
+        return;
+      }
       if (callId != null && callId == _lastOpenedCallId) return;
-      _lastOpenedCallId = callId;
+      _lastOpenedCallId = session.callId;
       appRouter.push(
         Uri(
           path: AppRoutes.incomingBookingCall,
           queryParameters: <String, String>{
             'bookingId': bookingId,
-            'callId': ?callId,
+            'callId': session.callId,
           },
         ).toString(),
-        extra: {'bookingId': bookingId, 'callId': callId},
+        extra: {'bookingId': bookingId, 'callId': session.callId},
       );
       return;
     }
+    if (type == 'chat_message' && !_targetsCurrentUser(data)) return;
     appRouter.go(
       AppRoutes.withBookingId(
         target == 'driver'
@@ -378,6 +418,45 @@ class NotificationService {
       ),
       extra: bookingId,
     );
+  }
+
+  bool _targetsCurrentUser(Map<Object?, Object?> data) {
+    final activeUserId = FirebaseAuth.instance.currentUser?.uid;
+    final recipientId = data['recipientId'] as String?;
+    return activeUserId != null &&
+        activeUserId == _userId &&
+        recipientId != null &&
+        recipientId == activeUserId;
+  }
+
+  Future<BookingCallSession?> _validatedIncomingSession(
+    Map<Object?, Object?> data,
+  ) async {
+    final bookingId = data['bookingId'] as String?;
+    final callId = data['callId'] as String?;
+    final activeUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (bookingId == null ||
+        bookingId.isEmpty ||
+        callId == null ||
+        callId.isEmpty ||
+        activeUserId == null ||
+        activeUserId != _userId) {
+      return null;
+    }
+    final payloadRecipientId = data['recipientId'] as String?;
+    if (payloadRecipientId != null && payloadRecipientId != activeUserId) {
+      return null;
+    }
+    try {
+      final session = await BookingVoiceCallRepository().getCall(bookingId);
+      return session?.isIncomingFor(activeUserId, expectedCallId: callId) ==
+              true
+          ? session
+          : null;
+    } catch (error) {
+      debugPrint('Incoming call validation failed: $error');
+      return null;
+    }
   }
 
   Future<void> dispose() async {

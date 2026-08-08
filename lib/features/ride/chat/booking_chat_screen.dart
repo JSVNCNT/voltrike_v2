@@ -12,14 +12,9 @@ import '../../common/presentation/widgets/app_app_bar.dart';
 import '../../common/services/ringtone_service.dart';
 
 class BookingChatScreen extends ConsumerStatefulWidget {
-  const BookingChatScreen({
-    super.key,
-    required this.bookingId,
-    required this.members,
-  });
+  const BookingChatScreen({super.key, required this.bookingId});
 
   final String bookingId;
-  final List<String> members;
 
   @override
   ConsumerState<BookingChatScreen> createState() => _BookingChatScreenState();
@@ -39,11 +34,7 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
     final userId = AuthRepository().currentUser?.uid;
     if (userId != null) {
       unawaited(
-        _repository.setTyping(
-          bookingId: widget.bookingId,
-          userId: userId,
-          isTyping: false,
-        ),
+        _repository.setTyping(bookingId: widget.bookingId, isTyping: false),
       );
     }
     _controller.dispose();
@@ -136,8 +127,8 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
                       controller: _controller,
                       textInputAction: TextInputAction.send,
                       textCapitalization: TextCapitalization.sentences,
-                      onChanged: (_) => _onChanged(user.uid),
-                      onSubmitted: (_) => _send(user.uid),
+                      onChanged: (_) => _onChanged(),
+                      onSubmitted: (_) => _send(),
                       decoration: const InputDecoration(
                         labelText: 'Message',
                         hintText: 'Type a message',
@@ -152,7 +143,7 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
                       foregroundColor: colorScheme.onPrimary,
                     ),
                     icon: const Icon(Icons.send_rounded),
-                    onPressed: () => _send(user.uid),
+                    onPressed: _send,
                   ),
                 ],
               ),
@@ -173,48 +164,32 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
       unawaited(RingtoneService.instance.playInsideChat());
     }
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _repository.markSeen(widget.bookingId, userId),
+      (_) => _repository.markSeen(widget.bookingId),
     );
   }
 
-  void _onChanged(String userId) {
+  void _onChanged() {
     if (!_typing && _controller.text.trim().isNotEmpty) {
       _typing = true;
       unawaited(
-        _repository.setTyping(
-          bookingId: widget.bookingId,
-          userId: userId,
-          isTyping: true,
-        ),
+        _repository.setTyping(bookingId: widget.bookingId, isTyping: true),
       );
     }
     _typingTimer?.cancel();
-    _typingTimer = Timer(
-      const Duration(seconds: 2),
-      () => _setNotTyping(userId),
-    );
+    _typingTimer = Timer(const Duration(seconds: 2), _setNotTyping);
   }
 
-  void _setNotTyping(String userId) {
+  void _setNotTyping() {
     if (!_typing) return;
     _typing = false;
     unawaited(
-      _repository.setTyping(
-        bookingId: widget.bookingId,
-        userId: userId,
-        isTyping: false,
-      ),
+      _repository.setTyping(bookingId: widget.bookingId, isTyping: false),
     );
   }
 
-  Future<void> _send(String userId) async {
-    _setNotTyping(userId);
-    await _repository.send(
-      bookingId: widget.bookingId,
-      senderId: userId,
-      members: widget.members,
-      text: _controller.text,
-    );
+  Future<void> _send() async {
+    _setNotTyping();
+    await _repository.send(bookingId: widget.bookingId, text: _controller.text);
     _controller.clear();
   }
 }

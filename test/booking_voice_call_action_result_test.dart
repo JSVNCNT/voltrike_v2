@@ -81,4 +81,62 @@ void main() {
       );
     });
   });
+
+  group('BookingCallSession participant direction', () {
+    final now = DateTime.utc(2026, 8, 8, 3);
+    late BookingCallSession session;
+
+    setUp(() {
+      session = BookingCallSession.fromMap(
+        bookingId: 'booking_trip_a',
+        data: {
+          'callId': 'call_trip_a',
+          'callerId': 'passenger_a',
+          'recipientId': 'driver_a',
+          'status': 'ringing',
+          'createdAt': now,
+          'expiresAt': now.add(const Duration(seconds: 30)),
+        },
+      );
+    });
+
+    test('only recipient gets incoming call UI and ringtone', () {
+      expect(
+        session.isIncomingFor(
+          'driver_a',
+          expectedCallId: 'call_trip_a',
+          at: now,
+        ),
+        isTrue,
+      );
+      expect(
+        session.isIncomingFor(
+          'passenger_a',
+          expectedCallId: 'call_trip_a',
+          at: now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('rejects another trip call and expired invitations', () {
+      expect(
+        session.isIncomingFor(
+          'driver_a',
+          expectedCallId: 'call_trip_b',
+          at: now,
+        ),
+        isFalse,
+      );
+      expect(
+        session.isIncomingFor(
+          'driver_a',
+          expectedCallId: 'call_trip_a',
+          at: now.add(const Duration(seconds: 31)),
+        ),
+        isFalse,
+      );
+      expect(session.includesParticipant('unrelated_user'), isFalse);
+    });
+  });
 }

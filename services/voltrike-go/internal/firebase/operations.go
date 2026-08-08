@@ -432,7 +432,7 @@ func (store *Store) startBookingCall(ctx context.Context, principal app.Principa
 			"status": "ringing", "createdAt": now, "updatedAt": now, "expiresAt": now.Add(30 * time.Second),
 		}
 		tx.Set(callRef, data)
-		writeOutbox(tx, store, "call.ringing", callID, map[string]any{"bookingId": bookingID, "callId": callID, "recipientId": recipientID})
+		writeOutbox(tx, store, "call.ringing", callID, map[string]any{"bookingId": bookingID, "callId": callID, "callerId": principal.UID, "recipientId": recipientID})
 		result = callResult(data)
 		result["idempotent"] = false
 		return nil
@@ -517,6 +517,9 @@ func (store *Store) createBookingCallToken(ctx context.Context, principal app.Pr
 		return nil, fmt.Errorf("%w: active call unavailable", app.ErrPrecondition)
 	}
 	call := snapshot.Data()
+	if text(call, "callerId") != principal.UID && text(call, "recipientId") != principal.UID {
+		return nil, fmt.Errorf("%w: user is not this call's participant", app.ErrPrecondition)
+	}
 	if text(call, "callId") != callID || effectiveCallStatus(call, time.Now().UTC()) != "accepted" {
 		return nil, fmt.Errorf("%w: call must be accepted before joining", app.ErrPrecondition)
 	}
@@ -536,6 +539,9 @@ func (store *Store) endBookingCall(ctx context.Context, principal app.Principal,
 			return fmt.Errorf("%w: call is no longer current", app.ErrPrecondition)
 		}
 		call := snapshot.Data()
+		if text(call, "callerId") != principal.UID && text(call, "recipientId") != principal.UID {
+			return fmt.Errorf("%w: user is not this call's participant", app.ErrPrecondition)
+		}
 		if contains([]string{"declined", "expired", "ended"}, effectiveCallStatus(call, now)) {
 			result = callResult(call)
 			result["idempotent"] = true

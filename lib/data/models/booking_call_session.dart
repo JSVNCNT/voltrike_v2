@@ -114,6 +114,22 @@ class BookingCallSession {
   bool matches(String expectedCallId) =>
       callId.isNotEmpty && callId == expectedCallId;
 
+  bool includesParticipant(String userId) =>
+      userId.isNotEmpty && (callerId == userId || recipientId == userId);
+
+  bool isCaller(String userId) => userId.isNotEmpty && callerId == userId;
+
+  bool isRecipient(String userId) =>
+      userId.isNotEmpty && recipientId == userId && callerId != userId;
+
+  /// Incoming-call UI and ringtone are valid only for the called participant.
+  /// This protects account-switched devices from stale FCM token delivery.
+  bool isIncomingFor(String userId, {String? expectedCallId, DateTime? at}) {
+    return isRecipient(userId) &&
+        (expectedCallId == null || matches(expectedCallId)) &&
+        effectiveStatus(at) == BookingCallStatus.ringing;
+  }
+
   static String _string(Object? value, {String fallback = ''}) {
     return value is String && value.isNotEmpty ? value : fallback;
   }

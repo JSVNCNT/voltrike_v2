@@ -95,13 +95,19 @@ async function sendToUser(userId, title, body, data) {
     .map((device) => ({ device, token: device.data().token }))
     .filter((entry) => typeof entry.token === 'string' && entry.token.length > 0);
   if (entries.length === 0) return { attempted: 0, succeeded: 0 };
+  const notificationType = String(data?.type || '');
+  const androidChannel = notificationType === 'incoming_call'
+    ? { channelId: 'incoming_calls_v2', sound: 'call_ringtone' }
+    : notificationType === 'chat_message'
+      ? { channelId: 'chat_messages', sound: 'chat_ringtone' }
+      : { channelId: 'booking_updates', sound: 'booking_ringtone' };
   const response = await admin.messaging().sendEachForMulticast({
     tokens: entries.map((entry) => entry.token),
     notification: { title, body },
     data: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)])),
     android: {
       priority: 'high',
-      notification: { channelId: 'booking_updates', sound: 'booking_ringtone' },
+      notification: androidChannel,
     },
   });
   await Promise.all(response.responses.map((result, index) => {
@@ -292,7 +298,8 @@ async function processDomainEvent(eventId, event) {
   if (type.startsWith('booking.')) return processBookingEvent(eventId, event);
   if (type === 'call.ringing' && payload.recipientId) {
     return sendToUser(payload.recipientId, 'Incoming VolTrike call', 'Your ride participant is calling.', {
-      bookingId: payload.bookingId, callId: payload.callId, type: 'incoming_call',
+      bookingId: payload.bookingId, callId: payload.callId,
+      callerId: payload.callerId, recipientId: payload.recipientId, type: 'incoming_call',
     });
   }
   if (type === 'chat.message.created') {
@@ -304,7 +311,8 @@ async function processDomainEvent(eventId, event) {
     const recipientId = bookingData.passengerId === payload.senderId
       ? bookingData.driverId : bookingData.passengerId;
     return sendToUser(recipientId, 'New ride message', String(message.data()?.text || '').slice(0, 120), {
-      bookingId: payload.bookingId, type: 'chat_message',
+      bookingId: payload.bookingId, senderId: payload.senderId,
+      recipientId, type: 'chat_message',
     });
   }
   if (type.startsWith('safety.')) {

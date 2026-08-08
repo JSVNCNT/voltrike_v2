@@ -127,6 +127,17 @@ class BookingVoiceCallRepository {
     );
   }
 
+  Future<BookingCallSession?> getCall(String bookingId) async {
+    final snapshot = await _firestore
+        .collection('bookingCalls')
+        .doc(bookingId)
+        .get()
+        .timeout(_stateCallTimeout);
+    if (!snapshot.exists) return null;
+    final session = BookingCallSession.fromFirestore(snapshot);
+    return session.callId.isEmpty ? null : session;
+  }
+
   /// FCM alerts the user quickly; this listener is the durable source of truth
   /// when a push is delayed, denied, or the app resumes independently.
   Stream<BookingCallSession?> watchIncomingCall(String userId) {

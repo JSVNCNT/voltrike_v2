@@ -420,14 +420,11 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.bookingChat,
       builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>?;
         final bookingId = _routeId(state, 'bookingId');
-        final members =
-            (extra?['members'] as List?)?.cast<String>() ?? const <String>[];
         if (bookingId == null) {
           return const PassengerShellScreen();
         }
-        return BookingChatScreen(bookingId: bookingId, members: members);
+        return BookingChatScreen(bookingId: bookingId);
       },
     ),
 

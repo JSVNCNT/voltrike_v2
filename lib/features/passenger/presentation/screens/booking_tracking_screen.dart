@@ -391,10 +391,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   void _openChat(Booking booking) {
     context.push(
       AppRoutes.withBookingId(AppRoutes.bookingChat, booking.bookingId),
-      extra: {
-        'bookingId': booking.bookingId,
-        'members': [booking.passengerId, booking.driverId!],
-      },
+      extra: booking.bookingId,
     );
   }
 
