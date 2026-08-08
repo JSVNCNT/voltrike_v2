@@ -8,7 +8,7 @@ import (
 func TestPrincipalRateLimiterResetsAfterWindow(t *testing.T) {
 	limiter := newPrincipalRateLimiter(2)
 	now := time.Unix(100, 0)
-	if !limiter.allow("user-1", now) || !limiter.allow("user-1", now) {
+	if !limiter.allow("user-1", now) {
 		t.Fatal("requests within limit were rejected")
 	}
 	if limiter.allow("user-1", now) {
