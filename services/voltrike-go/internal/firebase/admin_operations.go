@@ -177,6 +177,18 @@ func (store *Store) executeAdminOperation(ctx context.Context, principal app.Pri
 		return store.adminGetViolation(ctx, actor, command.Payload)
 	case "adminUpdateDriverViolation":
 		return store.adminUpdateViolation(ctx, actor, command.Payload)
+	case "adminListChatModerationRules":
+		return store.adminListChatModerationRules(ctx, actor)
+	case "adminUpsertChatModerationRule":
+		return store.adminUpsertChatModerationRule(ctx, actor, command.Payload)
+	case "adminArchiveChatModerationRule":
+		return store.adminArchiveChatModerationRule(ctx, actor, command.Payload)
+	case "adminListChatModerationIncidents":
+		return store.adminListChatModerationIncidents(ctx, actor)
+	case "adminUpdateChatModerationIncident":
+		return store.adminUpdateChatModerationIncident(ctx, actor, command.Payload)
+	case "adminGetChatModerationMediaUrl":
+		return store.adminGetChatModerationMediaURL(ctx, actor, command.Payload)
 	default:
 		return nil, fmt.Errorf("%w: unsupported admin operation %q", app.ErrInvalidArgument, command.Name)
 	}

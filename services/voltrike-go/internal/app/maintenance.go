@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/voltrike/voltrike-go/internal/core"
@@ -41,14 +42,14 @@ func (service *Service) RunMaintenance(ctx context.Context) (map[string]any, err
 	now := time.Now().UTC()
 	bookings, err := store.ListMaintenanceBookings(ctx, now)
 	if err != nil {
-		return nil, err
+		return nil, maintenanceDependencyError("list pending bookings", err)
 	}
-	expired, redispatched := 0, 0
+	expired, redispatched, dispatchFailures := 0, 0, 0
 	for _, booking := range bookings {
 		if !booking.SearchExpiresAt.IsZero() && !booking.SearchExpiresAt.After(now) {
 			changed, expireErr := store.ExpireBookingSearch(ctx, booking.BookingID, now)
 			if expireErr != nil {
-				return nil, expireErr
+				return nil, maintenanceDependencyError("expire booking search", expireErr)
 			}
 			if changed {
 				expired++
@@ -67,30 +68,43 @@ func (service *Service) RunMaintenance(ctx context.Context) (map[string]any, err
 			RequiredSeats:      booking.RequiredSeats,
 		})
 		if dispatchErr != nil {
+			dispatchFailures++
+			slog.Warn("maintenance dispatch candidates", "bookingId", booking.BookingID, "error", dispatchErr)
+			continue
+		}
+		if len(candidates) == 0 {
 			continue
 		}
 		if err := dispatchStore.PublishBookingOffers(ctx, booking.BookingID, candidates, now.Add(55*time.Second)); err == nil {
 			redispatched++
+		} else {
+			dispatchFailures++
+			slog.Warn("maintenance publish booking offers", "bookingId", booking.BookingID, "error", err)
 		}
 	}
 	integration, err := store.ExpireCallsAndEscalateSafety(ctx, now)
 	if err != nil {
-		return nil, err
+		return nil, maintenanceDependencyError("expire calls and escalate safety", err)
 	}
 	cleanup := map[string]int{}
 	if cleanupStore, ok := service.store.(OperationalCleanupStore); ok {
 		cleanup, err = cleanupStore.CleanupOperationalData(ctx, now)
 		if err != nil {
-			return nil, err
+			return nil, maintenanceDependencyError("clean operational data", err)
 		}
 	}
 	return map[string]any{
-		"bookingSearchesExpired": expired,
-		"bookingsRedispatched":   redispatched,
-		"callsExpired":           integration["callsExpired"],
-		"safetyEscalated":        integration["safetyEscalated"],
-		"staleDispatchEntries":   cleanup["staleDispatchEntries"],
-		"expiredTrackingGrants":  cleanup["expiredTrackingGrants"],
-		"expiredCommandReceipts": cleanup["expiredCommandReceipts"],
+		"bookingSearchesExpired":  expired,
+		"bookingsRedispatched":    redispatched,
+		"bookingDispatchFailures": dispatchFailures,
+		"callsExpired":            integration["callsExpired"],
+		"safetyEscalated":         integration["safetyEscalated"],
+		"staleDispatchEntries":    cleanup["staleDispatchEntries"],
+		"expiredTrackingGrants":   cleanup["expiredTrackingGrants"],
+		"expiredCommandReceipts":  cleanup["expiredCommandReceipts"],
 	}, nil
+}
+
+func maintenanceDependencyError(operation string, err error) error {
+	return fmt.Errorf("%w: maintenance %s: %v", ErrUnavailable, operation, err)
 }

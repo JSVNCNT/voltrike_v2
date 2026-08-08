@@ -1,0 +1,26 @@
+.chat-safety-page { max-width: 1240px; }
+.chat-safety-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.chat-safety-layout { align-items: start; }
+.chat-rule-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.chat-check { display: flex !important; grid-template-columns: none !important; align-items: center; gap: 10px !important; }
+.chat-check input { width: 22px; min-height: 22px; accent-color: var(--brand); }
+.chat-rule-list, .chat-incident-list { display: grid; gap: 12px; }
+.chat-rule-card, .chat-incident-card { padding: 15px; border: 1px solid var(--outline-soft); border-left: 4px solid var(--brand); border-radius: 12px; background: var(--surface); }
+.chat-rule-card.is-inactive { border-left-color: var(--outline); opacity: .72; }
+.chat-rule-card > div:first-child, .chat-incident-title, .chat-safety-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.chat-rule-card p { margin: 8px 0 5px; color: var(--muted); }
+.chat-rule-card small, .chat-incident-title small { display: block; margin: 4px 0; color: var(--subtle); }
+.chat-incidents { margin-top: 18px; }
+.chat-incident-card { border-left-color: var(--warning); }
+.chat-incident-card.severity-high, .chat-incident-card.severity-critical { border-left-color: var(--danger); background: linear-gradient(90deg, var(--danger-container), var(--surface) 12%); }
+.chat-incident-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.chat-incident-card dl > div { min-width: 0; padding: 12px; border: 1px solid var(--divider); border-radius: 10px; background: var(--canvas); }
+.chat-incident-card dt { color: var(--subtle); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.chat-incident-card dd { margin: 6px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.chat-match-summary { color: var(--warning); font-weight: 600; }
+.severity-critical { color: var(--danger); }
+.severity-high { color: var(--danger); }
+.severity-medium { color: var(--warning); }
+.severity-low { color: var(--info); }
+@media (max-width: 860px) { .chat-safety-metrics { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { .chat-safety-metrics, .chat-rule-grid, .chat-incident-card dl { grid-template-columns: 1fr; } .chat-safety-heading { display: block; } }

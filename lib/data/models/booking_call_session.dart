@@ -122,11 +122,19 @@ class BookingCallSession {
   bool isRecipient(String userId) =>
       userId.isNotEmpty && recipientId == userId && callerId != userId;
 
+  /// Whether this call document belongs to the called participant and still
+  /// represents the route's expected call. Unlike [isIncomingFor], this stays
+  /// true after the recipient accepts, so an in-flight accept response cannot
+  /// be mistaken for a stale or misdirected invitation.
+  bool isAddressedToRecipient(String userId, {String? expectedCallId}) {
+    return isRecipient(userId) &&
+        (expectedCallId == null || matches(expectedCallId));
+  }
+
   /// Incoming-call UI and ringtone are valid only for the called participant.
   /// This protects account-switched devices from stale FCM token delivery.
   bool isIncomingFor(String userId, {String? expectedCallId, DateTime? at}) {
-    return isRecipient(userId) &&
-        (expectedCallId == null || matches(expectedCallId)) &&
+    return isAddressedToRecipient(userId, expectedCallId: expectedCallId) &&
         effectiveStatus(at) == BookingCallStatus.ringing;
   }
 

@@ -21,9 +21,10 @@ import './driver-review.css';
 const PolygonEditor = lazy(() => import('./components/PolygonEditor').then((module) => ({ default: module.PolygonEditor })));
 const AdminLocationMap = lazy(() => import('./components/AdminLocationMap').then((module) => ({ default: module.AdminLocationMap })));
 const ViolationsPage = lazy(() => import('./components/ViolationsPage').then((module) => ({ default: module.ViolationsPage })));
+const ChatSafetyPage = lazy(() => import('./components/ChatSafetyPage').then((module) => ({ default: module.ChatSafetyPage })));
 
-type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'commission' | 'ratings' | 'operations' | 'safety' | 'violations' | 'reports' | 'coverage' | 'route_rules';
-const pages = new Set<Page>(['overview', 'todas', 'fares', 'drivers', 'live_drivers', 'commission', 'ratings', 'operations', 'safety', 'violations', 'reports', 'coverage', 'route_rules']);
+type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'commission' | 'ratings' | 'operations' | 'safety' | 'violations' | 'reports' | 'coverage' | 'route_rules' | 'chat_safety';
+const pages = new Set<Page>(['overview', 'todas', 'fares', 'drivers', 'live_drivers', 'commission', 'ratings', 'operations', 'safety', 'violations', 'reports', 'coverage', 'route_rules', 'chat_safety']);
 
 function useRefreshOnVisible(refresh: () => void | Promise<void>) {
   useEffect(() => {
@@ -213,8 +214,8 @@ export default function App() {
   const sessionUid = session.uid;
   const isDeveloper = session.role === 'developer_admin';
   const visiblePages: Array<[Page, string]> = isDeveloper
-    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['live_drivers', 'Live drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['violations', 'Violations'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
-    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['live_drivers', 'Live drivers'], ['commission', 'Driver commission'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['violations', 'Violations'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
+    ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['live_drivers', 'Live drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['violations', 'Violations'], ['chat_safety', 'Chat safety'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
+    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['live_drivers', 'Live drivers'], ['commission', 'Driver commission'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['violations', 'Violations'], ['chat_safety', 'Chat reports'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
 
   function navigate(nextPage: Page) {
     setPage(nextPage);
@@ -277,6 +278,7 @@ export default function App() {
       {page === 'operations' && <OperationsPage session={session} />}
       {page === 'safety' && <SafetyIncidentsPage session={session} />}
       {page === 'violations' && <Suspense fallback={<section className="panel wide">Loading violations…</section>}><ViolationsPage session={session} initialViolationId={deepLinkedViolationId} onSelectViolation={selectViolation} webPushResult={webPushResult} onEnableWebPush={enableWebPush} /></Suspense>}
+      {page === 'chat_safety' && <Suspense fallback={<section className="panel wide">Loading chat safety…</section>}><ChatSafetyPage onMessage={setMessage} canManageRules={isDeveloper} /></Suspense>}
       {page === 'reports' && <ReportsPage todaId={isDeveloper ? undefined : session.todaId!} onMessage={setMessage} />}
       {page === 'coverage' && <CoveragePage session={session} onMessage={setMessage} />}
       {page === 'route_rules' && isDeveloper && <RouteRestrictionsPage onMessage={setMessage} />}

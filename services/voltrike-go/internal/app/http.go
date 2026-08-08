@@ -282,6 +282,8 @@ func writeServiceError(writer http.ResponseWriter, err error) {
 		slog.Error("Go service request failed", "error", err)
 		sentry.CaptureException(err)
 		message = "Internal service error."
+	} else if status >= http.StatusBadRequest {
+		slog.Warn("Go service request rejected", "status", status, "code", code, "error", err)
 	}
 	writeJSON(writer, status, errorBody(code, message))
 }

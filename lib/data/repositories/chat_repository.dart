@@ -1,14 +1,34 @@
+import 'dart:io';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/services/voltrike_api.dart';
 import '../models/chat_message.dart';
 
+class ChatMessageBlockedException implements Exception {
+  const ChatMessageBlockedException();
+
+  @override
+  String toString() =>
+      'This message was not sent because it contains blocked language.';
+}
+
 class ChatRepository {
-  ChatRepository({FirebaseFirestore? firestore, VoltrikeApi? api})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _api = api ?? VoltrikeApi.instance;
+  ChatRepository({
+    FirebaseFirestore? firestore,
+    FirebaseStorage? storage,
+    FirebaseAuth? auth,
+    VoltrikeApi? api,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _storage = storage ?? FirebaseStorage.instance,
+       _auth = auth ?? FirebaseAuth.instance,
+       _api = api ?? VoltrikeApi.instance;
   final FirebaseFirestore _firestore;
+  final FirebaseStorage _storage;
+  final FirebaseAuth _auth;
   final VoltrikeApi _api;
   final Uuid _uuid = const Uuid();
 
@@ -54,10 +74,69 @@ class ChatRepository {
   Future<void> send({required String bookingId, required String text}) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    await _api.operation('sendRideChatMessage', {
+    final result = await _api.operation('sendRideChatMessage', {
       'bookingId': bookingId,
+      'messageType': 'text',
       'text': trimmed,
     }, commandId: _uuid.v4());
+    if (result['blocked'] == true) throw const ChatMessageBlockedException();
+  }
+
+  Future<void> sendImage({
+    required String bookingId,
+    required File file,
+    String caption = '',
+  }) async {
+    const maximumBytes = 2 * 1024 * 1024;
+    if (await file.length() > maximumBytes) {
+      throw const FileSystemException(
+        'The compressed ride photo must be 2 MB or smaller.',
+      );
+    }
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Sign in before sending a ride photo.');
+    final messageId = _uuid.v4();
+    final stagingPath = 'staging/${user.uid}/${_uuid.v4()}/ride_photo.jpg';
+    final uploaded = await _storage
+        .ref(stagingPath)
+        .putFile(
+          file,
+          SettableMetadata(
+            contentType: 'image/jpeg',
+            cacheControl: 'private, max-age=3600',
+            customMetadata: const {'source': 'voltrike-ride-chat-camera'},
+          ),
+        );
+    final finalized = await _api.operation('finalizeMedia', {
+      'stagingPath': uploaded.ref.fullPath,
+      'generation': int.tryParse(uploaded.metadata?.generation ?? ''),
+      'targetType': 'chat_image',
+      'targetId': bookingId,
+      'field': messageId,
+    });
+    final mediaPath = finalized['path'];
+    if (mediaPath is! String || mediaPath.isEmpty) {
+      throw StateError('Chat image finalization returned no protected path.');
+    }
+    final result = await _api.operation('sendRideChatMessage', {
+      'bookingId': bookingId,
+      'messageType': 'image',
+      'text': caption.trim(),
+      'mediaPath': mediaPath,
+    }, commandId: messageId);
+    if (result['blocked'] == true) throw const ChatMessageBlockedException();
+  }
+
+  Future<void> reportMessage({
+    required String bookingId,
+    required String messageId,
+    String category = 'inappropriate_chat',
+  }) async {
+    await _api.operation('reportRideChatMessage', {
+      'bookingId': bookingId,
+      'messageId': messageId,
+      'category': category,
+    });
   }
 
   Future<void> markSeen(String bookingId) async {

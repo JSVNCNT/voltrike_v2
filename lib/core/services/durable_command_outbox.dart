@@ -155,6 +155,7 @@ class DurableCommandOutbox {
     return code == 'STALE_REVISION' ||
         code == 'POLICY_CHANGED' ||
         code == 'CONFLICT' ||
+        code == 'FAILED_PRECONDITION' ||
         code == 'INVALID_ARGUMENT' ||
         code == 'FORBIDDEN' ||
         code == 'NOT_FOUND';
@@ -215,9 +216,11 @@ class _QueuedCommand {
       payload: payload is Map
           ? payload.map((key, item) => MapEntry(key.toString(), item))
           : <String, dynamic>{},
-      createdAt: DateTime.tryParse(value['createdAt']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(value['createdAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-      expiresAt: DateTime.tryParse(value['expiresAt']?.toString() ?? '') ??
+      expiresAt:
+          DateTime.tryParse(value['expiresAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       blocked: value['blocked'] == true,
     );

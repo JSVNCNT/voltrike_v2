@@ -14,6 +14,8 @@ import type {
   AdminMetrics,
   OverviewAnalytics,
   BookingOperation,
+  ChatModerationIncident,
+  ChatModerationRule,
   Driver,
   DriverRatingRecord,
   DriverViolation,
@@ -679,6 +681,76 @@ function normalizeViolationMessage(id: string, value: unknown): ViolationMessage
   };
 }
 
+function normalizeChatModerationRule(value: unknown): ChatModerationRule {
+  const source = asRecord(value);
+  const severity = ['low', 'medium', 'high', 'critical'].includes(String(source.severity))
+    ? String(source.severity) as ChatModerationRule['severity']
+    : 'low';
+  const action = ['mask', 'flag', 'block'].includes(String(source.action))
+    ? String(source.action) as ChatModerationRule['action']
+    : 'mask';
+  return {
+    ruleId: textValue(source.ruleId ?? source.id),
+    phrase: textValue(source.phrase),
+    language: textValue(source.language, 'language_neutral'),
+    category: textValue(source.category, 'profanity'),
+    severity,
+    action,
+    matchMode: source.matchMode === 'substring' ? 'substring' : 'word',
+    matchVariants: source.matchVariants === true,
+    aliases: Array.isArray(source.aliases)
+      ? source.aliases.filter((value): value is string => typeof value === 'string')
+      : [],
+    isActive: source.isActive !== false,
+    createdAt: dateString(source.createdAt),
+    updatedAt: dateString(source.updatedAt),
+  };
+}
+
+function normalizeChatModerationIncident(value: unknown): ChatModerationIncident {
+  const source = asRecord(value);
+  const matches = Array.isArray(source.matches)
+    ? source.matches.map((value) => {
+      const match = asRecord(value);
+      return {
+        ruleId: textValue(match.ruleId),
+        phrase: textValue(match.phrase),
+        language: textValue(match.language, 'language_neutral'),
+        category: textValue(match.category, 'other'),
+        severity: textValue(match.severity, 'low'),
+        action: textValue(match.action, 'flag'),
+        matchMode: match.matchMode === 'substring' ? 'substring' as const : 'word' as const,
+        matchVariants: match.matchVariants === true,
+      };
+    })
+    : [];
+  return {
+    incidentId: textValue(source.incidentId ?? source.id),
+    bookingId: textValue(source.bookingId),
+    messageId: textValue(source.messageId),
+    senderId: textValue(source.senderId),
+    senderName: textValue(source.senderName, 'Ride participant'),
+    senderRole: textValue(source.senderRole, 'participant'),
+    todaId: textValue(source.todaId) || null,
+    messageType: textValue(source.messageType, 'text'),
+    originalText: textValue(source.originalText),
+    displayText: textValue(source.displayText),
+    mediaPath: textValue(source.mediaPath) || null,
+    mediaEvidencePath: textValue(source.mediaEvidencePath) || null,
+    reviewAudience: Array.isArray(source.reviewAudience)
+      ? source.reviewAudience.filter((value): value is 'developer_admin' | 'toda_admin' => value === 'developer_admin' || value === 'toda_admin')
+      : ['developer_admin'],
+    matches,
+    severity: textValue(source.severity, 'low'),
+    deliveryStatus: textValue(source.deliveryStatus, 'delivered'),
+    status: textValue(source.status, 'open'),
+    hidden: source.hidden === true,
+    resolutionNote: textValue(source.resolutionNote) || null,
+    createdAt: dateString(source.createdAt),
+    updatedAt: dateString(source.updatedAt),
+  };
+}
+
 function callableErrorMessage(name: string, error: unknown): string {
   const source = asRecord(error);
   const code = typeof source.code === 'string' ? source.code : '';
@@ -748,6 +820,25 @@ export const adminApi = {
     }),
   setVehicleVerification: (driverId: string, isVerified: boolean) => call<{ updated: boolean }>('adminSetVehicleVerification', { driverId, isVerified }),
   setUserStatus: (uid: string, isActive: boolean, sourceReportId = '') => call<{ updated: boolean }>('adminSetUserStatus', { uid, isActive, sourceReportId }),
+  async chatModerationRules(): Promise<ChatModerationRule[]> {
+    const result = await call<{ items?: unknown[] }>('adminListChatModerationRules', {});
+    return (result.items || []).map(normalizeChatModerationRule).filter((item) => Boolean(item.ruleId));
+  },
+  upsertChatModerationRule: (rule: Omit<ChatModerationRule, 'createdAt' | 'updatedAt'>) =>
+    call<{ ruleId: string; updated: boolean }>('adminUpsertChatModerationRule', rule),
+  archiveChatModerationRule: (ruleId: string) =>
+    call<{ updated: boolean }>('adminArchiveChatModerationRule', { ruleId }),
+  async chatModerationIncidents(): Promise<ChatModerationIncident[]> {
+    const result = await call<{ items?: unknown[] }>('adminListChatModerationIncidents', {});
+    return (result.items || []).map(normalizeChatModerationIncident).filter((item) => Boolean(item.incidentId));
+  },
+  updateChatModerationIncident: (
+    incidentId: string,
+    action: 'dismiss' | 'resolve' | 'hide',
+    note = '',
+  ) => call<{ updated: boolean }>('adminUpdateChatModerationIncident', { incidentId, action, note }),
+  chatModerationMediaUrl: (incidentId: string) =>
+    call<{ url: string; expiresAt: string }>('adminGetChatModerationMediaUrl', { incidentId }),
   resolveReport: (reportId: string, status: string, action: string) => call<{ updated: boolean }>('adminResolveReport', { reportId, status, action }),
   resolveSettlementDispute: (bookingId: string, resolution: string) => call<{ updated: boolean }>('adminResolveSettlementDispute', { bookingId, resolution }),
   submitZone: (todaId: string, polygon: [number, number][], notes: string, areas?: [number, number][][]) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes, areas }),

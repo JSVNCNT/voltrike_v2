@@ -310,18 +310,21 @@ func (service *Service) DispatchCandidates(ctx context.Context, request Dispatch
 		}
 	}
 	now := time.Now().UnixMilli()
+	_, hasAuthoritativeEligibility := service.store.(DispatchEligibilityStore)
 	result := make([]DispatchCandidate, 0, len(byID))
 	for _, presence := range byID {
 		location := core.Coordinate{Latitude: presence.Latitude, Longitude: presence.Longitude}
 		if !presence.Online || !location.Valid() || presence.Timestamp <= 0 || now-presence.Timestamp > 35000 || presence.Timestamp > now+10000 || presence.Accuracy < 0 || presence.Accuracy > 100 {
 			continue
 		}
-		if len(append(request.PrimaryTodaIDs, request.SecondaryTodaIDs...)) > 0 && !presence.Available {
-			continue
-		}
 		todaIDs := append(request.PrimaryTodaIDs, request.SecondaryTodaIDs...)
-		if len(todaIDs) > 0 && !request.AllowAnyActiveToda && !containsString(todaIDs, presence.TodaID) {
-			continue
+		if !hasAuthoritativeEligibility {
+			if len(todaIDs) > 0 && !presence.Available {
+				continue
+			}
+			if len(todaIDs) > 0 && !request.AllowAnyActiveToda && !containsString(todaIDs, presence.TodaID) {
+				continue
+			}
 		}
 		distance := core.HaversineMeters(request.Pickup, location)
 		if distance > service.cfg.DispatchRadiusMeters {

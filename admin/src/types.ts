@@ -425,3 +425,56 @@ export interface ViolationFilters {
   eventClass?: string;
   search?: string;
 }
+
+export type ChatModerationAction = 'mask' | 'flag' | 'block';
+export type ChatModerationMatchMode = 'word' | 'substring';
+
+export interface ChatModerationRule {
+  ruleId: string;
+  phrase: string;
+  language: string;
+  category: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  action: ChatModerationAction;
+  matchMode: ChatModerationMatchMode;
+  matchVariants: boolean;
+  aliases: string[];
+  isActive: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ChatModerationMatch {
+  ruleId: string;
+  phrase: string;
+  language: string;
+  category: string;
+  severity: string;
+  action: ChatModerationAction | string;
+  matchMode?: ChatModerationMatchMode;
+  matchVariants?: boolean;
+}
+
+export interface ChatModerationIncident {
+  incidentId: string;
+  bookingId: string;
+  messageId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: string;
+  todaId?: string | null;
+  messageType: 'text' | 'image' | string;
+  originalText: string;
+  displayText: string;
+  mediaPath?: string | null;
+  mediaEvidencePath?: string | null;
+  reviewAudience?: ('developer_admin' | 'toda_admin')[];
+  matches: ChatModerationMatch[];
+  severity: string;
+  deliveryStatus: 'delivered' | 'blocked' | 'reported' | string;
+  status: 'open' | 'resolved' | 'dismissed' | string;
+  hidden: boolean;
+  resolutionNote?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}

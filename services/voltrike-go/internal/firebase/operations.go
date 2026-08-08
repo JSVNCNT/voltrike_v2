@@ -44,6 +44,8 @@ func (store *Store) ExecuteOperation(ctx context.Context, principal app.Principa
 		return store.endBookingCall(ctx, principal, command.Payload)
 	case "sendRideChatMessage":
 		return store.sendRideChatMessage(ctx, principal, command)
+	case "reportRideChatMessage":
+		return store.ReportRideChatMessage(ctx, principal, command)
 	case "markRideChatSeen":
 		return store.markRideChatSeen(ctx, principal, command.Payload)
 	case "setRideChatTyping":
@@ -430,6 +432,7 @@ func (store *Store) startBookingCall(ctx context.Context, principal app.Principa
 			"schemaVersion": 3, "bookingId": bookingID, "callId": callID, "roomName": "voltrike_" + callID,
 			"serverUrl": store.cfg.LiveKitServerURL, "callerId": principal.UID, "recipientId": recipientID,
 			"status": "ringing", "createdAt": now, "updatedAt": now, "expiresAt": now.Add(30 * time.Second),
+			"purgeAt": now.Add(7 * 24 * time.Hour),
 		}
 		tx.Set(callRef, data)
 		writeOutbox(tx, store, "call.ringing", callID, map[string]any{"bookingId": bookingID, "callId": callID, "callerId": principal.UID, "recipientId": recipientID})
@@ -480,7 +483,7 @@ func (store *Store) respondBookingCall(ctx context.Context, principal app.Princi
 		if response == "expired" && futureTime(call["expiresAt"], now) {
 			return fmt.Errorf("%w: call invitation has not expired", app.ErrPrecondition)
 		}
-		updates := map[string]any{"status": response, "updatedAt": now}
+		updates := map[string]any{"status": response, "updatedAt": now, "purgeAt": now.Add(7 * 24 * time.Hour)}
 		if response == "accepted" {
 			updates["acceptedBy"], updates["acceptedAt"], updates["endsAt"] = principal.UID, now, now.Add(30*time.Minute)
 		} else {
@@ -621,22 +624,59 @@ func (store *Store) liveKitCredentials(call map[string]any, participantID string
 }
 
 func (store *Store) sendRideChatMessage(ctx context.Context, principal app.Principal, command app.OperationCommand) (map[string]any, error) {
-	bookingID, body := text(command.Payload, "bookingId"), truncate(text(command.Payload, "text"), 2000)
-	if body == "" {
+	bookingID := text(command.Payload, "bookingId")
+	messageType := text(command.Payload, "messageType")
+	if messageType == "" {
+		messageType = "text"
+	}
+	if !contains([]string{"text", "image"}, messageType) {
+		return nil, fmt.Errorf("%w: unsupported chat message type", app.ErrInvalidArgument)
+	}
+	body := truncate(text(command.Payload, "text"), 2000)
+	mediaPath := text(command.Payload, "mediaPath")
+	if messageType == "text" && body == "" {
 		return nil, fmt.Errorf("%w: message text is required", app.ErrInvalidArgument)
 	}
 	booking, err := store.participantBooking(ctx, principal, bookingID)
 	if err != nil {
 		return nil, err
 	}
+	if principal.UID != text(booking, "passengerId", "passengerID") && principal.UID != text(booking, "driverId", "driverID") {
+		return nil, fmt.Errorf("%w: only ride participants can send chat messages", app.ErrPrecondition)
+	}
 	messageID := strings.TrimSpace(command.CommandID)
 	if messageID == "" {
 		messageID = uuid.NewString()
 	}
+	if messageType == "image" {
+		if body == "" {
+			body = "Photo"
+		}
+		if err := store.validateFinalizedChatMedia(ctx, mediaPath, bookingID, messageID, principal.UID); err != nil {
+			return nil, fmt.Errorf("%w: chat image was not finalized for this ride", app.ErrInvalidArgument)
+		}
+	}
+	moderation, err := store.ModerateChatText(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	if moderation.Blocked {
+		incidentID, incidentErr := store.createChatModerationIncident(ctx, chatModerationIncidentInput{
+			Booking: booking, BookingID: bookingID, MessageID: messageID, SenderID: principal.UID,
+			OriginalText: body, DisplayText: moderation.DisplayText, Matches: moderation.Matches,
+			MessageType: messageType, MediaPath: mediaPath, DeliveryStatus: "blocked",
+		})
+		if incidentErr != nil {
+			return nil, incidentErr
+		}
+		return map[string]any{"messageId": messageID, "blocked": true, "incidentId": incidentID}, nil
+	}
+	body = moderation.DisplayText
 	conversation := store.firestore.Collection("chat").Doc(bookingID)
 	message := conversation.Collection("messages").Doc(messageID)
 	now := time.Now().UTC()
 	created := false
+	incidentID := ""
 	err = store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		existing, readErr := tx.Get(message)
 		if readErr == nil {
@@ -650,14 +690,31 @@ func (store *Store) sendRideChatMessage(ctx context.Context, principal app.Princ
 		}
 		tx.Set(conversation, map[string]any{
 			"bookingId": bookingID, "members": []string{text(booking, "passengerId", "passengerID"), text(booking, "driverId", "driverID")},
-			"lastMessage": body, "lastMessageAt": now, "updatedAt": now,
+			"lastMessage": body, "lastMessageAt": now, "updatedAt": now, "purgeAt": now.Add(30 * 24 * time.Hour),
 		}, firestore.MergeAll)
-		tx.Create(message, map[string]any{"messageId": messageID, "senderId": principal.UID, "text": body, "sentAt": now, "seenBy": []string{principal.UID}})
+		messageData := map[string]any{
+			"messageId": messageID, "senderId": principal.UID, "senderRole": participantRole(booking, principal.UID),
+			"messageType": messageType, "text": body, "sentAt": now, "seenBy": []string{principal.UID},
+			"mediaPath": mediaPath, "moderated": len(moderation.Matches) > 0, "hidden": false,
+			"purgeAt": now.Add(30 * 24 * time.Hour),
+		}
+		if messageType == "image" {
+			messageData["mediaExpiresAt"] = now.Add(48 * time.Hour)
+		}
+		tx.Create(message, messageData)
+		if moderation.Flagged {
+			incidentID = "chat_incident_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+			tx.Create(store.firestore.Collection("chatModerationIncidents").Doc(incidentID), chatModerationIncidentData(chatModerationIncidentInput{
+				Booking: booking, BookingID: bookingID, MessageID: messageID, SenderID: principal.UID,
+				OriginalText: text(command.Payload, "text"), DisplayText: body, Matches: moderation.Matches,
+				MessageType: messageType, MediaPath: mediaPath, DeliveryStatus: "delivered",
+			}, incidentID, now))
+		}
 		writeOutbox(tx, store, "chat.message.created", messageID, map[string]any{"bookingId": bookingID, "messageId": messageID, "senderId": principal.UID})
 		created = true
 		return nil
 	})
-	return map[string]any{"messageId": messageID, "idempotent": !created}, err
+	return map[string]any{"messageId": messageID, "idempotent": !created, "moderated": len(moderation.Matches) > 0, "incidentId": incidentID}, err
 }
 
 func (store *Store) markRideChatSeen(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {
@@ -689,7 +746,8 @@ func (store *Store) setRideChatTyping(ctx context.Context, principal app.Princip
 	if _, err := store.participantBooking(ctx, principal, bookingID); err != nil {
 		return nil, err
 	}
-	_, err := store.firestore.Collection("chat").Doc(bookingID).Collection("typing").Doc(principal.UID).Set(ctx, map[string]any{"isTyping": booleanDefault(payload, false, "isTyping"), "updatedAt": time.Now().UTC()}, firestore.MergeAll)
+	now := time.Now().UTC()
+	_, err := store.firestore.Collection("chat").Doc(bookingID).Collection("typing").Doc(principal.UID).Set(ctx, map[string]any{"isTyping": booleanDefault(payload, false, "isTyping"), "updatedAt": now, "purgeAt": now.Add(24 * time.Hour)}, firestore.MergeAll)
 	return map[string]any{"updated": err == nil}, err
 }
 

@@ -18,6 +18,14 @@ service firebase.storage {
         firestore.get(/databases/(default)/documents/todaApplications/$(todaId)).data.adminUid == request.auth.uid &&
         firestore.get(/databases/(default)/documents/todaApplications/$(todaId)).data.status == 'pending';
     }
+    function bookingMember(bookingId) {
+      return signedIn() &&
+        firestore.exists(/databases/(default)/documents/bookings/$(bookingId)) &&
+        request.auth.uid in [
+          firestore.get(/databases/(default)/documents/bookings/$(bookingId)).data.passengerId,
+          firestore.get(/databases/(default)/documents/bookings/$(bookingId)).data.driverId
+        ];
+    }
 
     match /drivers/{uid}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid ||
@@ -60,6 +68,13 @@ service firebase.storage {
     match /final/drivers/{uid}/{field}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid ||
         developerAdmin() || todaAdminForDriver(uid));
+      allow write: if false;
+    }
+
+    // Ride photos are readable only by the two authenticated participants and
+    // System Admin safety reviewers. Trusted Go code is the sole writer.
+    match /final/chat/{bookingId}/{messageId}/{fileName} {
+      allow read: if bookingMember(bookingId) || developerAdmin();
       allow write: if false;
     }
 

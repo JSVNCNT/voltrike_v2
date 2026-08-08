@@ -36,6 +36,15 @@ func (routes fakeRoutes) Routes(context.Context, core.Coordinate, core.Coordinat
 	return routes.routes, nil
 }
 
+type fakeEligibilityStore struct{ *fakeStore }
+
+func (store *fakeEligibilityStore) FilterEligibleDispatch(_ context.Context, candidates []DispatchCandidate, _ DispatchRequest) ([]DispatchCandidate, error) {
+	for index := range candidates {
+		candidates[index].TodaID = "toda-1"
+	}
+	return candidates, nil
+}
+
 func testConfig() config.Config {
 	key, _ := base64.RawURLEncoding.DecodeString("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	return config.Config{
@@ -122,6 +131,34 @@ func TestDispatchReadsNearbyCellSamples(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result) != 1 || result[0].DriverID != "near" {
+		t.Fatalf("unexpected candidates: %#v", result)
+	}
+}
+
+func TestDispatchRepairsLegacyPresenceThroughAuthoritativeEligibility(t *testing.T) {
+	pickup := core.Coordinate{Latitude: 10.67, Longitude: 122.95}
+	cell := surroundingCells(pickup, 0.05)[4]
+	store := &fakeEligibilityStore{fakeStore: &fakeStore{cells: map[string]map[string]DispatchPresence{
+		cell: {
+			"legacy": {
+				DriverID: "legacy", Latitude: 10.671, Longitude: 122.951,
+				Timestamp: time.Now().UnixMilli(), Accuracy: 5, Online: true,
+				// Older projections have neither Available nor TodaID. Firestore
+				// eligibility remains authoritative for both fields.
+			},
+		},
+	}}}
+	service, err := NewService(testConfig(), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.DispatchCandidates(context.Background(), DispatchRequest{
+		Pickup: pickup, PrimaryTodaIDs: []string{"toda-1"}, RequiredSeats: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 1 || result[0].DriverID != "legacy" || result[0].TodaID != "toda-1" {
 		t.Fatalf("unexpected candidates: %#v", result)
 	}
 }

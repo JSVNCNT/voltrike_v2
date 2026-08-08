@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -112,6 +113,13 @@ type BookingDispatchStore interface {
 	PublishBookingOffers(context.Context, string, []DispatchCandidate, time.Time) error
 }
 
+// BookingCreateLookupStore lets a durable retry return the booking committed
+// by its first attempt before the short-lived quote token is validated again.
+// The lookup must verify both ownership and the original create payload.
+type BookingCreateLookupStore interface {
+	FindExistingBookingForCreate(context.Context, Principal, CreateBookingCommand) (BookingRecord, bool, error)
+}
+
 func (service *Service) ExecuteOperation(ctx context.Context, principal Principal, command OperationCommand) (map[string]any, error) {
 	if strings.TrimSpace(principal.UID) == "" || strings.TrimSpace(command.Name) == "" {
 		return nil, fmt.Errorf("%w: authenticated user and operation are required", ErrInvalidArgument)
@@ -163,6 +171,19 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 	if command.QuoteToken == "" {
 		return BookingRecord{}, fmt.Errorf("%w: quoteToken is required", ErrInvalidArgument)
 	}
+	store, err := domainStore(service)
+	if err != nil {
+		return BookingRecord{}, err
+	}
+	if lookup, ok := service.store.(BookingCreateLookupStore); ok {
+		existing, found, lookupErr := lookup.FindExistingBookingForCreate(ctx, principal, command)
+		if lookupErr != nil {
+			return BookingRecord{}, lookupErr
+		}
+		if found {
+			return existing, nil
+		}
+	}
 	quote, err := service.ConsumeQuote(ctx, QuoteTokenRequest{
 		ActorID:              principal.UID,
 		Pickup:               command.Pickup,
@@ -174,10 +195,6 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 	if err != nil {
 		return BookingRecord{}, err
 	}
-	store, err := domainStore(service)
-	if err != nil {
-		return BookingRecord{}, err
-	}
 	record, err := store.CreateBooking(ctx, principal, command, quote)
 	if err != nil {
 		return BookingRecord{}, err
@@ -186,17 +203,21 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 	if !ok {
 		return BookingRecord{}, fmt.Errorf("%w: booking dispatch store is not configured", ErrUnavailable)
 	}
-	candidates, err := service.DispatchCandidates(ctx, DispatchRequest{
+	candidates, dispatchErr := service.DispatchCandidates(ctx, DispatchRequest{
 		Pickup: command.Pickup, PrimaryTodaIDs: quote.Coverage.PrimaryTodaIDs,
 		SecondaryTodaIDs: quote.Coverage.SecondaryTodaIDs, AllowAnyActiveToda: quote.Coverage.AllowAnyActiveToda,
 		MaximumResults: 5,
 		RequiredSeats:  command.AdditionalPassengers + 1,
 	})
-	if err == nil {
-		// Booking creation is already committed at this point. Dispatch is a
-		// retryable projection and must never turn a successful idempotent create
-		// into a client-visible failure that encourages a second booking.
-		_ = dispatchStore.PublishBookingOffers(ctx, command.BookingID, candidates, time.Now().UTC().Add(55*time.Second))
+	// Booking creation is already committed at this point. Dispatch is a
+	// retryable projection and must never turn a successful idempotent create
+	// into a client-visible failure that encourages a second booking.
+	if dispatchErr != nil {
+		slog.Warn("initial booking dispatch failed", "bookingId", command.BookingID, "error", dispatchErr)
+	} else if len(candidates) == 0 {
+		slog.Info("initial booking dispatch found no eligible drivers", "bookingId", command.BookingID)
+	} else if publishErr := dispatchStore.PublishBookingOffers(ctx, command.BookingID, candidates, time.Now().UTC().Add(55*time.Second)); publishErr != nil {
+		slog.Warn("publish initial booking offers", "bookingId", command.BookingID, "candidates", len(candidates), "error", publishErr)
 	}
 	return record, nil
 }

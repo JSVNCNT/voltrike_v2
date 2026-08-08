@@ -26,4 +26,6 @@ exports.requestBrandedVerificationEmail = wrapCallable(requestBrandedVerificatio
 exports.syncMyEmailVerification = wrapCallable(syncMyEmailVerification);
 exports.registerAdminWebPushToken = wrapCallable(registerAdminWebPushToken);
 exports.unregisterAdminWebPushToken = wrapCallable(unregisterAdminWebPushToken);
-exports.runGoMaintenance = wrapCloudEvent(runGoMaintenance);
+// Scheduled functions are HTTP transports internally. Their task handler is
+// monitored before onSchedule wraps it so Firebase retains its response object.
+exports.runGoMaintenance = runGoMaintenance;

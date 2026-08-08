@@ -86,7 +86,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
       return;
     }
     if (currentUserId == null ||
-        !session.isIncomingFor(currentUserId, expectedCallId: expectedCallId)) {
+        !session.isAddressedToRecipient(
+          currentUserId,
+          expectedCallId: expectedCallId,
+        )) {
       unawaited(RingtoneService.instance.stopIncomingCall());
       setState(() {
         _session = null;
@@ -107,6 +110,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
       unawaited(RingtoneService.instance.startIncomingCall());
     } else if (status.isTerminal || status == BookingCallStatus.accepted) {
       unawaited(RingtoneService.instance.stopIncomingCall());
+      // The accept operation updates Firestore before its HTTP response can
+      // return with LiveKit credentials. Keep this route mounted while that
+      // response is in flight; otherwise the accepted snapshot races the
+      // navigation and drops the recipient back onto the booking screen.
       if (!_responding) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _close());
       }

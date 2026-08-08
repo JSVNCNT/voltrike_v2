@@ -22,8 +22,7 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 	ref := store.firestore.Collection("bookings").Doc(command.BookingID)
 	lockRef := store.firestore.Collection("activePassengerBookings").Doc(principal.UID)
 	passengerRef := store.firestore.Collection("users").Doc(principal.UID)
-	commandPayload, _ := json.Marshal(command)
-	commandPayloadHash := fmt.Sprintf("%x", sha256.Sum256(commandPayload))
+	commandPayloadHash := createBookingPayloadHash(command)
 	quoteReceiptRef := store.firestore.Collection("quote_receipts").Doc(fmt.Sprintf("%x", sha256.Sum256([]byte(command.QuoteToken))))
 	result := app.BookingRecord{ID: command.BookingID}
 	err := store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
@@ -151,6 +150,29 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 		return app.BookingRecord{}, err
 	}
 	return result, nil
+}
+
+func (store *Store) FindExistingBookingForCreate(ctx context.Context, principal app.Principal, command app.CreateBookingCommand) (app.BookingRecord, bool, error) {
+	document, err := store.firestore.Collection("bookings").Doc(command.BookingID).Get(ctx)
+	if err != nil {
+		if isNotFound(err) {
+			return app.BookingRecord{}, false, nil
+		}
+		return app.BookingRecord{}, false, fmt.Errorf("read existing booking create result: %w", err)
+	}
+	data := document.Data()
+	if text(data, "passengerId", "passengerID") != principal.UID {
+		return app.BookingRecord{}, false, fmt.Errorf("%w: booking belongs to another user", app.ErrPrecondition)
+	}
+	if recordedHash := text(data, "createPayloadHash"); recordedHash != "" && recordedHash != createBookingPayloadHash(command) {
+		return app.BookingRecord{}, false, fmt.Errorf("%w: bookingId was already used with a different payload", app.ErrPrecondition)
+	}
+	return app.BookingRecord{ID: command.BookingID, Data: data}, true, nil
+}
+
+func createBookingPayloadHash(command app.CreateBookingCommand) string {
+	payload, _ := json.Marshal(command)
+	return fmt.Sprintf("%x", sha256.Sum256(payload))
 }
 
 func (store *Store) GetBooking(ctx context.Context, principal app.Principal, bookingID string) (app.BookingRecord, error) {
@@ -826,7 +848,7 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 	}
 	cell := dispatchCell(command.Latitude, command.Longitude)
 	var previousCell string
-	_ = store.realtime.NewRef("dispatchDriverCells/" + principal.UID).Get(ctx, &previousCell)
+	_ = store.realtime.NewRef("dispatchDriverCells/"+principal.UID).Get(ctx, &previousCell)
 	cellUpdates := map[string]any{
 		"dispatchCells/" + cell + "/" + principal.UID:                updates,
 		"dispatchDriverCells/" + principal.UID:                       cell,

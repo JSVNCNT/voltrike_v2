@@ -202,9 +202,27 @@ class BookingRepository {
       kind: 'booking.create',
       payload: payload,
     );
-    final response = await _api.createBooking(payload);
-    await _outbox.complete(outboxKey);
-    return BookingCreationResult.fromCallable(response, fallback: booking);
+    try {
+      final response = await _api.createBooking(payload);
+      await _outbox.complete(outboxKey);
+      return BookingCreationResult.fromCallable(response, fallback: booking);
+    } on VoltrikeApiException catch (error) {
+      final isPrecondition =
+          error.statusCode == 412 ||
+          error.code?.toUpperCase() == 'FAILED_PRECONDITION';
+      if (isPrecondition) {
+        // A successful first request may lose its response while its durable
+        // replay reaches the server with an already-consumed quote. Resolve
+        // the authoritative active-booking pointer immediately so the rider
+        // enters tracking instead of seeing a false quote-token failure.
+        final active = await getActiveBookingForPassenger(booking.passengerId);
+        if (active != null) {
+          await _outbox.complete(outboxKey);
+          return BookingCreationResult.fromBooking(active);
+        }
+      }
+      rethrow;
+    }
   }
 
   //==========================================================================

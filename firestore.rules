@@ -200,6 +200,15 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
     }
+    // Chat safety configuration and evidence contain sensitive phrases and
+    // unmasked message content. They are available only through audited Go
+    // System Admin operations, never through direct client SDK reads/writes.
+    match /chatModerationRules/{ruleId} {
+      allow read, write: if false;
+    }
+    match /chatModerationIncidents/{incidentId} {
+      allow read, write: if false;
+    }
     match /reports/{reportId} {
       // Participant identity and TODA scope are derived by createRideReport.
       allow create: if false;

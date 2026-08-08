@@ -138,5 +138,44 @@ void main() {
       );
       expect(session.includesParticipant('unrelated_user'), isFalse);
     });
+
+    test('accepted snapshot remains addressed to the recipient', () {
+      final accepted = BookingCallSession.fromMap(
+        bookingId: 'booking_trip_a',
+        data: {
+          'callId': 'call_trip_a',
+          'callerId': 'passenger_a',
+          'recipientId': 'driver_a',
+          'status': 'accepted',
+          'createdAt': now,
+          'expiresAt': now.add(const Duration(seconds: 30)),
+          'acceptedAt': now,
+          'endsAt': now.add(const Duration(minutes: 30)),
+        },
+      );
+
+      expect(
+        accepted.isAddressedToRecipient(
+          'driver_a',
+          expectedCallId: 'call_trip_a',
+        ),
+        isTrue,
+      );
+      expect(
+        accepted.isIncomingFor(
+          'driver_a',
+          expectedCallId: 'call_trip_a',
+          at: now,
+        ),
+        isFalse,
+      );
+      expect(
+        accepted.isAddressedToRecipient(
+          'passenger_a',
+          expectedCallId: 'call_trip_a',
+        ),
+        isFalse,
+      );
+    });
   });
 }

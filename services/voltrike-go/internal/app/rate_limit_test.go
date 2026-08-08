@@ -11,6 +11,9 @@ func TestPrincipalRateLimiterResetsAfterWindow(t *testing.T) {
 	if !limiter.allow("user-1", now) {
 		t.Fatal("requests within limit were rejected")
 	}
+	if !limiter.allow("user-1", now) {
+		t.Fatal("second request within limit was rejected")
+	}
 	if limiter.allow("user-1", now) {
 		t.Fatal("request above limit was accepted")
 	}

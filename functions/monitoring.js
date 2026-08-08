@@ -58,4 +58,15 @@ Sentry.init({
 module.exports = {
   wrapCallable: Sentry.wrapHttpFunction,
   wrapCloudEvent: Sentry.wrapCloudEventFunction,
+  wrapScheduledTask(handler) {
+    return async (event) => {
+      try {
+        return await handler(event);
+      } catch (error) {
+        Sentry.captureException(error);
+        await Sentry.flush(2000);
+        throw error;
+      }
+    };
+  },
 };

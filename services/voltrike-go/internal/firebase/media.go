@@ -27,7 +27,7 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 	targetID := strings.TrimSpace(text(payload, "targetId"))
 	field := safeObjectSegment(text(payload, "field"))
 	if stagingPath == "" || targetID == "" || field == "" ||
-		(targetType != "toda_document" && targetType != "profile_image" && targetType != "driver_document") {
+		(targetType != "toda_document" && targetType != "profile_image" && targetType != "driver_document" && targetType != "chat_image") {
 		return nil, fmt.Errorf("%w: valid stagingPath, targetType, targetId, and field are required", app.ErrInvalidArgument)
 	}
 	prefix := "staging/" + principal.UID + "/"
@@ -37,6 +37,11 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 	if targetType == "toda_document" {
 		if err := store.authorizeTodaMedia(ctx, principal, targetID); err != nil {
 			return nil, err
+		}
+	} else if targetType == "chat_image" {
+		booking, bookingErr := store.participantBooking(ctx, principal, targetID)
+		if bookingErr != nil || (principal.UID != text(booking, "passengerId", "passengerID") && principal.UID != text(booking, "driverId", "driverID")) {
+			return nil, fmt.Errorf("%w: chat media must belong to a ride participant", app.ErrPrecondition)
 		}
 	} else if targetID != principal.UID {
 		return nil, fmt.Errorf("%w: profile media must belong to the caller", app.ErrPrecondition)
@@ -51,6 +56,9 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 	}
 	if (targetType == "profile_image" || targetType == "driver_document") && !strings.HasPrefix(attrs.ContentType, "image/") {
 		return nil, fmt.Errorf("%w: profile media must be an image", app.ErrInvalidArgument)
+	}
+	if targetType == "chat_image" && (!strings.HasPrefix(attrs.ContentType, "image/") || attrs.Size > 2*1024*1024) {
+		return nil, fmt.Errorf("%w: chat images must be compressed images no larger than 2 MB", app.ErrInvalidArgument)
 	}
 	if expected := int64(integer(payload, "generation")); expected > 0 && attrs.Generation != expected {
 		return nil, fmt.Errorf("%w: staging object generation changed", app.ErrPrecondition)
@@ -75,6 +83,8 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 		finalRoot = "final/profiles"
 	} else if targetType == "driver_document" {
 		finalRoot = "final/drivers"
+	} else if targetType == "chat_image" {
+		finalRoot = "final/chat"
 	}
 	finalPath := fmt.Sprintf("%s/%s/%s/%s%s", finalRoot, safeObjectSegment(targetID), field, uuid.NewString(), extension)
 	destination := store.bucket.Object(finalPath)
@@ -85,9 +95,14 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 		"ownerUid":    principal.UID,
 		"finalizedAt": time.Now().UTC().Format(time.RFC3339Nano),
 	}
+	if targetType == "chat_image" {
+		metadata["targetType"] = targetType
+		metadata["bookingId"] = targetID
+		metadata["messageId"] = field
+	}
 	// Legal evidence is private and gets no permanent bearer download token.
 	downloadToken := ""
-	if targetType != "toda_document" {
+	if targetType == "profile_image" || targetType == "driver_document" {
 		downloadToken = uuid.NewString()
 		metadata["firebaseStorageDownloadTokens"] = downloadToken
 	}
@@ -128,6 +143,28 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 		"contentType": finalAttrs.ContentType,
 		"sha256":      digest,
 	}, nil
+}
+
+func (store *Store) validateFinalizedChatMedia(ctx context.Context, objectPath, bookingID, messageID, ownerUID string) error {
+	safeBookingID, safeMessageID := safeObjectSegment(bookingID), safeObjectSegment(messageID)
+	if safeBookingID == "" || safeMessageID == "" || safeBookingID != bookingID || safeMessageID != messageID {
+		return fmt.Errorf("invalid chat media identifiers")
+	}
+	expectedPrefix := "final/chat/" + safeBookingID + "/" + safeMessageID + "/"
+	if !strings.HasPrefix(objectPath, expectedPrefix) || strings.Contains(objectPath, "..") {
+		return fmt.Errorf("invalid chat media path")
+	}
+	attrs, err := store.bucket.Object(objectPath).Attrs(ctx)
+	if err != nil {
+		return fmt.Errorf("chat media object not found: %w", err)
+	}
+	if attrs.Metadata["ownerUid"] != ownerUID || attrs.Metadata["bookingId"] != bookingID || attrs.Metadata["messageId"] != messageID || attrs.Metadata["targetType"] != "chat_image" {
+		return fmt.Errorf("chat media ownership proof does not match")
+	}
+	if attrs.Size < 1 || attrs.Size > 2*1024*1024 || !strings.HasPrefix(attrs.ContentType, "image/") {
+		return fmt.Errorf("chat media type or size is invalid")
+	}
+	return nil
 }
 
 func (store *Store) authorizeTodaMedia(ctx context.Context, principal app.Principal, todaID string) error {
