@@ -78,12 +78,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _warmCommonLaunchAssets() async {
     // Use the branded animation window to prepare the most common first-screen
     // imagery. This remains best-effort and never blocks session recovery.
-    final assets = <String>[
-      AppAssets.logoDark,
-      AppAssets.defaultAvatar,
-      AppAssets.passengerPlaceholder,
-      AppAssets.driverPlaceholder,
-    ];
+    final assets = <String>[AppAssets.logoDark];
     await Future.wait(
       assets.map((asset) async {
         try {

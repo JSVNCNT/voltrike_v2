@@ -48,7 +48,7 @@ dependencies:
   # Pinned while the official Flutter wrapper is pre-1.0.
   # 0.10.0 / Android Nav SDK 7.7.0 collides with LiveKit's WebRTC
   # org.jni_zero classes. Keep the newest compatible pilot version.
-  google_navigation_flutter: 0.9.2
+  google_navigation_flutter: 0.9.4
 
   # Location
   geolocator: ^14.0.2

@@ -39,7 +39,8 @@ requirements as those regulations and local policies evolve.
   the passenger.
 - Lets system and TODA administrators manage drivers, ride operations, TODA
   coverage and zones, fares, commissions, route restrictions, safety incidents,
-  reports, settlements, and operational dashboards.
+  reports, chat-safety incidents, settlements, and real-data operational
+  dashboards.
 - Keeps sensitive business decisions on the server while using realtime Firebase
   data for responsive tracking and operational views.
 
@@ -94,6 +95,10 @@ structured state management, `go_router` handles navigation, and Dart keeps the
 UI and client models strongly typed while remaining productive for a small
 capstone team.
 
+The mobile design supports light and dark themes, high-contrast card and row
+boundaries for LED/projector visibility, consistent passenger/driver navigation,
+and a branded launch/session-restoration experience using the VolTrike identity.
+
 **Why it benefits VolTrike:** one shared codebase reduces duplicated work and
 keeps passenger and driver workflows visually consistent. Flutter also offers a
 highly responsive interface on a wide range of Android phones while native
@@ -109,7 +114,9 @@ filters, role-aware actions, and charts.
 
 The portal is hosted as a Render Static Site. It uses Firebase for session and
 realtime reads, calls the Go V2 API for authoritative commands, and uses Mapbox
-GL for interactive operations maps.
+GL for interactive operations maps. Its overview charts use real Firestore
+booking and settlement records rather than placeholder datasets, with exact
+values available for pointer and touch users.
 
 **Why it benefits VolTrike:** administrators need a desktop-friendly browser
 workspace rather than a second mobile app. TypeScript helps protect the many
@@ -184,7 +191,7 @@ media and server infrastructure.
 | Firebase App Check | Attestation token sent with protected API requests | Reduces abuse from unauthorised app clients. |
 | Cloud Firestore | Profiles, booking views, operational documents, reports, outbox | Realtime document data with rules and transactional support. |
 | Firebase Realtime Database | Low-latency driver/session/location presence | Responsive online-driver and trip-tracking updates. |
-| Firebase Storage | Registration and vehicle documents/media | Managed, access-controlled uploads and retrieval. |
+| Firebase Storage | Registration documents and access-controlled ride-chat photos | Managed uploads, participant-only access, evidence preservation, and lifecycle expiry. |
 | Firebase Cloud Messaging | Mobile push notifications | Wake and notify drivers/passengers about ride events. |
 | Firebase Functions v2 | Event-driven Node.js integrations and schedules | Serverless notifications, email, and maintenance processing. |
 | Google Cloud Run | Go V2 API hosting | Public, scalable backend independent of the developer PC. |
@@ -196,6 +203,7 @@ media and server infrastructure.
 | LiveKit Client + Server SDK | Secure in-ride voice rooms and tokens | Real-time passenger-driver calling without exposing provider credentials to clients. |
 | WebRTC through LiveKit | Native audio capture/playback, echo cancellation, noise suppression, gain control | Reliable cross-device voice transport and platform audio handling. |
 | Nodemailer / SMTP provider | Branded verification and password-reset email | Delivers app-branded account communications. |
+| Sentry | Separate Flutter, admin, Go, and Functions error/trace projects | Correlates production failures with the deployed code release without placing private auth secrets in source. |
 | Render Static Site | Hosting for the React administration portal | Simple Git-connected web deployment for operators. |
 | Flutter Rust Bridge | Dart-to-Rust native bridge | Lets the Flutter client use Rust selectively without a separate mobile codebase. |
 
@@ -205,10 +213,18 @@ VolTrike’s Android configuration uses:
 
 | Configuration | Value | Meaning |
 | --- | --- | --- |
-| Minimum SDK | **API 24** | Android 7.0 Nougat and later can install the Android build. |
-| Compile SDK | **API 37** | Built against a current Android SDK for modern platform compatibility. |
+| Minimum/required phone SDK | **API 24 — Android 7.0 Nougat** | Android 7.0 and later can install the APK. Phones below API 24 are unsupported. |
+| Target SDK | **API 36 — Android 16** | The current Flutter Android toolchain applies Android 16 platform behavior and security expectations. |
+| Compile SDK | **API 37 — Android 17** | Allows dependencies to compile against current Android APIs; it does **not** require the phone to run Android 17. |
 | Java / Kotlin target | **Java 17** | Required by the current Android/Flutter dependency toolchain. |
-| Capstone verification | Android 16 physical device and Android 17 emulator | Validated against current Android environments during development. |
+| Verified physical device | **Android 16 — API 36, arm64** | The login, map, Navigation, location, and LiveKit/WebRTC startup path is tested on the connected SM A566B. |
+| Additional test environment | **Android 17 — API 37 emulator** | Used for forward-platform compatibility checks; two real phones remain required for end-to-end ride and call testing. |
+
+In short, the APK requires **Android 7.0/API 24 or newer**. Target SDK and
+compile SDK describe how the app is built and governed by newer Android
+behavior; they do not change the minimum installable Android version. Google
+Play services, GPS, internet access, camera/microphone permissions, and enough
+RAM/storage are still required for the corresponding VolTrike features.
 
 Android 7+ is a broad practical baseline for a community mobility project and
 includes many older Android devices. Real-world suitability still depends on
@@ -228,14 +244,62 @@ they do not replace those hardware and network requirements.
 - Firestore, Realtime Database, and Storage rules enforce client access limits.
 - Cloud Run uses a service account and Secret Manager configuration; secrets are
   not stored in the repository or in the Render public build.
+- Flutter, admin, Go, and Firebase Functions report failures to separate Sentry
+  projects so an incident can be attributed to the correct runtime and release.
 - Outbox-driven Node functions perform side effects after committed data changes
   rather than making notifications, emails, or provider calls part of an
   irreversible booking transaction.
 - LiveKit room credentials are server-issued for the specific booking call.
+- Ride chat and voice calls are scoped to a specific booking and its passenger
+  and driver; they are not global channels shared by unrelated rides.
 - The call screen uses native WebRTC audio processing and earpiece/speaker
   routing. Nearby open speakerphones can still cause physical acoustic echo;
   earpieces, Bluetooth headsets, or distance between devices are the dependable
   mitigation.
+
+## Ride communication, moderation, and retention
+
+Ride chat is available only to the passenger and driver assigned to the
+booking. The current client provides text messages, camera-only compressed
+photos, accessible quick replies, delivery context, and light/dark presentation.
+Normal chat photos are limited to 2 MB and automatically expire after two days
+to control Storage cost and reduce unnecessary retention.
+
+Chat moderation is server-side and configurable by a system administrator. The
+`chatModerationRules` collection supports whole-word or substring matching,
+aliases for shortened spellings, repeated-character matching, masking, flagging,
+and blocking. The Flutter client never decides whether content is permitted.
+Original text is available only as protected moderation evidence and is not
+returned to the other ride participant.
+
+Moderation incidents follow role scope:
+
+- System administrators can review incidents involving passengers or drivers,
+  manage moderation rules, hide/dismiss/resolve incidents, and apply account
+  actions.
+- A TODA administrator can review incidents caused by drivers assigned to that
+  TODA. Passenger incidents remain system-admin only.
+- When a reported chat photo still exists, the Go API copies it to a protected
+  evidence path and issues only a short-lived signed URL to an authorized
+  administrator. Resolving or dismissing the incident attempts to remove that
+  retained copy.
+
+Firestore TTL and Storage lifecycle policies provide the following operational
+defaults:
+
+| Data | Retention |
+| --- | --- |
+| Normal ride-chat photos | 2 days |
+| Reported photo evidence fallback | 180 days, or earlier when the incident is closed |
+| Ride chat/conversation records | 30 days through `purgeAt` |
+| Booking-call records | 7 days through `purgeAt`; LiveKit audio is not recorded by VolTrike |
+| Typing-state records | 24 hours through `purgeAt` |
+| Moderation incidents | 180 days through `purgeAt` |
+
+The policy definitions and setup instructions are in
+[docs/data-retention.md](docs/data-retention.md),
+[scripts/configure-chat-retention.ps1](scripts/configure-chat-retention.ps1),
+and [storage.lifecycle.json](storage.lifecycle.json).
 
 ## Repository map
 
@@ -249,6 +313,8 @@ they do not replace those hardware and network requirements.
 | `rust_builder/` | Flutter package/build integration for the Rust crate. |
 | `contracts/` | OpenAPI and service contracts. |
 | `docs/` | QA, notifications, release, roadmap, and UI documentation. |
+| `scripts/configure-chat-retention.ps1` | Enables Firestore TTL fields and applies the ride-chat Storage lifecycle policy. |
+| `storage.lifecycle.json` | Deletes normal chat photos after 2 days and retained moderation evidence after 180 days. |
 | `firestore.rules`, `database.rules.json`, `storage.rules` | Firebase access-control rules. |
 | `transition.md` | Architecture migration/cutover history and handoff context. |
 
@@ -269,6 +335,14 @@ add a release signing key, formal privacy/compliance review, production App
 Check enforcement, monitored billing/quotas, incident processes, and full
 device/network test coverage.
 
+The current private-testing workflow targets newly rebuilt APKs. Remove obsolete
+test APKs before installing a new build so every test phone uses the same
+Flutter models, Go API contract, chat/call behavior, and Firebase rules. Legacy
+APK compatibility is not part of the current capstone deployment target.
+Uninstalling an APK does not delete its Firebase Authentication account or
+authorized cloud records, so existing approved users can sign in again after
+installing the current build.
+
 ### Build a capstone Android APK
 
 ```powershell
@@ -285,9 +359,52 @@ build\app\outputs\flutter-apk\app-debug.apk
 ### Run on a connected device
 
 ```powershell
+flutter clean
+flutter pub get
 flutter run `
   --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app
 ```
+
+### Google Navigation and LiveKit compatibility
+
+The Android client intentionally uses `google_navigation_flutter` 0.9.4 with
+the native Google Navigation SDK pinned to 7.6.1. Navigation SDK 7.7 and later
+currently package `org.jni_zero` classes that collide with the WebRTC Android
+artifact used by LiveKit. Do not remove this pin or suppress Gradle's
+duplicate-class validation: doing so can make maps compile while breaking
+ride-call JNI loading at runtime.
+
+This large multi-dex application also requires R8 for debug and release builds.
+Without the scoped rule in `android/app/proguard-rules.pro`, D8 can omit four
+pre-obfuscated Navigation parcelable helpers (`internal.nc.a` through
+`internal.nc.d`) even though the Navigation AAR contains them. The resulting
+APK builds and installs but crashes when Flutter creates its first Navigation
+map view. The R8 rule retains only that helper package.
+
+The first Android build after `flutter clean`, dependency changes, or native
+configuration changes may take several minutes while Flutter Rust Bridge, R8,
+Navigation, and WebRTC are processed. Dart hot reload remains fast after
+`flutter run` attaches. Before upgrading either Navigation or LiveKit, test on
+physical phones that the passenger and driver maps both open and that calls
+connect in both directions. A successful compatibility run should load both
+`libgmm-jni.so` and `libjingle_peerconnection_so.so` without a fatal exception,
+missing class, duplicate class, or JNI-link error.
+
+### Deployment verification
+
+The Cloud Run service exposes unauthenticated health endpoints while protected
+application commands still require Firebase authentication:
+
+```powershell
+curl.exe https://voltrike-api-v2-327670792817.asia-southeast1.run.app/health
+curl.exe https://voltrike-api-v2-327670792817.asia-southeast1.run.app/ready
+```
+
+After each backend/mobile update, smoke-test with separate passenger and driver
+phones: sign in, quote, book, accept, track, exchange text/photo chat, place a
+call in both directions, complete the cash ride, rate/report it, and confirm the
+expected TODA/system-admin visibility. Health endpoints and automated tests do
+not replace this two-device workflow check.
 
 For full infrastructure and environment setup, see
 [services/voltrike-go/DEPLOYMENT.md](services/voltrike-go/DEPLOYMENT.md),

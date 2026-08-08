@@ -58,14 +58,33 @@ android {
     }
 
     buildTypes {
+        debug {
+            // D8's artifact transform drops four Navigation 7.6.1 parcelable
+            // helpers in this large multi-dex app. Route Java bytecode through
+            // R8 so the referenced helpers are kept in the final debug APK.
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
         release {
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+
+    // Keep the native SDK aligned with google_navigation_flutter 0.9.4 and
+    // below the 7.7 release that duplicates LiveKit/WebRTC's org.jni_zero.
+    implementation("com.google.android.libraries.navigation:navigation:7.6.1")
 }
 
 flutter {

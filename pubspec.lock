@@ -934,10 +934,10 @@ packages:
     dependency: "direct main"
     description:
       name: google_navigation_flutter
-      sha256: "07efb58130d307efc52107a7425962c6211adf981721730cff59dd870a941206"
+      sha256: "323d73827f102b3302dc83b6567c91b7ee7bf49f361fb95c58e714155b98ceaa"
       url: "https://pub.dev"
     source: hosted
-    version: "0.9.2"
+    version: "0.9.4"
   google_sign_in:
     dependency: "direct main"
     description:
