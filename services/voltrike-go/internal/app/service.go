@@ -340,10 +340,7 @@ func (service *Service) DispatchCandidates(ctx context.Context, request Dispatch
 		result = filtered
 	}
 	sort.Slice(result, func(left, right int) bool { return compareCandidate(result[left], result[right]) < 0 })
-	if len(result) > limit {
-		result = result[:limit]
-	}
-	return result, nil
+	return selectDispatchBatch(result, limit), nil
 }
 
 func containsString(values []string, target string) bool {
@@ -480,6 +477,51 @@ func compareCandidate(left, right DispatchCandidate) int {
 		return left.DistanceMeters - right.DistanceMeters
 	}
 	return strings.Compare(left.DriverID, right.DriverID)
+}
+
+// selectDispatchBatch keeps the normal service-tier and fairness ordering while
+// reserving one nearby secondary and fallback candidate when those tiers exist.
+// This prevents a dense primary TODA from completely starving mutual-aid
+// drivers, without changing which candidates rank first inside each tier.
+func selectDispatchBatch(ordered []DispatchCandidate, limit int) []DispatchCandidate {
+	if limit <= 0 || len(ordered) == 0 {
+		return []DispatchCandidate{}
+	}
+	if len(ordered) <= limit {
+		return ordered
+	}
+	reserved := make([]DispatchCandidate, 0, 2)
+	reservedIDs := map[string]bool{}
+	for _, priority := range []int{1, 2} {
+		var nearest *DispatchCandidate
+		for index := range ordered {
+			candidate := ordered[index]
+			if candidate.ServicePriority != priority {
+				continue
+			}
+			if nearest == nil || candidate.DistanceMeters < nearest.DistanceMeters ||
+				(candidate.DistanceMeters == nearest.DistanceMeters && compareCandidate(candidate, *nearest) < 0) {
+				copy := candidate
+				nearest = &copy
+			}
+		}
+		if nearest != nil && len(reserved) < limit {
+			reserved = append(reserved, *nearest)
+			reservedIDs[nearest.DriverID] = true
+		}
+	}
+	selected := make([]DispatchCandidate, 0, limit)
+	for _, candidate := range ordered {
+		if len(selected) >= limit-len(reserved) {
+			break
+		}
+		if !reservedIDs[candidate.DriverID] {
+			selected = append(selected, candidate)
+		}
+	}
+	selected = append(selected, reserved...)
+	sort.Slice(selected, func(left, right int) bool { return compareCandidate(selected[left], selected[right]) < 0 })
+	return selected
 }
 func surroundingCells(point core.Coordinate, size float64) []string {
 	lat := int(math.Floor((point.Latitude + 90) / size))

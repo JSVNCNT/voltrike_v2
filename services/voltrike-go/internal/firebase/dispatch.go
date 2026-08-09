@@ -3,6 +3,7 @@ package firebase
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -23,7 +24,7 @@ func (store *Store) FilterEligibleDispatch(ctx context.Context, candidates []app
 	if err != nil {
 		return nil, err
 	}
-	vehicleRefs, todaRefs := []*firestore.DocumentRef{}, []*firestore.DocumentRef{}
+	userRefs, vehicleRefs, todaRefs := []*firestore.DocumentRef{}, []*firestore.DocumentRef{}, []*firestore.DocumentRef{}
 	driverData := map[string]map[string]any{}
 	for _, document := range drivers {
 		if !document.Exists() {
@@ -35,11 +36,16 @@ func (store *Store) FilterEligibleDispatch(ctx context.Context, candidates []app
 			continue
 		}
 		driverData[id] = data
+		userRefs = append(userRefs, store.firestore.Collection("users").Doc(id))
 		vehicleRefs = append(vehicleRefs, store.firestore.Collection("vehicles").Doc(text(data, "vehicleId")))
 		todaRefs = append(todaRefs, store.firestore.Collection("todas").Doc(text(data, "todaId")))
 	}
 	if len(driverData) == 0 {
 		return []app.DispatchCandidate{}, nil
+	}
+	users, err := store.firestore.GetAll(ctx, userRefs)
+	if err != nil {
+		return nil, err
 	}
 	vehicles, err := store.firestore.GetAll(ctx, vehicleRefs)
 	if err != nil {
@@ -49,7 +55,12 @@ func (store *Store) FilterEligibleDispatch(ctx context.Context, candidates []app
 	if err != nil {
 		return nil, err
 	}
-	vehicleByID, todaByID := map[string]map[string]any{}, map[string]map[string]any{}
+	userByID, vehicleByID, todaByID := map[string]map[string]any{}, map[string]map[string]any{}, map[string]map[string]any{}
+	for _, document := range users {
+		if document.Exists() {
+			userByID[document.Ref.ID] = document.Data()
+		}
+	}
 	for _, document := range vehicles {
 		if document.Exists() {
 			vehicleByID[document.Ref.ID] = document.Data()
@@ -67,16 +78,78 @@ func (store *Store) FilterEligibleDispatch(ctx context.Context, candidates []app
 		requiredSeats = 1
 	}
 	for id, data := range driverData {
+		user := userByID[id]
 		vehicle, toda := vehicleByID[text(data, "vehicleId")], todaByID[text(data, "todaId")]
-		if !booleanDefault(vehicle, false, "isVerified") || !vehicleCanServe(vehicle, requiredSeats) || !booleanDefault(toda, false, "isActive") || text(data, "licenseNumber") == "" || !futureTime(data["licenseExpiry"], now) {
+		if text(user, "role") != "driver" || !booleanDefault(user, true, "isActive") ||
+			!booleanDefault(vehicle, false, "isVerified") || !vehicleCanServe(vehicle, requiredSeats) ||
+			!booleanDefault(toda, false, "isActive") || text(data, "licenseNumber") == "" || !futureTime(data["licenseExpiry"], now) {
 			continue
 		}
 		candidate := byID[id]
 		candidate.TodaID = text(data, "todaId")
 		candidate.ServicePriority = dispatchServicePriority(candidate.TodaID, request)
+		if candidate.ServicePriority >= 3 {
+			continue
+		}
+		candidate.DailyAwards, candidate.ReliabilityScore, candidate.QualityScore = dispatchRankingMetrics(data, now)
 		result = append(result, candidate)
 	}
 	return result, nil
+}
+
+func dispatchRankingMetrics(driver map[string]any, now time.Time) (int, float64, float64) {
+	stats := jsonMap(driver["dispatchStats"])
+	manila := time.FixedZone("Asia/Manila", 8*60*60)
+	dailyAwards := 0
+	if text(stats, "dailyAwardDate") == now.In(manila).Format("2006-01-02") {
+		dailyAwards = max(0, integer(stats, "dailyAwardCount"))
+	}
+	completed := max(0, integer(stats, "completedAssignments"))
+	driverFaults := max(0, integer(stats, "driverFaultCancellations"))
+	reliability := float64(9+completed) / float64(10+completed+driverFaults)
+	ratingCount := max(0, integer(driver, "ratingCount"))
+	rating := number(driver, "rating")
+	if rating < 0 {
+		rating = 0
+	} else if rating > 5 {
+		rating = 5
+	}
+	if ratingCount == 0 {
+		rating = 4.5
+	}
+	quality := (4.5*10 + rating*float64(ratingCount)) / float64(10+ratingCount)
+	return dailyAwards, math.Round(reliability*1e6) / 1e6, math.Round(quality*1e6) / 1e6
+}
+
+func nextDriverDispatchStats(driver map[string]any, outcome string, now time.Time) map[string]any {
+	stats := jsonMap(driver["dispatchStats"])
+	manila := time.FixedZone("Asia/Manila", 8*60*60)
+	date := now.In(manila).Format("2006-01-02")
+	dailyAwards := 0
+	if text(stats, "dailyAwardDate") == date {
+		dailyAwards = max(0, integer(stats, "dailyAwardCount"))
+	}
+	result := map[string]any{
+		"dailyAwardDate":           date,
+		"dailyAwardCount":          dailyAwards,
+		"assignmentCount":          max(0, integer(stats, "assignmentCount")),
+		"completedAssignments":     max(0, integer(stats, "completedAssignments")),
+		"cancellationCount":        max(0, integer(stats, "cancellationCount")),
+		"driverFaultCancellations": max(0, integer(stats, "driverFaultCancellations")),
+	}
+	switch outcome {
+	case "assigned":
+		result["dailyAwardCount"] = result["dailyAwardCount"].(int) + 1
+		result["assignmentCount"] = result["assignmentCount"].(int) + 1
+	case "completed":
+		result["completedAssignments"] = result["completedAssignments"].(int) + 1
+	case "cancelled":
+		result["cancellationCount"] = result["cancellationCount"].(int) + 1
+	case "driver_fault_cancelled":
+		result["cancellationCount"] = result["cancellationCount"].(int) + 1
+		result["driverFaultCancellations"] = result["driverFaultCancellations"].(int) + 1
+	}
+	return result
 }
 
 // dispatchServicePriority preserves TODA service preference without preventing

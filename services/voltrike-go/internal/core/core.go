@@ -376,7 +376,7 @@ func validAreas(areas []Area, minimum int) bool {
 
 func endpointBlocking(item Restriction) bool {
 	return item.IsActive && item.GeometryType != "corridor" &&
-		(item.Type == "no_service_area" || item.Type == "restricted_crossing") &&
+		(item.Type == "no_service_area" || item.Type == "restricted_crossing" || item.Type == "restricted_driving_area") &&
 		validAreas(item.Areas, 3)
 }
 

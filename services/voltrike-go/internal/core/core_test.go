@@ -137,3 +137,24 @@ func TestOutsideTodaSurchargeRequiresConfiguredCoverage(t *testing.T) {
 		t.Fatalf("outside surcharge was not applied once: inside=%#v outside=%#v", insideFare, outsideFare)
 	}
 }
+
+func TestRestrictedDrivingAreaBlocksEndpointsAndRoutes(t *testing.T) {
+	restriction := Restriction{
+		ID: "local-road-ban", Type: "restricted_driving_area", IsActive: true,
+		GeometryType: "polygon", Areas: []Area{{Points: []Coordinate{
+			{Latitude: 10, Longitude: 122},
+			{Latitude: 11, Longitude: 122},
+			{Latitude: 11, Longitude: 123},
+			{Latitude: 10, Longitude: 123},
+		}}},
+	}
+	inside := Coordinate{Latitude: 10.5, Longitude: 122.5}
+	outsideLeft := Coordinate{Latitude: 10.5, Longitude: 121.5}
+	outsideRight := Coordinate{Latitude: 10.5, Longitude: 123.5}
+	if conflict := FirstEndpointConflict(inside, outsideRight, []Restriction{restriction}); conflict == nil || conflict.ID != restriction.ID {
+		t.Fatalf("restricted driving endpoint was not blocked: %#v", conflict)
+	}
+	if conflict := FirstRouteConflict([]Coordinate{outsideLeft, outsideRight}, []Restriction{restriction}); conflict == nil || conflict.ID != restriction.ID {
+		t.Fatalf("route crossing restricted driving area was not blocked: %#v", conflict)
+	}
+}

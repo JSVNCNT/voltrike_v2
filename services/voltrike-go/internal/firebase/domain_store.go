@@ -49,6 +49,9 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 		if passengerErr == nil && passengerSnapshot.Exists() {
 			passenger = passengerSnapshot.Data()
 		}
+		if text(passenger, "role") != "passenger" || !booleanDefault(passenger, true, "isActive") {
+			return fmt.Errorf("%w: an active passenger account is required", app.ErrPrecondition)
+		}
 		activeLock, lockErr := tx.Get(lockRef)
 		if lockErr == nil && activeLock.Exists() && text(activeLock.Data(), "bookingId") != command.BookingID {
 			return fmt.Errorf("%w: passenger already has an active booking", app.ErrPrecondition)
@@ -423,7 +426,12 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 			updates["todaName"] = text(acceptingToda, "name")
 			updates["commissionPercent"] = normalizedCommission(number(acceptingToda, "driverCommissionPercent"))
 			updates["assignedAt"] = now
-			tx.Set(acceptingDriverRef, map[string]any{"currentBookingId": command.BookingID, "isAvailable": false, "updatedAt": now}, firestore.MergeAll)
+			tx.Set(acceptingDriverRef, map[string]any{
+				"currentBookingId": command.BookingID,
+				"isAvailable":      false,
+				"dispatchStats":    nextDriverDispatchStats(acceptingDriver, "assigned", now),
+				"updatedAt":        now,
+			}, firestore.MergeAll)
 			tx.Set(acceptingOfferRef, map[string]any{"status": "accepted", "acceptedAt": now, "updatedAt": now}, firestore.MergeAll)
 		}
 		if next == "completed" {
@@ -491,10 +499,18 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 				"isAvailable":      booleanDefault(terminalDriverData, false, "isOnline") && text(terminalDriverData, "driverStatus") == "approved",
 				"updatedAt":        now,
 			}
-			if next == "completed" {
+			switch next {
+			case "completed":
+				driverUpdates["dispatchStats"] = nextDriverDispatchStats(terminalDriverData, "completed", now)
 				driverUpdates["pendingReceiptBookingId"] = command.BookingID
 				driverUpdates["completedTrips"] = integer(terminalDriverData, "completedTrips") + 1
 				driverUpdates["totalEarnings"] = number(terminalDriverData, "totalEarnings") + number(updates, "driverNetEarnings")
+			case "cancelled":
+				outcome := "cancelled"
+				if principal.UID == driver || text(updates, "cancellationCode") == "driver_no_show" {
+					outcome = "driver_fault_cancelled"
+				}
+				driverUpdates["dispatchStats"] = nextDriverDispatchStats(terminalDriverData, outcome, now)
 			}
 			tx.Set(terminalDriverRef, driverUpdates, firestore.MergeAll)
 		}

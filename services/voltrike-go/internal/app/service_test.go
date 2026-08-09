@@ -162,3 +162,23 @@ func TestDispatchRepairsLegacyPresenceThroughAuthoritativeEligibility(t *testing
 		t.Fatalf("unexpected candidates: %#v", result)
 	}
 }
+
+func TestSelectDispatchBatchPreservesBackupServiceTiers(t *testing.T) {
+	candidates := []DispatchCandidate{
+		{DriverID: "primary-1", ServicePriority: 0, DistanceMeters: 100},
+		{DriverID: "primary-2", ServicePriority: 0, DistanceMeters: 200},
+		{DriverID: "primary-3", ServicePriority: 0, DistanceMeters: 300},
+		{DriverID: "primary-4", ServicePriority: 0, DistanceMeters: 400},
+		{DriverID: "primary-5", ServicePriority: 0, DistanceMeters: 500},
+		{DriverID: "secondary", ServicePriority: 1, DistanceMeters: 250},
+		{DriverID: "fallback", ServicePriority: 2, DistanceMeters: 150},
+	}
+	selected := selectDispatchBatch(candidates, 5)
+	ids := map[string]bool{}
+	for _, candidate := range selected {
+		ids[candidate.DriverID] = true
+	}
+	if len(selected) != 5 || !ids["secondary"] || !ids["fallback"] {
+		t.Fatalf("backup tiers were not preserved: %#v", selected)
+	}
+}

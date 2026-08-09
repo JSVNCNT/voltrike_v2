@@ -234,6 +234,118 @@ offline handset provide reliable live tracking or calls. The compiled Rust
 module and selective caching help keep compute-heavy local work efficient, but
 they do not replace those hardware and network requirements.
 
+## Geofencing, route regulation, and booking dispatch
+
+VolTrike uses two related but intentionally different kinds of operating-area
+data:
+
+| Policy data | What it does |
+| --- | --- |
+| TODA coverage geofences | Classify whether pickup and destination share a TODA, cross TODA boundaries, or sit outside configured coverage. This classification controls TODA dispatch preference and the configured outside-TODA fare surcharge. A coverage boundary is not automatically a no-service boundary. |
+| Route-restriction polygons | Active `no_service_area`, `restricted_crossing`, and legacy `restricted_driving_area` polygons prohibit pickup, drop-off, and route travel through the polygon. |
+| Prohibited-highway corridors | Active `prohibited_highway` centre lines plus their configured buffer and minimum aligned-travel distance prevent sustained travel along a prohibited highway. A short, approximately perpendicular road crossing is not treated as travelling on the highway. |
+
+Passenger and driver maps render active restricted-access polygons with a red
+fill/border and a **Restricted area** legend. That display and the Flutter/Rust
+geometry pre-check provide immediate guidance, but they are not the security
+boundary. The Go quote service repeats the checks using the current server
+policy before it issues a usable quote:
+
+1. Pickup and destination are rejected if either is inside an enforced
+   restriction polygon.
+2. Google Routes is requested with highway avoidance and alternative routes.
+3. Every returned route polyline is decoded and rejected if it enters/crosses
+   an enforced polygon or travels parallel inside a prohibited-highway corridor
+   for at least the configured threshold.
+4. The first fully permitted alternative is used. If Google reports that an
+   avoidance preference may have been partially ignored but the route does not
+   conflict with VolTrike's configured geometry, the app displays a warning to
+   follow posted E-Trike restrictions.
+5. If no permitted route remains, no quote is issued and the booking is
+   blocked.
+
+The encrypted quote token is valid for 75 seconds and is bound to the
+authenticated user, exact pickup/destination, passenger count, baggage count,
+authoritative route, fare, and policy revision. Booking creation rejects an
+expired/reused token, changed inputs, or a policy revision that changed after
+quotation. This prevents a modified phone from obtaining an allowed quote and
+then substituting a restricted route.
+
+These controls are a strong technical aid to regulatory compliance, not a
+claim that software alone guarantees compliance with every road rule. System
+administrators must keep TODA polygons, no-service areas, restricted crossings,
+and prohibited-highway corridors current with the responsible local authority.
+Drivers must still follow road signs, enforcement instructions, and applicable
+national/local law. GPS error, newly changed roads, incomplete policy geometry,
+or a third-party route advisory can never be made impossible by an app.
+
+### Who may create and receive a booking
+
+A booking is created only when all of the following server-side checks pass:
+
+- the caller has an authenticated, active passenger profile;
+- coordinates are valid and a current matching quote token passes the route,
+  fare, actor, input, expiry, and policy-revision checks;
+- the request carries one to four passenger seats in total and at most one
+  baggage unit; and
+- the passenger does not already hold an active-booking lock.
+
+A driver enters a dispatch candidate set only when all of these checks pass:
+
+- a fresh server-owned online location is available (at most 35 seconds old,
+  no more than 10 seconds in the future, and at most 100 metres reported
+  accuracy);
+- the driver is within the configured dispatch radius (5 km by default), has
+  an active driver user profile, is TODA-approved, online, available, and has no
+  current booking;
+- the assigned TODA is active, the licence number is present and its expiry is
+  still in the future; and
+- the assigned vehicle is verified and has enough capacity for the requested
+  passenger count.
+
+The same eligibility, coverage, offer-round, expiry, and capacity conditions
+are checked again inside the Firestore acceptance transaction. A stale client
+therefore cannot accept merely because it received an earlier notification.
+
+### Multiple bookings, matching, and priority
+
+Each pending booking can be offered to as many as five eligible drivers in one
+55-second offer round. Pending searches are retried by scheduled maintenance
+and expire after five minutes if no driver is assigned. Many passengers can
+search at the same time, and a currently free driver can briefly see offers
+from more than one booking, but:
+
+- one passenger can hold only one active booking;
+- one driver can hold only one current booking; and
+- one booking can be won by only one driver.
+
+Acceptance is transactional. When drivers accept at nearly the same time, the
+first valid Firestore transaction changes the booking from `pending` to
+`driverAssigned` and locks that driver. Later acceptance attempts fail because
+the booking/offer revision or driver availability is no longer valid.
+
+Candidate selection uses the following order; the lower/higher preference is
+shown explicitly:
+
+1. **TODA service tier:** shared/primary TODA first, a secondary endpoint TODA
+   second, and another active TODA as mutual-aid fallback third. If no endpoint
+   belongs to configured coverage, any active TODA starts at the primary tier.
+2. **Distance band:** the nearer 100-metre pickup-distance band first.
+3. **Daily accepted assignments:** fewer awards on the current Manila calendar
+   day first, to reduce repeated assignment to one driver.
+4. **Smoothed reliability:** higher completion versus driver-fault cancellation
+   history first.
+5. **Smoothed rating quality:** higher rating with rating-count smoothing first.
+6. **Exact pickup distance**, then stable driver ID as the final deterministic
+   tie-breaker.
+
+When more than five candidates exist, the batch normally follows that ordering
+but reserves the nearest available secondary and mutual-aid candidate when
+those tiers exist, preventing a dense primary TODA from completely starving
+neighbouring service. Priority determines who receives the offer batch; it does
+not silently assign a ride. Among offered and still-eligible drivers, the first
+valid acceptance wins.
+
 ## Security and reliability design
 
 - Firebase ID tokens identify users; App Check can attest client requests.
