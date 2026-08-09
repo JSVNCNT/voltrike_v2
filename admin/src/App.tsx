@@ -1057,16 +1057,21 @@ function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
   return <section className="panel wide">
     <h2>{todaId ? 'Driver applications assigned to this TODA' : 'All driver registrations'}</h2>
     <p className="muted">{todaId ? 'Review the camera-captured identity and vehicle documents. Record the licence details shown in the images before approval.' : 'System Admin oversight can suspend active accounts; routine approval and licence verification remain with each TODA.'}</p>
-    <div className="table">{drivers.map((driver) => <div className="row driver" key={driver.uid}>
-      <span className="applicant" data-label="Applicant and vehicle">
-        <b>{fullName(driver)}</b>
+    <div className="table">{drivers.map((driver) => {
+      const driverName = fullName(driver);
+      return <div className="row driver" key={driver.uid}>
+      <div className="applicant driver-applicant" data-label="Applicant and vehicle">
+        <DriverAvatar driver={driver} name={driverName} />
+        <div className="driver-applicant-details">
+        <b>{driverName}</b>
         <small>{driver.applicant?.email || 'Email unavailable'} · {driver.applicant?.phoneNumber || 'Phone unavailable'}</small>
         <small>Date of birth: {driver.applicant?.dateOfBirth ? new Date(driver.applicant.dateOfBirth).toLocaleDateString('en-PH') : 'Not supplied (legacy registration)'}</small>
         <small>TODA: {driver.todaId} · Licence: {driver.licenseNumber || 'Awaiting TODA verification'}</small>
         <small>Vehicle: {driver.vehicle?.vehicleNumber || driver.vehicle?.model || 'Not registered'} · {driver.vehicle?.plateNumber || 'No plate'} · {driver.vehicle?.isVerified ? 'verified' : 'not verified'}</small>
         <details><summary>Registration documents ({documentLinks(driver).length})</summary><div className="document-links">{documentLinks(driver).map(([name, url]) => <a href={url} target="_blank" rel="noreferrer" key={name}>{name}</a>)}</div></details>
         <small className="technical-id">Firebase UID: {driver.uid}</small>
-      </span>
+        </div>
+      </div>
       <span data-label="Status" className={`status-cell ${driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}`}>{driver.driverStatus}</span>
       <span data-label="Performance">{todaId && <>★ {driver.rating || 0} from {driver.ratingCount || 0} ratings<br /></>}<small>{driver.completedTrips || 0} trips · {peso(driver.totalEarnings || 0)} net earnings</small></span>
       <span data-label="Actions" className="actions">
@@ -1074,8 +1079,25 @@ function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
         {todaId && (driver.driverStatus === 'pending' || driver.driverStatus === 'suspended') && <DriverReviewActions driver={driver} onApprove={(license) => update(driver, 'approved', license)} onReject={driver.driverStatus === 'pending' ? () => update(driver, 'rejected') : undefined} />}
         {driver.driverStatus === 'approved' && <button className="danger-outline" onClick={() => update(driver, 'suspended')}>Suspend</button>}
       </span>
-    </div>)}{drivers.length === 0 && <p className="muted">No driver applications are available in this scope.</p>}</div>
+    </div>})}{drivers.length === 0 && <p className="muted">No driver applications are available in this scope.</p>}</div>
   </section>;
+}
+
+function DriverAvatar({ driver, name }: { driver: Driver; name: string }) {
+  const source = driver.profilePhotoUrl || driver.applicant?.profileImage || '';
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [source]);
+  const nameParts = name.trim().split(/\s+/).filter(Boolean);
+  const initials = nameParts.length > 1
+    ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase()
+    : (nameParts[0]?.slice(0, 2) || 'DR').toUpperCase();
+
+  if (!source || failed) {
+    return <span className="driver-avatar driver-avatar-fallback" role="img" aria-label={`${name} has no profile photo`}>{initials}</span>;
+  }
+  return <a className="driver-avatar" href={source} target="_blank" rel="noreferrer" aria-label={`Open ${name}'s profile photo`} title="Open profile photo">
+    <img src={source} alt={`${name} profile`} loading="lazy" decoding="async" onError={() => setFailed(true)} />
+  </a>;
 }
 
 function DriverReviewActions({ driver, onApprove, onReject }: {

@@ -57,6 +57,8 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final mediaQuery = MediaQuery.of(context);
+    final keyboardVisible = mediaQuery.viewInsets.bottom > 0;
     final user = AuthRepository().currentUser;
     if (user == null) {
       return const Scaffold(body: Center(child: Text('Not signed in.')));
@@ -77,7 +79,7 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
         ),
         child: Column(
           children: [
-            _RideChatNotice(colorScheme: colorScheme),
+            if (!keyboardVisible) _RideChatNotice(colorScheme: colorScheme),
             Expanded(
               child: StreamBuilder<List<ChatMessage>>(
                 stream: _repository.messages(widget.bookingId),
@@ -145,11 +147,12 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
                 );
               },
             ),
-            _QuickRideActions(
-              actions: _quickActions,
-              enabled: !_sending,
-              onSelected: _sendQuickAction,
-            ),
+            if (!keyboardVisible)
+              _QuickRideActions(
+                actions: _quickActions,
+                enabled: !_sending,
+                onSelected: _sendQuickAction,
+              ),
             SafeArea(
               top: false,
               child: Container(
@@ -167,54 +170,76 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
                     ),
                   ],
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    IconButton.filledTonal(
-                      tooltip: 'Take a ride photo',
-                      onPressed: _sending ? null : _captureAndSend,
-                      icon: const Icon(Icons.photo_camera_rounded),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        enabled: !_sending,
-                        minLines: 1,
-                        maxLines: 4,
-                        textInputAction: TextInputAction.send,
-                        textCapitalization: TextCapitalization.sentences,
-                        onChanged: (_) => _onChanged(),
-                        onSubmitted: (_) => _send(),
-                        decoration: InputDecoration(
-                          hintText: 'Message your ride participant',
-                          filled: true,
-                          fillColor: colorScheme.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 11,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 360;
+                    final actionSize = compact ? 42.0 : 48.0;
+                    final gap = compact ? 4.0 : 8.0;
+                    final actionConstraints = BoxConstraints.tightFor(
+                      width: actionSize,
+                      height: actionSize,
+                    );
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        IconButton.filledTonal(
+                          tooltip: 'Take a ride photo',
+                          constraints: actionConstraints,
+                          visualDensity: compact
+                              ? VisualDensity.compact
+                              : VisualDensity.standard,
+                          onPressed: _sending ? null : _captureAndSend,
+                          icon: const Icon(Icons.photo_camera_rounded),
+                        ),
+                        SizedBox(width: gap),
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            enabled: !_sending,
+                            minLines: 1,
+                            maxLines: 4,
+                            textInputAction: TextInputAction.send,
+                            textCapitalization: TextCapitalization.sentences,
+                            onChanged: (_) => _onChanged(),
+                            onSubmitted: (_) => _send(),
+                            decoration: InputDecoration(
+                              hintText: compact
+                                  ? 'Message'
+                                  : 'Message your ride participant',
+                              filled: true,
+                              fillColor: colorScheme.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: compact ? 12 : 16,
+                                vertical: 11,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      tooltip: 'Send message',
-                      onPressed: _sending ? null : _send,
-                      icon: _sending
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.3,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.send_rounded),
-                    ),
-                  ],
+                        SizedBox(width: gap),
+                        IconButton.filled(
+                          tooltip: 'Send message',
+                          constraints: actionConstraints,
+                          visualDensity: compact
+                              ? VisualDensity.compact
+                              : VisualDensity.standard,
+                          onPressed: _sending ? null : _send,
+                          icon: _sending
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.3,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -298,9 +323,14 @@ class _BookingChatScreenState extends ConsumerState<BookingChatScreen> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Send this ride photo?'),
-          content: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Image.file(file, fit: BoxFit.cover),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(dialogContext).height * .45,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.file(file, fit: BoxFit.contain),
+            ),
           ),
           actions: [
             TextButton(
@@ -512,8 +542,9 @@ class _MessageBubble extends StatelessWidget {
                       ),
                     ),
                   ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       DateFormat('h:mm a').format(message.sentAt),
@@ -579,9 +610,8 @@ class _ProtectedChatImageState extends State<_ProtectedChatImage> {
       future: source,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            width: 220,
-            height: 150,
+          return const AspectRatio(
+            aspectRatio: 4 / 3,
             child: Center(child: CircularProgressIndicator()),
           );
         }
@@ -620,11 +650,9 @@ class _ProtectedChatImageState extends State<_ProtectedChatImage> {
             borderRadius: BorderRadius.circular(12),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.memory(
-                bytes,
-                width: 240,
-                height: 175,
-                fit: BoxFit.cover,
+              child: AspectRatio(
+                aspectRatio: 4 / 3,
+                child: Image.memory(bytes, fit: BoxFit.cover),
               ),
             ),
           ),
@@ -643,7 +671,7 @@ class _ExpiredPhoto extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 220,
+      width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLowest.withValues(alpha: .72),
