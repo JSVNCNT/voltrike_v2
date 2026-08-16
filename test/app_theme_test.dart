@@ -135,6 +135,45 @@ void main() {
     );
   });
 
+  testWidgets('Settings keeps logout above the system navigation inset', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          themePreferenceStoreProvider.overrideWithValue(
+            MemoryThemePreferenceStore(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(400, 700),
+              padding: EdgeInsets.only(bottom: 48),
+              viewPadding: EdgeInsets.only(bottom: 48),
+            ),
+            child: Scaffold(body: VolTrikeSettingsView(onLogout: () {})),
+          ),
+        ),
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.text('Log out'),
+      300,
+      scrollable: find.byType(Scrollable),
+    );
+    await tester.pumpAndSettle();
+
+    final logoutTile = find.widgetWithText(ListTile, 'Log out');
+    expect(logoutTile, findsOneWidget);
+    expect(tester.getBottomRight(logoutTile).dy, lessThanOrEqualTo(652));
+  });
+
   testWidgets('FixedLightTheme keeps public content light', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
