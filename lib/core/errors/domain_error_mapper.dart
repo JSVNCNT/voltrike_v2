@@ -45,7 +45,8 @@ class DomainErrorMapper {
       'not-found' => 'The requested ride information is unavailable.',
       'object-not-found' => 'The selected file is no longer available.',
       'already-exists' => 'This action was already submitted.',
-      'failed-precondition' => 'The ride has changed. Refresh and try again.',
+      'failed-precondition' ||
+      'failed_precondition' => 'The ride has changed. Refresh and try again.',
       'unavailable' || 'deadline-exceeded' =>
         'Service is temporarily unavailable. Check your connection.',
       'invalid-argument' => 'Review the information and try again.',

@@ -500,8 +500,6 @@ class _DriverSearchBottomSheet extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            _TimerBadge(seconds: remainingSeconds),
           ],
         ),
         const SizedBox(height: 18),
@@ -637,46 +635,6 @@ class _DriverSearchBottomSheet extends StatelessWidget {
           label: const Text('Back to home'),
         ),
       ],
-    );
-  }
-}
-
-class _TimerBadge extends StatelessWidget {
-  const _TimerBadge({required this.seconds});
-
-  final int seconds;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Semantics(
-      liveRegion: true,
-      label: '$seconds seconds remaining',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: colors.secondaryContainer,
-          borderRadius: BorderRadius.circular(99),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.timer_outlined,
-              size: 17,
-              color: colors.onSecondaryContainer,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              DriverSearchPresentation.formatCountdown(seconds),
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: colors.onSecondaryContainer,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

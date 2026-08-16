@@ -106,6 +106,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
     if (user == null) return;
 
     final driver = await ref.read(driverRepositoryProvider).getDriver(user.uid);
+    if (!mounted) return;
     if (driver == null) return;
     // A completed receipt belongs in trip history, never in the active-driver
     // recovery path. In particular, a delayed acknowledgement must not trap a
@@ -258,37 +259,53 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
       return;
     }
 
-    await ref
-        .read(driverBookingControllerProvider.notifier)
-        .declineBooking(booking);
+    try {
+      final declined = await ref
+          .read(driverBookingControllerProvider.notifier)
+          .declineBooking(booking);
+      if (!mounted) return;
 
-    await ref.read(driverBookingListenerProvider).stopListening();
-    ref.read(driverOfferCooldownProvider.notifier).start();
-
-    ref.read(driverIncomingBookingProvider.notifier).clearBooking();
-
-    if (mounted) {
-      setState(() {
-        _routePoints.clear();
-      });
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Booking declined. New offers resume in 30 seconds.'),
-      ),
-    );
-
-    Future<void>.delayed(const Duration(seconds: 30), () {
-      if (!mounted || ref.read(driverStatusProvider) == DriverStatus.offline) {
+      if (!declined) {
+        ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+        setState(() => _routePoints.clear());
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This booking request is no longer available.'),
+          ),
+        );
         return;
       }
-      ref.read(driverBookingListenerProvider).startListening();
-    });
+
+      await ref.read(driverBookingListenerProvider).stopListening();
+      if (!mounted) return;
+
+      ref.read(driverOfferCooldownProvider.notifier).start();
+      ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+      setState(() => _routePoints.clear());
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Booking declined. New offers resume in 30 seconds.'),
+        ),
+      );
+
+      Future<void>.delayed(const Duration(seconds: 30), () {
+        if (!mounted ||
+            ref.read(driverStatusProvider) == DriverStatus.offline) {
+          return;
+        }
+        ref.read(driverBookingListenerProvider).startListening();
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not decline booking: ${DomainErrorMapper.message(error)}',
+          ),
+        ),
+      );
+    }
   }
 
   //==========================================================================

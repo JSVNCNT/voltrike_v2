@@ -82,6 +82,23 @@ class BookingRouteStop {
     'status': status,
     if (completedAt != null) 'completedAt': Timestamp.fromDate(completedAt!),
   };
+
+  /// Payload accepted by the strict Go quote/booking command decoder.
+  ///
+  /// Runtime projection fields such as [status] and [completedAt] belong to
+  /// Firestore after the ride has been created and must not be sent back as
+  /// client-authored command input.
+  Map<String, dynamic> toCommandMap() => {
+    'sequence': sequence,
+    'type': type,
+    'location': {
+      'latitude': location.latitude,
+      'longitude': location.longitude,
+    },
+    'name': name,
+    'address': address,
+    'final': isFinal,
+  };
 }
 
 /// ===========================================================================

@@ -465,6 +465,23 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		}
 		now := time.Now().UTC()
 		updates := map[string]any{"status": next, "revision": revision + 1, "updatedAt": now}
+		if command.Action == "accept" {
+			// Every driver in the current dispatch round watches only their own
+			// bookingOffers collection. Closing the non-winning offer documents in
+			// this transaction makes their cards disappear immediately instead of
+			// leaving a stale Accept/Decline prompt for an already assigned ride.
+			setCurrentBookingOfferStatus(tx, store, data, command.BookingID, "accepted_elsewhere", principal.UID, now)
+			updates["currentOfferDriverIds"] = []string{}
+			updates["nextDispatchAt"] = now
+		}
+		if next == "cancelled" {
+			// Booking state and dispatched offers form one observable state change.
+			// Without these writes, a passenger cancellation changes only the
+			// booking document while driver listeners continue showing cached offers.
+			setCurrentBookingOfferStatus(tx, store, data, command.BookingID, "cancelled", "", now)
+			updates["currentOfferDriverIds"] = []string{}
+			updates["nextDispatchAt"] = now
+		}
 		if command.Action == "start" {
 			updates["activeStopIndex"] = 1
 		}
@@ -567,6 +584,13 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		if command.Action == "decline" {
 			updates["lastOfferDeclinedBy"] = principal.UID
 			updates["lastOfferDeclinedAt"] = now
+			remainingOfferDriverIDs := withoutString(stringSlice(data["currentOfferDriverIds"]), principal.UID)
+			updates["currentOfferDriverIds"] = remainingOfferDriverIDs
+			if len(remainingOfferDriverIDs) == 0 {
+				// Let maintenance dispatch another eligible round promptly when the
+				// final driver in this round declines.
+				updates["nextDispatchAt"] = now
+			}
 			tx.Set(acceptingOfferRef, map[string]any{"status": "declined", "declinedAt": now, "updatedAt": now}, firestore.MergeAll)
 		}
 		if terminalDriverRef != nil {
@@ -639,6 +663,26 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		}
 	}
 	return result, nil
+}
+
+func setCurrentBookingOfferStatus(tx *firestore.Transaction, store *Store, booking map[string]any, bookingID, status, exceptDriverID string, now time.Time) {
+	for _, driverID := range stringSlice(booking["currentOfferDriverIds"]) {
+		if driverID == "" || driverID == exceptDriverID {
+			continue
+		}
+		offerRef := store.firestore.Collection("drivers").Doc(driverID).Collection("bookingOffers").Doc(bookingID)
+		tx.Set(offerRef, map[string]any{"status": status, "closedAt": now, "updatedAt": now}, firestore.MergeAll)
+	}
+}
+
+func withoutString(values []string, excluded string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" && value != excluded {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func settlementSnapshot(data map[string]any, bookingID string, now time.Time) (map[string]any, error) {

@@ -253,9 +253,7 @@ func (service *Service) TransitionBooking(ctx context.Context, principal Princip
 	if command.ExpectedRevision < 1 {
 		return BookingRecord{}, fmt.Errorf("%w: expectedRevision is required", ErrInvalidArgument)
 	}
-	switch command.Action {
-	case "accept", "arrived", "start", "payment", "complete", "cancel", "noShow", "decline", "dispute", "receipt":
-	default:
+	if !supportedBookingTransitionAction(command.Action) {
 		return BookingRecord{}, fmt.Errorf("%w: unsupported booking action", ErrInvalidArgument)
 	}
 	store, err := domainStore(service)
@@ -263,6 +261,15 @@ func (service *Service) TransitionBooking(ctx context.Context, principal Princip
 		return BookingRecord{}, err
 	}
 	return store.TransitionBooking(ctx, principal, command)
+}
+
+func supportedBookingTransitionAction(action string) bool {
+	switch action {
+	case "accept", "arrived", "start", "advanceStop", "payment", "complete", "cancel", "noShow", "decline", "dispute", "receipt":
+		return true
+	default:
+		return false
+	}
 }
 
 func (service *Service) CreateDriverSession(ctx context.Context, principal Principal, command CreateDriverSessionCommand) (DriverSessionRecord, error) {

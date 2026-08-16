@@ -57,9 +57,11 @@ func (store *Store) ExpireBookingSearch(ctx context.Context, bookingID string, n
 		}
 		passengerID := text(data, "passengerId")
 		revision := integer(data, "revision") + 1
+		setCurrentBookingOfferStatus(tx, store, data, bookingID, "expired", "", now)
 		tx.Set(bookingRef, map[string]any{
 			"status": "cancelled", "cancelReasonCode": "search_expired",
 			"revision": revision, "cancelledAt": now, "updatedAt": now,
+			"currentOfferDriverIds": []string{}, "nextDispatchAt": now,
 		}, firestore.MergeAll)
 		if passengerID != "" {
 			tx.Delete(store.firestore.Collection("activePassengerBookings").Doc(passengerID))

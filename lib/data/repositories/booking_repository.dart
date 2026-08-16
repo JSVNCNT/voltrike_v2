@@ -192,7 +192,9 @@ class BookingRepository {
       'destinationName': booking.destinationName,
       'pickupAddress': booking.pickupAddress,
       'destinationAddress': booking.destinationAddress,
-      'routeStops': booking.routeStops.map((stop) => stop.toMap()).toList(),
+      'routeStops': booking.routeStops
+          .map((stop) => stop.toCommandMap())
+          .toList(),
       'passengerNote': booking.passengerNote,
       'additionalPassengers': booking.additionalPassengers,
       'baggageCount': booking.baggageCount,
@@ -634,8 +636,18 @@ class BookingRepository {
       kind: 'booking.transition',
       payload: <String, dynamic>{'bookingId': bookingId, 'command': command},
     );
-    await _api.transitionBooking(bookingId, command);
-    await _outbox.complete(outboxKey);
+    try {
+      await _api.transitionBooking(bookingId, command);
+      await _outbox.complete(outboxKey);
+    } on VoltrikeApiException catch (error) {
+      // Validation and state-conflict responses are final for this immutable
+      // command. Retrying them after a cancellation/acceptance only produces
+      // repeated 412s and cannot change the authoritative booking state.
+      if (const <int>{400, 403, 404, 409, 412}.contains(error.statusCode)) {
+        await _outbox.complete(outboxKey);
+      }
+      rethrow;
+    }
   }
 
   Future<int> _expectedRevision(String bookingId) async {

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'package:voltrike_v2/data/models/booking.dart';
 
 void main() {
@@ -158,5 +159,23 @@ void main() {
     expect(booking.activeDestinationStop.name, 'First stop');
     expect(booking.orderedDropoffLabel, 'First stop → Final stop');
     expect(booking.passengerNote, 'Blue gate');
+  });
+
+  test('route-stop command payload excludes server projection fields', () {
+    final stop = BookingRouteStop(
+      sequence: 1,
+      type: 'dropoff',
+      location: const LatLng(10.68, 122.96),
+      name: 'First stop',
+      address: 'First stop address',
+      status: 'completed',
+      completedAt: DateTime.utc(2026, 8, 17),
+    );
+
+    final command = stop.toCommandMap();
+    expect(command['sequence'], 1);
+    expect(command['type'], 'dropoff');
+    expect(command, isNot(contains('status')));
+    expect(command, isNot(contains('completedAt')));
   });
 }

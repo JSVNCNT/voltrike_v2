@@ -193,6 +193,13 @@ func (store *Store) PublishBookingOffers(ctx context.Context, bookingID string, 
 			payload["createdAt"], payload["updatedAt"] = now, now
 			tx.Set(offer, payload)
 		}
+		for _, previousDriverID := range stringSlice(bookingData["currentOfferDriverIds"]) {
+			if previousDriverID == "" || contains(ids, previousDriverID) {
+				continue
+			}
+			previousOffer := store.firestore.Collection("drivers").Doc(previousDriverID).Collection("bookingOffers").Doc(bookingID)
+			tx.Set(previousOffer, map[string]any{"status": "superseded", "closedAt": now, "updatedAt": now}, firestore.MergeAll)
+		}
 		tx.Set(bookingRef, map[string]any{"offerRound": nextRound, "currentOfferDriverIds": ids, "offeredDriverIds": ids, "nextDispatchAt": expiresAt, "updatedAt": now}, firestore.MergeAll)
 		return nil
 	})

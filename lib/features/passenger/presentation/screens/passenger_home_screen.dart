@@ -234,35 +234,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
   Future<void> _editPassengerNote() async {
     final current = ref.read(bookingSessionProvider).passengerNote;
-    final controller = TextEditingController(text: current);
     final result = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Note for your driver'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 120,
-          maxLines: 3,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'Example: Waiting by the blue gate',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('Save note'),
-          ),
-        ],
-      ),
+      builder: (_) => _PassengerNoteDialog(initialValue: current),
     );
-    controller.dispose();
     if (result != null && mounted) {
       ref.read(bookingSessionProvider.notifier).updatePassengerNote(result);
     }
@@ -1055,5 +1030,58 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       ),
     );
     return accepted == true ? refreshed : null;
+  }
+}
+
+class _PassengerNoteDialog extends StatefulWidget {
+  const _PassengerNoteDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_PassengerNoteDialog> createState() => _PassengerNoteDialogState();
+}
+
+class _PassengerNoteDialogState extends State<_PassengerNoteDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Note for your driver'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 120,
+        maxLines: 3,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          hintText: 'Example: Waiting by the blue gate',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save note'),
+        ),
+      ],
+    );
   }
 }

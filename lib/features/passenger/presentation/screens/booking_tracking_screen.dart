@@ -31,6 +31,7 @@ import '../../../ride/tracking/widgets/ride_cancel_dialog.dart';
 import '../../../ride/tracking/widgets/report_ride_dialog.dart';
 import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
+import '../../../ride/tracking/widgets/multi_stop_progress_card.dart';
 import '../../../ride/tracking/widgets/trip_sheet_handle.dart';
 import '../../../ride/tracking/models/ride_participant_role.dart';
 import '../../../ride/tracking/services/ride_marker_factory.dart';
@@ -669,6 +670,10 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                   distance: _remainingDistance,
                   compact: true,
                 ),
+                if (booking.hasMultipleDropoffs) ...[
+                  const SizedBox(height: 8),
+                  MultiStopProgressCard(booking: booking),
+                ],
                 if (_routeWarning != null) ...[
                   const SizedBox(height: 8),
                   Text(

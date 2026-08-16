@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import '../../../core/services/voltrike_api.dart';
 import '../../../data/models/booking.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/repositories/booking_repository.dart';
@@ -139,7 +140,7 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  Future<void> declineBooking(Booking booking) async {
+  Future<bool> declineBooking(Booking booking) async {
     state = const AsyncLoading();
 
     try {
@@ -149,6 +150,19 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
       _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
 
       state = const AsyncData(null);
+      return true;
+    } on VoltrikeApiException catch (error, stackTrace) {
+      final code = error.code?.replaceAll('-', '_').toLowerCase();
+      if (code == 'failed_precondition' || error.statusCode == 412) {
+        // Passenger cancellation or another driver's acceptance can race the
+        // button tap. For this driver the desired outcome is already true:
+        // the offer is no longer actionable, so dismiss it idempotently.
+        _ref.read(driverIncomingBookingProvider.notifier).clearBooking();
+        state = const AsyncData(null);
+        return false;
+      }
+      state = AsyncError(error, stackTrace);
+      rethrow;
     } catch (e, stackTrace) {
       state = AsyncError(e, stackTrace);
 

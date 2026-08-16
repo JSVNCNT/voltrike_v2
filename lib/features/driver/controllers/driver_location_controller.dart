@@ -104,6 +104,7 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
   String? _sessionId;
   int _leaseGeneration = 0;
   int _sampleSequence = 0;
+  bool _disposed = false;
 
   bool get isTracking => _subscription != null;
 
@@ -148,7 +149,8 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
       );
 
       _subscription = LocationService.instance.locationStream.listen(
-        (position) async {
+        (position) {
+          if (_disposed) return;
           _lastPosition = position;
           state = state.copyWith(
             location: LatLng(position.latitude, position.longitude),
@@ -158,9 +160,10 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
             isStarting: false,
             clearError: true,
           );
-          await _writeLocation(position);
+          unawaited(_publishLocation(position));
         },
         onError: (Object error, StackTrace _) {
+          if (_disposed) return;
           state = state.copyWith(
             isStarting: false,
             errorMessage: _messageFor(error),
@@ -171,8 +174,8 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
       _heartbeat?.cancel();
       _heartbeat = Timer.periodic(const Duration(seconds: 10), (_) {
         final position = _lastPosition;
-        if (position != null && _sessionId != null) {
-          unawaited(_writeLocation(position));
+        if (!_disposed && position != null && _sessionId != null) {
+          unawaited(_publishLocation(position));
         }
       });
       _lifecycleListener ??= AppLifecycleListener(onResume: _refreshOnResume);
@@ -256,6 +259,7 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
     bool force = false,
     bool online = true,
   }) async {
+    if (_disposed) return;
     if (position.accuracy < 0 || position.accuracy > 100) {
       return;
     }
@@ -279,10 +283,24 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
       'online': online,
       'available': online,
     });
+    if (_disposed) return;
     state = state.copyWith(
       lastPublishedAt: now,
       lastPublishedObservedAt: position.timestamp,
     );
+  }
+
+  Future<void> _publishLocation(Position position) async {
+    try {
+      await _writeLocation(position);
+    } catch (error) {
+      // Location streams and periodic timers do not await their callbacks.
+      // Contain transient API failures here so they cannot become uncaught
+      // framework errors while the driver remains online.
+      _lastDatabaseWrite = null;
+      if (_disposed) return;
+      state = state.copyWith(errorMessage: _messageFor(error));
+    }
   }
 
   String _messageFor(Object error) {
@@ -305,6 +323,7 @@ class DriverLocationController extends StateNotifier<DriverLocationState> {
 
   @override
   void dispose() {
+    _disposed = true;
     _heartbeat?.cancel();
     _subscription?.cancel();
     _lifecycleListener?.dispose();

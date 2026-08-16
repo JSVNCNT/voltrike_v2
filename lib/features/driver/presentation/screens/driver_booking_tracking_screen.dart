@@ -27,6 +27,7 @@ import '../widgets/driver_turn_by_turn_map.dart';
 
 import '../../../ride/tracking/widgets/trip_information_card.dart';
 import '../../../ride/tracking/widgets/trip_status_card.dart';
+import '../../../ride/tracking/widgets/multi_stop_progress_card.dart';
 import '../../../ride/tracking/models/ride_participant_role.dart';
 import '../../../ride/tracking/models/ride_action.dart';
 import '../../../ride/tracking/services/ride_action_service.dart';
@@ -103,24 +104,22 @@ class _DriverBookingTrackingScreenState
     final booking = await ref
         .read(driverBookingControllerProvider.notifier)
         .restoreCurrentBooking();
-    if (booking != null) {
-      ref.read(driverStatusProvider.notifier).goBusy();
-      try {
-        await ref
-            .read(driverLocationControllerProvider.notifier)
-            .startTracking();
-      } catch (_) {
-        // The route remains visible while location permission is repaired.
-      }
-      try {
-        final incident = await _safetyService.load(booking.bookingId);
-        if (mounted) setState(() => _safetyIncident = incident);
-      } catch (_) {
-        // SOS remains usable even when a prior status cannot be loaded.
-      }
-    }
-    if (mounted && booking == null) {
+    if (!mounted) return;
+    if (booking == null) {
       context.go(AppRoutes.driverHome);
+      return;
+    }
+    ref.read(driverStatusProvider.notifier).goBusy();
+    try {
+      await ref.read(driverLocationControllerProvider.notifier).startTracking();
+    } catch (_) {
+      // The route remains visible while location permission is repaired.
+    }
+    try {
+      final incident = await _safetyService.load(booking.bookingId);
+      if (mounted) setState(() => _safetyIncident = incident);
+    } catch (_) {
+      // SOS remains usable even when a prior status cannot be loaded.
     }
   }
 
@@ -195,7 +194,15 @@ class _DriverBookingTrackingScreenState
   }
 
   String _guidanceLegKey(Booking booking) {
-    return '${booking.bookingId}:${_tripStarted(booking) ? 'dropoff' : 'pickup'}';
+    if (!_tripStarted(booking)) {
+      return '${booking.bookingId}:pickup';
+    }
+
+    // Each destination is a distinct navigation leg. Including the active
+    // stop sequence forces turn-by-turn guidance to replace the completed
+    // first route with the route to the next drop-off while the booking
+    // correctly remains in passengerOnBoard status.
+    return '${booking.bookingId}:dropoff:${booking.activeDestinationStop.sequence}';
   }
 
   String _guidanceDestinationLabel(Booking booking) {
@@ -575,6 +582,10 @@ class _DriverBookingTrackingScreenState
                   distance: navigation.distance,
                   compact: true,
                 ),
+                if (booking.hasMultipleDropoffs) ...[
+                  const SizedBox(height: 8),
+                  MultiStopProgressCard(booking: booking),
+                ],
                 const SizedBox(height: 8),
                 PassengerInformationCard(
                   passengerName: booking.passengerName ?? 'Passenger',
@@ -650,7 +661,7 @@ class _DriverBookingTrackingScreenState
     final colorScheme = Theme.of(context).colorScheme;
     final booking = ref.watch(driverCurrentBookingProvider);
 
-    if (booking == null) {
+    if (booking == null || booking.bookingId.trim().isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Current Trip')),
         body: const Center(child: Text('No active booking.')),

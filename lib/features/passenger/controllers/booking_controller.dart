@@ -65,7 +65,7 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
         ],
         'routeStops': _routeStopsFor(
           session,
-        ).map((stop) => stop.toMap()).toList(),
+        ).map((stop) => stop.toCommandMap()).toList(),
         'passengerNote': session.passengerNote,
         'pickupAddress': pickupAddress,
         'destinationAddress': destinationAddress,
