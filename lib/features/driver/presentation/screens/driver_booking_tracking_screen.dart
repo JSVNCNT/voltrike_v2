@@ -175,7 +175,9 @@ class _DriverBookingTrackingScreenState
   }
 
   LatLng _routeDestination(Booking booking) {
-    return _tripStarted(booking) ? booking.destination : booking.pickup;
+    return _tripStarted(booking)
+        ? booking.activeDestinationStop.location
+        : booking.pickup;
   }
 
   bool _guidanceEligible(Booking booking) {
@@ -198,10 +200,10 @@ class _DriverBookingTrackingScreenState
 
   String _guidanceDestinationLabel(Booking booking) {
     final placeName = _tripStarted(booking)
-        ? booking.destinationName
+        ? booking.activeDestinationStop.name
         : booking.pickupName;
     final address = _tripStarted(booking)
-        ? booking.destinationAddress
+        ? booking.activeDestinationStop.address
         : booking.pickupAddress;
     // Navigation surfaces this label prominently. Prefer the human-readable
     // place name, with the trusted address as a legacy-data fallback.
@@ -606,10 +608,7 @@ class _DriverBookingTrackingScreenState
                     booking.pickupName,
                     booking.pickupAddress,
                   ),
-                  destination: tripLocationLabel(
-                    booking.destinationName,
-                    booking.destinationAddress,
-                  ),
+                  destination: booking.orderedDropoffLabel,
                   distance:
                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                   duration: navigation.duration ?? 'Updating…',
@@ -744,7 +743,7 @@ class _DriverBookingTrackingScreenState
                         ),
                         Marker(
                           markerId: const MarkerId('destination'),
-                          position: booking.destination,
+                          position: booking.activeDestinationStop.location,
                           infoWindow: const InfoWindow(title: 'Destination'),
                         ),
                       },
@@ -834,10 +833,7 @@ class _DriverBookingTrackingScreenState
                           booking.pickupName,
                           booking.pickupAddress,
                         ),
-                        destination: tripLocationLabel(
-                          booking.destinationName,
-                          booking.destinationAddress,
-                        ),
+                        destination: booking.orderedDropoffLabel,
                         distance:
                             '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                         duration: navigation.duration ?? '--',

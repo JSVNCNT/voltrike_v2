@@ -192,6 +192,8 @@ class BookingRepository {
       'destinationName': booking.destinationName,
       'pickupAddress': booking.pickupAddress,
       'destinationAddress': booking.destinationAddress,
+      'routeStops': booking.routeStops.map((stop) => stop.toMap()).toList(),
+      'passengerNote': booking.passengerNote,
       'additionalPassengers': booking.additionalPassengers,
       'baggageCount': booking.baggageCount,
       'quoteToken': goQuoteToken,
@@ -501,6 +503,19 @@ class BookingRepository {
   /// record receipt and close the trip on the server.
   Future<void> confirmCashReceived(String bookingId) async {
     await _transition(bookingId: bookingId, action: 'payment');
+  }
+
+  Future<void> advanceToNextDropoff(String bookingId, int stopIndex) async {
+    await _runVoidOperation('advanceStop:$bookingId:$stopIndex', (
+      operationId,
+    ) async {
+      await _sendDurableTransition(bookingId, 'advanceStop', {
+        'commandId': operationId,
+        'action': 'advanceStop',
+        'stopIndex': stopIndex,
+        'expectedRevision': await _expectedRevision(bookingId),
+      });
+    });
   }
 
   /// Atomically advances a booking only from an allowed current state.

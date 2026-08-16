@@ -227,6 +227,19 @@ function normalizeBookingOperation(value: unknown): BookingOperation {
     source.acknowledgement === 'needs_review'
     ? source.acknowledgement
     : undefined;
+  const routeStops = Array.isArray(source.routeStops)
+    ? source.routeStops.map((entry) => {
+      const stop = asRecord(entry);
+      return {
+        sequence: finiteNumber(stop.sequence) ?? 0,
+        type: stop.type === 'pickup' ? 'pickup' as const : 'dropoff' as const,
+        name: textValue(stop.name) || undefined,
+        address: textValue(stop.address) || undefined,
+        final: stop.final === true,
+        status: textValue(stop.status) || undefined,
+      };
+    }).sort((left, right) => left.sequence - right.sequence)
+    : [];
   return {
     bookingId: textValue(source.bookingId ?? source.id),
     schemaVersion: finiteNumber(source.schemaVersion) ?? 0,
@@ -242,6 +255,10 @@ function normalizeBookingOperation(value: unknown): BookingOperation {
     destinationName: textValue(source.destinationName) || null,
     pickupAddress: textValue(source.pickupAddress, 'Pickup unavailable'),
     destinationAddress: textValue(source.destinationAddress, 'Destination unavailable'),
+    routeStops,
+    dropoffCount: finiteNumber(source.dropoffCount) ?? Math.max(1, routeStops.filter((stop) => stop.type === 'dropoff').length),
+    activeStopIndex: finiteNumber(source.activeStopIndex) ?? 0,
+    passengerNote: textValue(source.passengerNote) || null,
     amountDue: finiteNumber(source.amountDue ?? source.totalFare) ?? 0,
     paymentMethod: textValue(source.paymentMethod, 'not recorded'),
     settlementStatus: textValue(source.settlementStatus, 'not_recorded'),
@@ -1072,6 +1089,7 @@ export const adminApi = {
       additionalPassengerFee: Number(source.additionalPassengerFee ?? 40),
       baggageFee: Number(source.baggageFee ?? 20),
       outsideTodaSurcharge: Number(source.outsideTodaSurcharge ?? 20),
+      additionalDropoffFee: Number(source.additionalDropoffFee ?? 10),
     };
   },
   async uploadTodaRegistrationDocuments(todaId: string, files: Record<string, File>): Promise<void> {

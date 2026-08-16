@@ -265,11 +265,27 @@ policy before it issues a usable quote:
    blocked.
 
 The encrypted quote token is valid for 75 seconds and is bound to the
-authenticated user, exact pickup/destination, passenger count, baggage count,
+authenticated user, exact ordered pickup/drop-off list, passenger count, baggage count,
 authoritative route, fare, and policy revision. Booking creation rejects an
 expired/reused token, changed inputs, or a policy revision that changed after
 quotation. This prevents a modified phone from obtaining an allowed quote and
 then substituting a restricted route.
+
+### One or two drop-offs
+
+A passenger may request one normal destination or add exactly one intermediate
+drop-off followed by a final destination. Each leg is routed and checked
+separately so alternative-route highway avoidance and every configured
+restriction polygon still apply. The authoritative quote aggregates both legs'
+distance and duration, applies the normal configured distance formula once to
+the total distance, and adds the configurable `additionalDropoffFee` once.
+
+The ordered stops, per-leg route snapshots, active stop index, and optional
+120-character passenger note are stored on the booking and copied to driver
+offers. The driver must confirm the intermediate stop before navigation moves
+to the final stop, and the backend refuses payment progression until that first
+drop-off is recorded. Legacy bookings without `routeStops` remain readable as
+single-destination rides.
 
 These controls are a strong technical aid to regulatory compliance, not a
 claim that software alone guarantees compliance with every road rule. System

@@ -50,6 +50,10 @@ class FareRepository {
             data['outsideTodaSurcharge'] ?? data['outOfBarangayFee'],
             devFareConfiguration.outsideTodaSurcharge,
           ),
+          additionalDropoffFee: _nonNegativeCurrency(
+            data['additionalDropoffFee'],
+            devFareConfiguration.additionalDropoffFee,
+          ),
         );
       },
     );

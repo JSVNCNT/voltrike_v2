@@ -266,11 +266,19 @@ class DriverBookingController extends StateNotifier<AsyncValue<void>> {
   Future<void> confirmDropOff(Booking booking) async {
     state = const AsyncLoading();
     try {
-      await _bookingRepository.transitionStatus(
-        bookingId: booking.bookingId,
-        allowedCurrentStatuses: const {BookingStatus.passengerOnBoard},
-        nextStatus: BookingStatus.paymentConfirmation,
-      );
+      final stop = booking.activeDestinationStop;
+      if (booking.hasMultipleDropoffs && !stop.isFinal) {
+        await _bookingRepository.advanceToNextDropoff(
+          booking.bookingId,
+          stop.sequence,
+        );
+      } else {
+        await _bookingRepository.transitionStatus(
+          bookingId: booking.bookingId,
+          allowedCurrentStatuses: const {BookingStatus.passengerOnBoard},
+          nextStatus: BookingStatus.paymentConfirmation,
+        );
+      }
       state = const AsyncData(null);
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);

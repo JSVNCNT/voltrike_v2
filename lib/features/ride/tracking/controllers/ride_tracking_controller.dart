@@ -9,8 +9,8 @@ import '../models/ride_tracking_state.dart';
 /// Shared map/tracking controller used by passenger and driver ride screens.
 class RideTrackingController extends StateNotifier<RideTrackingState> {
   RideTrackingController({NavigationService? navigation})
-      : _navigation = navigation ?? NavigationService.instance,
-        super(const RideTrackingState());
+    : _navigation = navigation ?? NavigationService.instance,
+      super(const RideTrackingState());
 
   final NavigationService _navigation;
   Booking? _booking;
@@ -28,9 +28,7 @@ class RideTrackingController extends StateNotifier<RideTrackingState> {
     final booking = _booking;
     if (booking == null) return;
 
-    state = state.copyWith(
-      markers: _markers(booking, location),
-    );
+    state = state.copyWith(markers: _markers(booking, location));
   }
 
   /// Binds the shared ride map to a live passenger/driver location stream.
@@ -99,7 +97,7 @@ class RideTrackingController extends StateNotifier<RideTrackingState> {
       ),
       Marker(
         markerId: const MarkerId('destination'),
-        position: booking.destination,
+        position: booking.activeDestinationStop.location,
         infoWindow: const InfoWindow(title: 'Destination'),
       ),
     };

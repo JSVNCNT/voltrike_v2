@@ -55,11 +55,25 @@ test('fare breakdown exposes every admin-controlled component', () => {
     additionalPassengerFare: 40,
     baggageCount: 1,
     baggageFare: 20,
+    dropoffCount: 1,
+    additionalDropoffs: 0,
+    additionalDropoffFare: 0,
     isOutsideToda: true,
     boundarySurcharge: 20,
     currency: 'PHP',
     total: 115,
   });
+});
+
+test('a second drop-off uses the configured flat fee once', () => {
+  const breakdown = calculateFareBreakdown({
+    config: DEFAULT_FARE,
+    distanceMeters: 1000,
+    dropoffCount: 2,
+  });
+  assert.equal(breakdown.additionalDropoffs, 1);
+  assert.equal(breakdown.additionalDropoffFare, 10);
+  assert.equal(breakdown.total, 30);
 });
 
 test('currency values are rounded to centavos before totals are added', () => {
@@ -86,9 +100,16 @@ const parityFixture = JSON.parse(fs.readFileSync(path.join(
 
 for (const fixture of parityFixture.cases) {
   test(`shared fare parity: ${fixture.name}`, () => {
-    assert.deepEqual(calculateFareBreakdown({
+    const actual = calculateFareBreakdown({
       config: fixture.config,
       ...fixture.input,
-    }), fixture.expected);
+    });
+    const {
+      dropoffCount: _dropoffCount,
+      additionalDropoffs: _additionalDropoffs,
+      additionalDropoffFare: _additionalDropoffFare,
+      ...legacyShape
+    } = actual;
+    assert.deepEqual(legacyShape, fixture.expected);
   });
 }

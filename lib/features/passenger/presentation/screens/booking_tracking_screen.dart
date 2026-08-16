@@ -715,10 +715,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                     booking.pickupName,
                     booking.pickupAddress,
                   ),
-                  destination: tripLocationLabel(
-                    booking.destinationName,
-                    booking.destinationAddress,
-                  ),
+                  destination: booking.orderedDropoffLabel,
                   distance:
                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                   duration: _eta ?? 'Updating…',
@@ -910,10 +907,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
                                     booking.pickupName,
                                     booking.pickupAddress,
                                   ),
-                                  destination: tripLocationLabel(
-                                    booking.destinationName,
-                                    booking.destinationAddress,
-                                  ),
+                                  destination: booking.orderedDropoffLabel,
                                   distance:
                                       '${(booking.distanceMeters / 1000).toStringAsFixed(1)} km',
                                   duration: _eta ?? '--',

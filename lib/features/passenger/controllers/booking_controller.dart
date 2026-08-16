@@ -60,9 +60,13 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
         'passengerId': firebaseUser.uid,
         'pickup': [pickupLatitude, pickupLongitude],
         'destination': [
-          session.destination!.latitude,
-          session.destination!.longitude,
+          session.finalDestination!.latitude,
+          session.finalDestination!.longitude,
         ],
+        'routeStops': _routeStopsFor(
+          session,
+        ).map((stop) => stop.toMap()).toList(),
+        'passengerNote': session.passengerNote,
         'pickupAddress': pickupAddress,
         'destinationAddress': destinationAddress,
         'distanceMeters': session.distanceMeters,
@@ -107,17 +111,21 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
             passengerPhotoUrl: firebaseUser.photoURL,
             driverId: null,
             pickup: LatLng(pickupLatitude, pickupLongitude),
-            destination: session.destination!,
+            destination: session.finalDestination!,
             pickupName: session.pickupName,
-            destinationName: session.destinationName,
+            destinationName: session.finalDestinationName,
             pickupAddress: pickupAddress,
-            destinationAddress: destinationAddress,
+            destinationAddress:
+                session.finalDestinationAddress ?? destinationAddress,
             distanceMeters: session.distanceMeters,
             estimatedFare: session.estimatedFare,
             additionalPassengers: session.additionalPassengers,
             baggageCount: session.baggageCount,
             isOutsideToda: session.isOutsideToda,
             routePolicy: session.routePolicy,
+            routeStops: _routeStopsFor(session),
+            dropoffCount: session.dropoffCount,
+            passengerNote: session.passengerNote,
             status: BookingStatus.pending,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
@@ -166,6 +174,7 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
     final refreshed = await BookingQuoteService.instance.tryBookingQuote(
       pickup: pickup,
       destination: destination,
+      additionalDestination: session.additionalDestination,
       additionalPassengers: session.additionalPassengers,
       baggageCount: session.baggageCount,
     );
@@ -173,6 +182,38 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
       throw StateError('The route quote could not be refreshed. Try again.');
     }
     return refreshed.quoteToken;
+  }
+
+  List<BookingRouteStop> _routeStopsFor(BookingSession session) {
+    final pickup = session.pickup!;
+    final firstDropoff = session.destination!;
+    final secondDropoff = session.additionalDestination;
+    return <BookingRouteStop>[
+      BookingRouteStop(
+        sequence: 0,
+        type: 'pickup',
+        location: pickup,
+        name: session.pickupName ?? 'Pickup',
+        address: session.pickupAddress ?? 'Pickup',
+      ),
+      BookingRouteStop(
+        sequence: 1,
+        type: 'dropoff',
+        location: firstDropoff,
+        name: session.destinationName ?? 'Drop-off 1',
+        address: session.destinationAddress ?? 'Drop-off 1',
+        isFinal: secondDropoff == null,
+      ),
+      if (secondDropoff != null)
+        BookingRouteStop(
+          sequence: 2,
+          type: 'dropoff',
+          location: secondDropoff,
+          name: session.additionalDestinationName ?? 'Final drop-off',
+          address: session.additionalDestinationAddress ?? 'Final drop-off',
+          isFinal: true,
+        ),
+    ];
   }
 
   //==========================================================================

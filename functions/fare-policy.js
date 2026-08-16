@@ -9,6 +9,7 @@ const DEFAULT_FARE = Object.freeze({
   additionalPassengerFee: 40,
   baggageFee: 20,
   outsideTodaSurcharge: 20,
+  additionalDropoffFee: 10,
   currency: 'PHP',
 });
 
@@ -85,6 +86,10 @@ function fareSnapshot(data) {
       source.outsideTodaSurcharge,
       DEFAULT_FARE.outsideTodaSurcharge,
     ),
+    additionalDropoffFee: nonNegativeCurrency(
+      source.additionalDropoffFee,
+      DEFAULT_FARE.additionalDropoffFee,
+    ),
     currency: source.currency === 'PHP' ? source.currency : DEFAULT_FARE.currency,
   };
 }
@@ -95,6 +100,7 @@ function calculateFareBreakdown({
   additionalPassengers = 0,
   baggageCount = 0,
   isOutsideToda = false,
+  dropoffCount = 1,
 }) {
   const snapshot = fareSnapshot(config);
   const normalizedIsOutsideToda = isOutsideToda === true;
@@ -109,6 +115,8 @@ function calculateFareBreakdown({
   const normalizedAdditionalPassengers =
     nonNegativeInteger(additionalPassengers);
   const normalizedBaggageCount = nonNegativeInteger(baggageCount);
+  const normalizedDropoffCount = Math.max(1, nonNegativeInteger(dropoffCount));
+  const additionalDropoffs = Math.max(0, normalizedDropoffCount - 1);
   const distanceFareCentavos =
     distanceSteps * toCentavos(snapshot.distanceStepPrice);
   const additionalPassengerFareCentavos =
@@ -120,12 +128,15 @@ function calculateFareBreakdown({
     normalizedIsOutsideToda
       ? toCentavos(snapshot.outsideTodaSurcharge)
       : 0;
+  const additionalDropoffFareCentavos =
+    additionalDropoffs * toCentavos(snapshot.additionalDropoffFee);
   const totalCentavos =
     toCentavos(snapshot.baseFare) +
     distanceFareCentavos +
     additionalPassengerFareCentavos +
     baggageFareCentavos +
-    boundarySurchargeCentavos;
+    boundarySurchargeCentavos +
+    additionalDropoffFareCentavos;
   return {
     baseFare: snapshot.baseFare,
     includedMeters: snapshot.includedMeters,
@@ -140,6 +151,9 @@ function calculateFareBreakdown({
     ),
     baggageCount: normalizedBaggageCount,
     baggageFare: fromCentavos(baggageFareCentavos),
+    dropoffCount: normalizedDropoffCount,
+    additionalDropoffs,
+    additionalDropoffFare: fromCentavos(additionalDropoffFareCentavos),
     isOutsideToda: normalizedIsOutsideToda,
     boundarySurcharge: fromCentavos(boundarySurchargeCentavos),
     currency: snapshot.currency,

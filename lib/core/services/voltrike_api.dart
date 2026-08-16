@@ -61,6 +61,7 @@ class VoltrikeApi {
   Future<Map<String, dynamic>> quote({
     required Map<String, dynamic> pickup,
     required Map<String, dynamic> destination,
+    List<Map<String, dynamic>> routeStops = const [],
     required int additionalPassengers,
     required int baggageCount,
   }) async {
@@ -70,6 +71,7 @@ class VoltrikeApi {
       body: <String, dynamic>{
         'pickup': pickup,
         'destination': destination,
+        if (routeStops.isNotEmpty) 'routeStops': routeStops,
         'additionalPassengers': additionalPassengers,
         'baggageCount': baggageCount,
       },

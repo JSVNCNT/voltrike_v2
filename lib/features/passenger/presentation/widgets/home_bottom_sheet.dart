@@ -23,8 +23,14 @@ class HomeBottomSheet extends StatelessWidget {
     required this.onToggleExpanded,
     required this.pickup,
     required this.destination,
+    this.additionalDestination,
+    this.additionalDropoffEnabled = false,
     this.onPickupTap,
     this.onDestinationTap,
+    this.onAddDropoff,
+    this.onAdditionalDestinationTap,
+    this.onRemoveAdditionalDropoff,
+    this.onEditNote,
     this.onBookRide,
 
     this.onIncreasePassengers,
@@ -44,6 +50,8 @@ class HomeBottomSheet extends StatelessWidget {
     this.baggageFee = '₱0.00',
     this.additionalPassengerFee = '₱0.00',
     this.boundarySurcharge = '₱0.00',
+    this.additionalDropoffFare = '₱0.00',
+    this.dropoffCount = 1,
     this.isOutsideToda = false,
     this.routeAdvisory = '',
 
@@ -56,6 +64,10 @@ class HomeBottomSheet extends StatelessWidget {
 
   final VoidCallback? onPickupTap;
   final VoidCallback? onDestinationTap;
+  final VoidCallback? onAddDropoff;
+  final VoidCallback? onAdditionalDestinationTap;
+  final VoidCallback? onRemoveAdditionalDropoff;
+  final VoidCallback? onEditNote;
   final VoidCallback? onBookRide;
 
   final VoidCallback? onIncreasePassengers;
@@ -65,6 +77,8 @@ class HomeBottomSheet extends StatelessWidget {
 
   final String pickup;
   final String destination;
+  final String? additionalDestination;
+  final bool additionalDropoffEnabled;
 
   final String estimatedFare;
   final String baseFare;
@@ -78,6 +92,8 @@ class HomeBottomSheet extends StatelessWidget {
   final String baggageFee;
   final String additionalPassengerFee;
   final String boundarySurcharge;
+  final String additionalDropoffFare;
+  final int dropoffCount;
   final bool isOutsideToda;
   final String routeAdvisory;
 
@@ -137,7 +153,10 @@ class HomeBottomSheet extends StatelessWidget {
 
                     const SizedBox(height: 20),
 
-                    Text('Destination', style: theme.textTheme.labelLarge),
+                    Text(
+                      additionalDropoffEnabled ? 'Drop-off 1' : 'Destination',
+                      style: theme.textTheme.labelLarge,
+                    ),
 
                     const SizedBox(height: 8),
 
@@ -145,7 +164,48 @@ class HomeBottomSheet extends StatelessWidget {
                       hintText: destination,
                       icon: Icons.location_on,
                       onTap: onDestinationTap,
+                      trailing: onAddDropoff == null || additionalDropoffEnabled
+                          ? null
+                          : Semantics(
+                              button: true,
+                              label: 'Add a second drop-off',
+                              child: IconButton.filled(
+                                tooltip: 'Add second drop-off',
+                                onPressed: onAddDropoff,
+                                icon: const Icon(Icons.add, weight: 700),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: theme.colorScheme.primary,
+                                  foregroundColor: theme.colorScheme.onPrimary,
+                                ),
+                              ),
+                            ),
                     ),
+
+                    if (additionalDropoffEnabled) ...[
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Final drop-off',
+                              style: theme.textTheme.labelLarge,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: onRemoveAdditionalDropoff,
+                            icon: const Icon(Icons.remove_circle_outline),
+                            label: const Text('Remove'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      LocationSearchBar(
+                        hintText:
+                            additionalDestination ?? 'Add final destination',
+                        icon: Icons.flag_outlined,
+                        onTap: onAdditionalDestinationTap,
+                      ),
+                    ],
 
                     if (hasRoute) ...[
                       const SizedBox(height: 28),
@@ -169,6 +229,8 @@ class HomeBottomSheet extends StatelessWidget {
                         additionalPassengerFee: additionalPassengerFee,
                         baggageFee: baggageFee,
                         boundarySurcharge: boundarySurcharge,
+                        additionalDropoffFare: additionalDropoffFare,
+                        dropoffCount: dropoffCount,
                         isOutsideToda: isOutsideToda,
                       ),
 
@@ -188,15 +250,27 @@ class HomeBottomSheet extends StatelessWidget {
 
                     const SizedBox(height: 28),
 
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: hasRoute ? onBookRide : null,
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(56),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: hasRoute ? onBookRide : null,
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(56),
+                            ),
+                            child: const Text('Book Ride'),
+                          ),
                         ),
-                        child: const Text('Book Ride'),
-                      ),
+                        const SizedBox(width: 12),
+                        SizedBox.square(
+                          dimension: 56,
+                          child: IconButton.filledTonal(
+                            tooltip: 'Add note for driver',
+                            onPressed: onEditNote,
+                            icon: const Icon(Icons.note_add_outlined),
+                          ),
+                        ),
+                      ],
                     ),
 
                     const SizedBox(height: 12),

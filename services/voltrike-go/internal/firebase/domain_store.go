@@ -19,6 +19,17 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 	if !(core.Coordinate{Latitude: command.Pickup.Latitude, Longitude: command.Pickup.Longitude}).Valid() {
 		return app.BookingRecord{}, fmt.Errorf("%w: pickup is invalid", app.ErrInvalidArgument)
 	}
+	command.PassengerNote = strings.TrimSpace(command.PassengerNote)
+	if command.PassengerNote != "" {
+		moderatedNote, moderationErr := store.ModerateChatText(ctx, command.PassengerNote)
+		if moderationErr != nil {
+			return app.BookingRecord{}, fmt.Errorf("moderate passenger note: %w", moderationErr)
+		}
+		if moderatedNote.Blocked {
+			return app.BookingRecord{}, fmt.Errorf("%w: passenger note is blocked by the ride safety policy", app.ErrPrecondition)
+		}
+		command.PassengerNote = strings.TrimSpace(moderatedNote.DisplayText)
+	}
 	ref := store.firestore.Collection("bookings").Doc(command.BookingID)
 	lockRef := store.firestore.Collection("activePassengerBookings").Doc(principal.UID)
 	passengerRef := store.firestore.Collection("users").Doc(principal.UID)
@@ -75,8 +86,31 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 		searchExpiresAt := now.Add(5 * time.Minute)
 		fareSnapshot := jsonMap(quote.FareSnapshot)
 		fareBreakdown := jsonMap(quote.FareBreakdown)
+		routeStops := make([]map[string]any, 0, len(command.RouteStops))
+		for index, stop := range command.RouteStops {
+			name, address := strings.TrimSpace(stop.Name), strings.TrimSpace(stop.Address)
+			if index == 0 {
+				if name == "" {
+					name = strings.TrimSpace(command.PickupName)
+				}
+				if address == "" {
+					address = strings.TrimSpace(command.PickupAddress)
+				}
+			} else if index == len(command.RouteStops)-1 {
+				if name == "" {
+					name = strings.TrimSpace(command.DestinationName)
+				}
+				if address == "" {
+					address = strings.TrimSpace(command.DestinationAddress)
+				}
+			}
+			routeStops = append(routeStops, map[string]any{
+				"sequence": index, "type": stop.Type, "location": map[string]float64{"latitude": stop.Location.Latitude, "longitude": stop.Location.Longitude},
+				"name": name, "address": address, "final": index == len(command.RouteStops)-1, "status": "pending",
+			})
+		}
 		booking := map[string]any{
-			"schemaVersion":              2,
+			"schemaVersion":              3,
 			"bookingId":                  command.BookingID,
 			"revision":                   1,
 			"status":                     "pending",
@@ -90,6 +124,11 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 			"destinationName":            strings.TrimSpace(command.DestinationName),
 			"pickupAddress":              strings.TrimSpace(command.PickupAddress),
 			"destinationAddress":         strings.TrimSpace(command.DestinationAddress),
+			"routeStops":                 routeStops,
+			"routeLegs":                  jsonMapSlice(quote.RouteLegs),
+			"dropoffCount":               len(command.RouteStops) - 1,
+			"activeStopIndex":            0,
+			"passengerNote":              command.PassengerNote,
 			"distanceMeters":             quote.DistanceMeters,
 			"estimatedDuration":          quote.EstimatedDuration,
 			"estimatedFare":              quote.EstimatedFare,
@@ -319,7 +358,7 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		} else if owner != principal.UID && driver != principal.UID && !adminAllowed {
 			return fmt.Errorf("%w: booking is not owned by this user", app.ErrPrecondition)
 		}
-		if command.Action == "arrived" || command.Action == "start" || command.Action == "payment" || command.Action == "complete" || command.Action == "receipt" {
+		if command.Action == "arrived" || command.Action == "start" || command.Action == "advanceStop" || command.Action == "payment" || command.Action == "complete" || command.Action == "receipt" {
 			if driver != principal.UID {
 				return fmt.Errorf("%w: only the assigned driver can perform this action", app.ErrPrecondition)
 			}
@@ -343,11 +382,28 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 				return fmt.Errorf("%w: booking is not ready to start", app.ErrPrecondition)
 			}
 			next = "passengerOnBoard"
+		case "advanceStop":
+			if current != "passengerOnBoard" {
+				return fmt.Errorf("%w: booking is not travelling to a drop-off", app.ErrPrecondition)
+			}
+			stops := jsonMapSlice(data["routeStops"])
+			activeStopIndex := integer(data, "activeStopIndex")
+			if len(stops) < 3 || activeStopIndex < 1 || activeStopIndex >= len(stops)-1 {
+				return fmt.Errorf("%w: booking has no intermediate drop-off to complete", app.ErrPrecondition)
+			}
+			if command.StopIndex != activeStopIndex {
+				return fmt.Errorf("%w: drop-off sequence is stale", app.ErrPrecondition)
+			}
+			next = current
 		case "payment":
 			if current != "passengerOnBoard" && current != "paymentConfirmation" {
 				return fmt.Errorf("%w: booking is not awaiting payment", app.ErrPrecondition)
 			}
 			if current == "passengerOnBoard" {
+				stops := jsonMapSlice(data["routeStops"])
+				if len(stops) > 2 && integer(data, "activeStopIndex") < len(stops)-1 {
+					return fmt.Errorf("%w: intermediate drop-off must be completed first", app.ErrPrecondition)
+				}
 				next = "paymentConfirmation"
 			} else {
 				// The driver's single cash-confirmation action is the receipt.
@@ -409,6 +465,26 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		}
 		now := time.Now().UTC()
 		updates := map[string]any{"status": next, "revision": revision + 1, "updatedAt": now}
+		if command.Action == "start" {
+			updates["activeStopIndex"] = 1
+		}
+		if command.Action == "advanceStop" {
+			stops := jsonMapSlice(data["routeStops"])
+			activeStopIndex := integer(data, "activeStopIndex")
+			stops[activeStopIndex]["status"] = "completed"
+			stops[activeStopIndex]["completedAt"] = now
+			updates["routeStops"] = stops
+			updates["activeStopIndex"] = activeStopIndex + 1
+		}
+		if command.Action == "payment" && current == "passengerOnBoard" {
+			stops := jsonMapSlice(data["routeStops"])
+			activeStopIndex := integer(data, "activeStopIndex")
+			if activeStopIndex >= 0 && activeStopIndex < len(stops) {
+				stops[activeStopIndex]["status"] = "completed"
+				stops[activeStopIndex]["completedAt"] = now
+				updates["routeStops"] = stops
+			}
+		}
 		if command.Action == "payment" && current == "paymentConfirmation" {
 			updates["driverReceivedAt"] = now
 		}
@@ -519,7 +595,7 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		}
 		tx.Set(ref, updates, firestore.MergeAll)
 		eventType := "booking." + next
-		if command.Action == "decline" || command.Action == "dispute" || command.Action == "receipt" || command.Action == "payment" && current == "paymentConfirmation" {
+		if command.Action == "decline" || command.Action == "dispute" || command.Action == "receipt" || command.Action == "advanceStop" || command.Action == "payment" && current == "paymentConfirmation" {
 			eventType = "booking." + command.Action
 		}
 		eventRef := store.firestore.Collection("outbox").Doc(uuid.NewString())
@@ -907,6 +983,18 @@ func jsonMap(value any) map[string]any {
 	var result map[string]any
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return map[string]any{}
+	}
+	return result
+}
+
+func jsonMapSlice(value any) []map[string]any {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var result []map[string]any
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil
 	}
 	return result
 }

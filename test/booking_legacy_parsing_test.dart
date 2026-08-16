@@ -115,4 +115,48 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('multi-stop booking exposes ordered active destinations', () {
+    final booking = Booking.fromMap(
+      bookingId: 'multi-stop',
+      data: {
+        'passengerId': 'passenger-1',
+        'status': 'passengerOnBoard',
+        'destination': {'latitude': 10.69, 'longitude': 122.97},
+        'destinationAddress': 'Final stop',
+        'dropoffCount': 2,
+        'activeStopIndex': 1,
+        'passengerNote': 'Blue gate',
+        'routeStops': [
+          {
+            'sequence': 0,
+            'type': 'pickup',
+            'location': {'latitude': 10.67, 'longitude': 122.95},
+            'name': 'Pickup',
+            'address': 'Pickup',
+          },
+          {
+            'sequence': 1,
+            'type': 'dropoff',
+            'location': {'latitude': 10.68, 'longitude': 122.96},
+            'name': 'First stop',
+            'address': 'First stop',
+            'final': false,
+          },
+          {
+            'sequence': 2,
+            'type': 'dropoff',
+            'location': {'latitude': 10.69, 'longitude': 122.97},
+            'name': 'Final stop',
+            'address': 'Final stop',
+            'final': true,
+          },
+        ],
+      },
+    );
+    expect(booking.hasMultipleDropoffs, isTrue);
+    expect(booking.activeDestinationStop.name, 'First stop');
+    expect(booking.orderedDropoffLabel, 'First stop → Final stop');
+    expect(booking.passengerNote, 'Blue gate');
+  });
 }

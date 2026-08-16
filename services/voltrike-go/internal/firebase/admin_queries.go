@@ -753,7 +753,7 @@ func (store *Store) adminListRestrictions(ctx context.Context, actor adminIdenti
 func (store *Store) adminGetFare(ctx context.Context, _ adminIdentity) (map[string]any, error) {
 	doc, err := store.firestore.Collection("settings").Doc("fare_config").Get(ctx)
 	if isNotFound(err) {
-		return map[string]any{"fare": map[string]any{"baseFare": 20, "includedMeters": 1000, "distanceStepMeters": 500, "distanceStepPrice": 5, "additionalPassengerFee": 40, "baggageFee": 20, "outsideTodaSurcharge": 20}}, nil
+		return map[string]any{"fare": map[string]any{"baseFare": 20, "includedMeters": 1000, "distanceStepMeters": 500, "distanceStepPrice": 5, "additionalPassengerFee": 40, "baggageFee": 20, "outsideTodaSurcharge": 20, "additionalDropoffFee": 10}}, nil
 	}
 	if err != nil {
 		return nil, err

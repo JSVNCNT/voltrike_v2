@@ -136,7 +136,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
   // Select Destination
   //==========================================================================
 
-  Future<void> _selectDestination() async {
+  Future<void> _selectDestination({bool additional = false}) async {
     final booking = ref.read(bookingSessionProvider);
     if (booking.pickup == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,9 +149,11 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => DestinationSearchScreen(
-          title: 'Choose Destination',
-          hintText: 'Search destination',
-          searchOrigin: booking.pickup,
+          title: additional ? 'Choose Final Drop-off' : 'Choose Destination',
+          hintText: additional ? 'Search final drop-off' : 'Search destination',
+          searchOrigin: additional && booking.destination != null
+              ? booking.destination
+              : booking.pickup,
         ),
       ),
     );
@@ -166,17 +168,104 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       return;
     }
 
+    final selected = LatLng(
+      details['latitude'] as double,
+      details['longitude'] as double,
+    );
+    final selectedName = details['name'] as String;
+    final selectedAddress = details['address'] as String;
+    if (additional) {
+      ref
+          .read(bookingSessionProvider.notifier)
+          .updateAdditionalDestination(
+            destination: selected,
+            destinationName: selectedName,
+            destinationAddress: selectedAddress,
+          );
+      final current = ref.read(bookingSessionProvider);
+      if (current.destination == null) return;
+      await _calculateRoute(
+        pickup: current.pickup!,
+        pickupName: current.pickupName ?? 'Pickup',
+        pickupAddress: current.pickupAddress ?? 'Pickup',
+        destination: current.destination!,
+        destinationName: current.destinationName ?? 'Drop-off 1',
+        destinationAddress: current.destinationAddress ?? 'Drop-off 1',
+        additionalDestination: selected,
+        additionalDestinationName: selectedName,
+        additionalDestinationAddress: selectedAddress,
+      );
+      return;
+    }
+
     await _calculateRoute(
       pickup: booking.pickup!,
       pickupName: booking.pickupName ?? 'Pickup',
       pickupAddress: booking.pickupAddress ?? booking.pickupName ?? 'Pickup',
-      destination: LatLng(
-        details['latitude'] as double,
-        details['longitude'] as double,
-      ),
-      destinationName: details['name'] as String,
-      destinationAddress: details['address'] as String,
+      destination: selected,
+      destinationName: selectedName,
+      destinationAddress: selectedAddress,
+      additionalDestination: booking.additionalDestination,
+      additionalDestinationName: booking.additionalDestinationName,
+      additionalDestinationAddress: booking.additionalDestinationAddress,
     );
+  }
+
+  Future<void> _addDropoff() async {
+    ref.read(bookingSessionProvider.notifier).enableAdditionalDropoff();
+    await _selectDestination(additional: true);
+  }
+
+  Future<void> _removeAdditionalDropoff() async {
+    final notifier = ref.read(bookingSessionProvider.notifier);
+    notifier.removeAdditionalDropoff();
+    final session = ref.read(bookingSessionProvider);
+    if (session.pickup != null && session.destination != null) {
+      await _calculateRoute(
+        pickup: session.pickup!,
+        pickupName: session.pickupName ?? 'Pickup',
+        pickupAddress: session.pickupAddress ?? 'Pickup',
+        destination: session.destination!,
+        destinationName: session.destinationName ?? 'Destination',
+        destinationAddress: session.destinationAddress ?? 'Destination',
+      );
+    }
+  }
+
+  Future<void> _editPassengerNote() async {
+    final current = ref.read(bookingSessionProvider).passengerNote;
+    final controller = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Note for your driver'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 120,
+          maxLines: 3,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            hintText: 'Example: Waiting by the blue gate',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Save note'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result != null && mounted) {
+      ref.read(bookingSessionProvider.notifier).updatePassengerNote(result);
+    }
   }
 
   //==========================================================================
@@ -190,6 +279,9 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     required LatLng destination,
     required String destinationName,
     required String destinationAddress,
+    LatLng? additionalDestination,
+    String? additionalDestinationName,
+    String? additionalDestinationAddress,
   }) async {
     final calculationGeneration = ++_routeCalculationGeneration;
     ref
@@ -206,6 +298,9 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         destination: destination,
         destinationName: destinationName,
         destinationAddress: destinationAddress,
+        additionalDestination: additionalDestination,
+        additionalDestinationName: additionalDestinationName,
+        additionalDestinationAddress: additionalDestinationAddress,
         routePoints: const <LatLng>[],
         routeAdvisory: '',
         distanceMeters: 0,
@@ -215,6 +310,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         additionalPassengerFee: 0,
         baggageFee: 0,
         boundarySurcharge: 0,
+        additionalDropoffFare: 0,
         estimatedFare: 0,
         isOutsideToda: false,
         goQuoteToken: '',
@@ -227,6 +323,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       final goQuote = await BookingQuoteService.instance.tryBookingQuote(
         pickup: pickup,
         destination: destination,
+        additionalDestination: additionalDestination,
         additionalPassengers: previousSession.additionalPassengers,
         baggageCount: previousSession.baggageCount,
       );
@@ -256,6 +353,9 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 destination: destination,
                 destinationName: destinationName,
                 destinationAddress: destinationAddress,
+                additionalDestination: additionalDestination,
+                additionalDestinationName: additionalDestinationName,
+                additionalDestinationAddress: additionalDestinationAddress,
                 routePoints: routePoints,
                 routeAdvisory: routeAdvisory,
                 routePolicy: goQuote.routePolicy,
@@ -268,6 +368,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 additionalPassengerFee: component('additionalPassengerFare'),
                 baggageFee: component('baggageFare'),
                 boundarySurcharge: component('boundarySurcharge'),
+                additionalDropoffFare: component('additionalDropoffFare'),
                 estimatedFare: goQuote.estimatedFare,
                 isOutsideToda: goQuote.isOutsideToda,
                 goQuoteToken: goQuote.quoteToken,
@@ -411,6 +512,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       passengerCount: booking.additionalPassengers + 1,
       baggageCount: booking.baggageCount,
       isOutsideToda: coverage.isOutsideToda,
+      dropoffCount: booking.dropoffCount,
     );
 
     ref
@@ -434,6 +536,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             additionalPassengerFee: fare.additionalPassengerFee,
             baggageFee: fare.baggageFee,
             boundarySurcharge: fare.boundarySurcharge,
+            additionalDropoffFare: fare.additionalDropoffFare,
             estimatedFare: fare.totalFare,
             isOutsideToda: coverage.isOutsideToda,
 
@@ -489,6 +592,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       passengerCount: session.additionalPassengers + 1,
       baggageCount: session.baggageCount,
       isOutsideToda: session.isOutsideToda,
+      dropoffCount: session.dropoffCount,
     );
 
     ref
@@ -500,6 +604,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             additionalPassengerFee: fare.additionalPassengerFee,
             baggageFee: fare.baggageFee,
             boundarySurcharge: fare.boundarySurcharge,
+            additionalDropoffFare: fare.additionalDropoffFare,
             estimatedFare: fare.totalFare,
           ),
         );
@@ -621,7 +726,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
           Positioned.fill(
             child: MapView(
               pickup: session.pickup,
-              destination: session.destination,
+              destination: session.finalDestination,
+              intermediateDestination: session.additionalDestination == null
+                  ? null
+                  : session.destination,
               routePoints: session.routePoints,
             ),
           ),
@@ -640,12 +748,25 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 pickup: session.pickupName ?? 'Select pickup',
 
                 destination: session.destinationName ?? 'Where are you going?',
+                additionalDropoffEnabled: session.additionalDropoffEnabled,
+                additionalDestination: session.additionalDestinationName,
 
                 onPickupTap: routeSelectionLocked ? null : _selectPickup,
 
                 onDestinationTap: routeSelectionLocked
                     ? null
                     : _selectDestination,
+                onAddDropoff:
+                    routeSelectionLocked || session.destination == null
+                    ? null
+                    : _addDropoff,
+                onAdditionalDestinationTap: routeSelectionLocked
+                    ? null
+                    : () => _selectDestination(additional: true),
+                onRemoveAdditionalDropoff: routeSelectionLocked
+                    ? null
+                    : _removeAdditionalDropoff,
+                onEditNote: routeSelectionLocked ? null : _editPassengerNote,
 
                 estimatedFare: '₱${session.estimatedFare.toStringAsFixed(2)}',
 
@@ -670,6 +791,9 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
                 boundarySurcharge:
                     '₱${session.boundarySurcharge.toStringAsFixed(2)}',
+                additionalDropoffFare:
+                    '₱${session.additionalDropoffFare.toStringAsFixed(2)}',
+                dropoffCount: session.dropoffCount,
 
                 isOutsideToda: session.isOutsideToda,
 
@@ -778,6 +902,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
           'boundarySurcharge',
           session.boundarySurcharge,
         ),
+        additionalDropoffFare: component(
+          'additionalDropoffFare',
+          session.additionalDropoffFare,
+        ),
         estimatedFare: creation.estimatedFare,
         isOutsideToda: creation.isOutsideToda,
       );
@@ -848,6 +976,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     final quote = await BookingQuoteService.instance.tryBookingQuote(
       pickup: session.pickup!,
       destination: session.destination!,
+      additionalDestination: session.additionalDestination,
       additionalPassengers: session.additionalPassengers,
       baggageCount: session.baggageCount,
     );
@@ -885,6 +1014,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       additionalPassengerFee: component('additionalPassengerFare'),
       baggageFee: component('baggageFare'),
       boundarySurcharge: component('boundarySurcharge'),
+      additionalDropoffFare: component('additionalDropoffFare'),
       estimatedFare: quote.estimatedFare,
       isOutsideToda: quote.isOutsideToda,
       goQuoteToken: quote.quoteToken,

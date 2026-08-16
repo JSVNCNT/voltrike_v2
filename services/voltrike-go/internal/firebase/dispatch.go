@@ -206,6 +206,7 @@ func bookingOfferSnapshot(booking map[string]any) map[string]any {
 	for _, field := range []string{
 		"schemaVersion", "passengerId", "passengerName", "passengerPhotoUrl",
 		"pickup", "destination", "pickupName", "destinationName", "pickupAddress", "destinationAddress",
+		"routeStops", "routeLegs", "dropoffCount", "activeStopIndex", "passengerNote",
 		"estimatedFare", "amountDue", "distanceMeters", "additionalPassengers", "baggageCount",
 		"isOutsideToda", "routePolicy", "highwayRouteAdvisory", "createdAt", "updatedAt",
 	} {

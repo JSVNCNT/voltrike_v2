@@ -13,6 +13,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -55,11 +56,30 @@ type ProviderRoute struct {
 	PartiallyIgnored bool
 }
 
+type RouteStop struct {
+	Sequence int             `json:"sequence"`
+	Type     string          `json:"type"`
+	Location core.Coordinate `json:"location"`
+	Name     string          `json:"name,omitempty"`
+	Address  string          `json:"address,omitempty"`
+	Final    bool            `json:"final,omitempty"`
+}
+
+type RouteLeg struct {
+	Sequence          int             `json:"sequence"`
+	Origin            core.Coordinate `json:"origin"`
+	Destination       core.Coordinate `json:"destination"`
+	DistanceMeters    int             `json:"distanceMeters"`
+	EstimatedDuration string          `json:"estimatedDuration"`
+	EncodedPolyline   string          `json:"encodedPolyline"`
+}
+
 type QuoteRequest struct {
 	RequestID            string          `json:"requestId"`
 	ActorID              string          `json:"actorId"`
 	Pickup               core.Coordinate `json:"pickup"`
 	Destination          core.Coordinate `json:"destination"`
+	RouteStops           []RouteStop     `json:"routeStops,omitempty"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
 	IssueToken           bool            `json:"issueToken"`
@@ -85,6 +105,7 @@ type Quote struct {
 	CoveragePolicyVersion        int                  `json:"coveragePolicyVersion"`
 	RoutePolicyVersion           int                  `json:"routePolicyVersion"`
 	AuthoritativeRoutePolyline   string               `json:"authoritativeRoutePolyline"`
+	RouteLegs                    []RouteLeg           `json:"routeLegs,omitempty"`
 	AvoidedRouteRestrictionIDs   []string             `json:"avoidedRouteRestrictionIds"`
 	AvoidedRouteRestrictionNames []string             `json:"avoidedRouteRestrictionNames"`
 	RouteRestrictionIDsChecked   []string             `json:"routeRestrictionIdsChecked"`
@@ -102,6 +123,7 @@ type QuoteTokenRequest struct {
 	ActorID              string          `json:"actorId"`
 	Pickup               core.Coordinate `json:"pickup"`
 	Destination          core.Coordinate `json:"destination"`
+	RouteStops           []RouteStop     `json:"routeStops,omitempty"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
 	QuoteToken           string          `json:"quoteToken"`
@@ -179,12 +201,11 @@ func (service *Service) Quote(ctx context.Context, request QuoteRequest) (QuoteR
 	if strings.TrimSpace(request.ActorID) == "" || len(request.ActorID) > 128 {
 		return QuoteResponse{}, fmt.Errorf("%w: actorId is required", ErrInvalidArgument)
 	}
-	if _, err := core.RequireCoordinate(request.Pickup, "Pickup"); err != nil {
+	stops, err := normalizeRouteStops(request.Pickup, request.Destination, request.RouteStops)
+	if err != nil {
 		return QuoteResponse{}, fmt.Errorf("%w: %v", ErrInvalidArgument, err)
 	}
-	if _, err := core.RequireCoordinate(request.Destination, "Destination"); err != nil {
-		return QuoteResponse{}, fmt.Errorf("%w: %v", ErrInvalidArgument, err)
-	}
+	request.Pickup, request.Destination, request.RouteStops = stops[0].Location, stops[len(stops)-1].Location, stops
 	if request.AdditionalPassengers < 0 || request.AdditionalPassengers > 3 || request.BaggageCount < 0 || request.BaggageCount > 1 {
 		return QuoteResponse{}, fmt.Errorf("%w: passenger or baggage count is invalid", ErrInvalidArgument)
 	}
@@ -192,34 +213,80 @@ func (service *Service) Quote(ctx context.Context, request QuoteRequest) (QuoteR
 	if err != nil {
 		return QuoteResponse{}, err
 	}
-	if conflict := core.FirstEndpointConflict(request.Pickup, request.Destination, policy.Restrictions); conflict != nil {
+	coordinates := make([]core.Coordinate, 0, len(stops))
+	destinations := make([]core.Coordinate, 0, len(stops)-1)
+	for index, stop := range stops {
+		coordinates = append(coordinates, stop.Location)
+		if index > 0 {
+			destinations = append(destinations, stop.Location)
+		}
+	}
+	if conflict := core.FirstEndpointConflictStops(coordinates, policy.Restrictions); conflict != nil {
 		return QuoteResponse{}, fmt.Errorf("%w: E-trikes cannot pick up, drop off, or travel through %s", ErrPrecondition, fallbackName(conflict.Name, "this restricted area"))
 	}
-	coverage, err := core.ClassifyCoverage(policy.Geofences, request.Pickup, request.Destination)
+	coverage, err := core.ClassifyCoverageStops(policy.Geofences, request.Pickup, destinations)
 	if err != nil {
 		return QuoteResponse{}, fmt.Errorf("%w: %v", ErrInvalidArgument, err)
 	}
-	routes, err := service.routes.Routes(ctx, request.Pickup, request.Destination)
-	if err != nil {
-		return QuoteResponse{}, err
-	}
-	if len(routes) == 0 {
-		return QuoteResponse{}, fmt.Errorf("%w: no valid driving route is available", ErrPrecondition)
-	}
-
 	avoidedIDs, avoidedNames := map[string]struct{}{}, map[string]struct{}{}
-	var fallback *Quote
+	legs := make([]RouteLeg, 0, len(stops)-1)
+	combinedPoints := make([]core.Coordinate, 0, 256)
+	totalDistance, totalDurationSeconds := 0, 0
+	partiallyIgnored := false
+	for index := 0; index < len(stops)-1; index++ {
+		origin, destination := stops[index].Location, stops[index+1].Location
+		candidate, points, routeErr := service.safeRoute(ctx, origin, destination, policy.Restrictions, avoidedIDs, avoidedNames)
+		if routeErr != nil {
+			return QuoteResponse{}, fmt.Errorf("%w: route leg %d: %v", ErrPrecondition, index+1, routeErr)
+		}
+		if len(combinedPoints) > 0 && len(points) > 0 {
+			points = points[1:]
+		}
+		combinedPoints = append(combinedPoints, points...)
+		totalDistance += candidate.DistanceMeters
+		totalDurationSeconds += durationSeconds(candidate.Duration)
+		partiallyIgnored = partiallyIgnored || candidate.PartiallyIgnored
+		legs = append(legs, RouteLeg{Sequence: index, Origin: origin, Destination: destination, DistanceMeters: candidate.DistanceMeters, EstimatedDuration: candidate.Duration, EncodedPolyline: candidate.Polyline})
+	}
+	combinedPolyline, err := core.EncodePolyline(combinedPoints)
+	if err != nil {
+		return QuoteResponse{}, fmt.Errorf("%w: combine route geometry: %v", ErrUnavailable, err)
+	}
+	advisory := HighwayRouteAdvisory{RequestedAvoidHighways: true, Provider: "google_routes", RouteRestrictionsPartiallyIgnored: partiallyIgnored, ConfirmedViolation: false, Status: "avoidance_not_reported_ignored"}
+	if partiallyIgnored {
+		advisory.Status = "possibly_ignored"
+	}
+	fareSnapshot := core.SnapshotFare(policy.Fare)
+	quote := Quote{
+		DistanceMeters: totalDistance, EstimatedDuration: fmt.Sprintf("%ds", totalDurationSeconds), FareSnapshot: fareSnapshot, FareVersion: fareSnapshot.Version,
+		IsOutsideToda: coverage.IsOutsideToda, Coverage: coverage, CoveragePolicyVersion: 4, RoutePolicyVersion: 5,
+		AuthoritativeRoutePolyline: combinedPolyline, RouteLegs: legs, AvoidedRouteRestrictionIDs: sorted(avoidedIDs), AvoidedRouteRestrictionNames: sorted(avoidedNames),
+		RouteRestrictionIDsChecked: activeRestrictionIDs(policy.Restrictions), HighwayRouteAdvisory: advisory, PolicyRevision: policy.Revision,
+		ExpiresAt: time.Now().UTC().Add(75 * time.Second),
+	}
+	quote.FareBreakdown = core.CalculateFareForDropoffs(quote.FareSnapshot, quote.DistanceMeters, request.AdditionalPassengers, request.BaggageCount, len(stops)-1, quote.IsOutsideToda)
+	quote.EstimatedFare = quote.FareBreakdown.Total
+	return service.issueQuote(request, quote)
+}
+
+func (service *Service) safeRoute(ctx context.Context, origin, destination core.Coordinate, restrictions []core.Restriction, avoidedIDs, avoidedNames map[string]struct{}) (ProviderRoute, []core.Coordinate, error) {
+	routes, err := service.routes.Routes(ctx, origin, destination)
+	if err != nil {
+		return ProviderRoute{}, nil, err
+	}
+	var fallback *ProviderRoute
+	var fallbackPoints []core.Coordinate
 	for _, candidate := range routes {
 		if candidate.DistanceMeters <= 0 || candidate.Polyline == "" {
 			continue
 		}
-		points, err := core.DecodePolyline(candidate.Polyline)
-		if err != nil || len(points) < 2 {
+		points, decodeErr := core.DecodePolyline(candidate.Polyline)
+		if decodeErr != nil || len(points) < 2 {
 			continue
 		}
-		blocked := core.FirstRouteConflict(points, policy.Restrictions)
+		blocked := core.FirstRouteConflict(points, restrictions)
 		if blocked == nil {
-			blocked = core.FirstHighwayConflict(points, policy.Restrictions)
+			blocked = core.FirstHighwayConflict(points, restrictions)
 		}
 		if blocked != nil {
 			if blocked.ID != "" {
@@ -230,32 +297,19 @@ func (service *Service) Quote(ctx context.Context, request QuoteRequest) (QuoteR
 			}
 			continue
 		}
-		advisory := HighwayRouteAdvisory{RequestedAvoidHighways: true, Provider: "google_routes", RouteRestrictionsPartiallyIgnored: candidate.PartiallyIgnored, ConfirmedViolation: false}
-		if candidate.PartiallyIgnored {
-			advisory.Status = "possibly_ignored"
-		} else {
-			advisory.Status = "avoidance_not_reported_ignored"
-		}
-		quote := Quote{
-			DistanceMeters: candidate.DistanceMeters, EstimatedDuration: candidate.Duration, FareSnapshot: core.SnapshotFare(policy.Fare), FareVersion: core.SnapshotFare(policy.Fare).Version,
-			IsOutsideToda: coverage.IsOutsideToda, Coverage: coverage, CoveragePolicyVersion: 3, RoutePolicyVersion: 4,
-			AuthoritativeRoutePolyline: candidate.Polyline, AvoidedRouteRestrictionIDs: sorted(avoidedIDs), AvoidedRouteRestrictionNames: sorted(avoidedNames),
-			RouteRestrictionIDsChecked: activeRestrictionIDs(policy.Restrictions), HighwayRouteAdvisory: advisory, PolicyRevision: policy.Revision,
-			ExpiresAt: time.Now().UTC().Add(75 * time.Second),
-		}
-		quote.FareBreakdown = core.CalculateFare(quote.FareSnapshot, quote.DistanceMeters, request.AdditionalPassengers, request.BaggageCount, quote.IsOutsideToda)
-		quote.EstimatedFare = quote.FareBreakdown.Total
 		if !candidate.PartiallyIgnored {
-			return service.issueQuote(request, quote)
+			return candidate, points, nil
 		}
 		if fallback == nil {
-			fallback = &quote
+			copy := candidate
+			fallback = &copy
+			fallbackPoints = points
 		}
 	}
 	if fallback != nil {
-		return service.issueQuote(request, *fallback)
+		return *fallback, fallbackPoints, nil
 	}
-	return QuoteResponse{}, fmt.Errorf("%w: no permitted e-trike route is available", ErrPrecondition)
+	return ProviderRoute{}, nil, errors.New("no permitted e-trike route is available")
 }
 
 func (service *Service) ConsumeQuote(ctx context.Context, request QuoteTokenRequest) (Quote, error) {
@@ -265,11 +319,16 @@ func (service *Service) ConsumeQuote(ctx context.Context, request QuoteTokenRequ
 	if strings.TrimSpace(request.ActorID) == "" || request.QuoteToken == "" {
 		return Quote{}, fmt.Errorf("%w: quote token and actor are required", ErrInvalidArgument)
 	}
+	stops, err := normalizeRouteStops(request.Pickup, request.Destination, request.RouteStops)
+	if err != nil {
+		return Quote{}, fmt.Errorf("%w: %v", ErrInvalidArgument, err)
+	}
+	request.Pickup, request.Destination, request.RouteStops = stops[0].Location, stops[len(stops)-1].Location, stops
 	payload, err := service.openToken(request.QuoteToken)
 	if err != nil {
 		return Quote{}, fmt.Errorf("%w: quote token is invalid", ErrPrecondition)
 	}
-	if payload.ActorID != request.ActorID || payload.InputHash != quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.AdditionalPassengers, request.BaggageCount) {
+	if payload.ActorID != request.ActorID || payload.InputHash != quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.RouteStops, request.AdditionalPassengers, request.BaggageCount) {
 		return Quote{}, fmt.Errorf("%w: quote token does not match this booking", ErrPrecondition)
 	}
 	if time.Now().UTC().After(payload.Quote.ExpiresAt) {
@@ -393,7 +452,7 @@ func (service *Service) issueQuote(request QuoteRequest, quote Quote) (QuoteResp
 	if service.aead == nil {
 		return QuoteResponse{}, fmt.Errorf("%w: quote tokens are not configured", ErrUnavailable)
 	}
-	payload := quoteTokenPayload{ActorID: request.ActorID, InputHash: quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.AdditionalPassengers, request.BaggageCount), Quote: quote}
+	payload := quoteTokenPayload{ActorID: request.ActorID, InputHash: quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.RouteStops, request.AdditionalPassengers, request.BaggageCount), Quote: quote}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return QuoteResponse{}, fmt.Errorf("marshal quote token: %w", err)
@@ -422,9 +481,60 @@ func (service *Service) openToken(token string) (quoteTokenPayload, error) {
 	return payload, nil
 }
 
-func quoteInputHash(actor string, pickup, destination core.Coordinate, passengers, baggage int) string {
-	data := fmt.Sprintf("%s|%.6f|%.6f|%.6f|%.6f|%d|%d", actor, pickup.Latitude, pickup.Longitude, destination.Latitude, destination.Longitude, passengers, baggage)
+func quoteInputHash(actor string, pickup, destination core.Coordinate, stops []RouteStop, passengers, baggage int) string {
+	normalized, err := normalizeRouteStops(pickup, destination, stops)
+	if err != nil {
+		return ""
+	}
+	parts := []string{actor}
+	for _, stop := range normalized {
+		parts = append(parts, fmt.Sprintf("%d:%s:%.6f:%.6f", stop.Sequence, stop.Type, stop.Location.Latitude, stop.Location.Longitude))
+	}
+	parts = append(parts, fmt.Sprintf("%d", passengers), fmt.Sprintf("%d", baggage))
+	data := strings.Join(parts, "|")
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(data)))
+}
+
+func normalizeRouteStops(pickup, destination core.Coordinate, raw []RouteStop) ([]RouteStop, error) {
+	if len(raw) == 0 {
+		raw = []RouteStop{{Type: "pickup", Location: pickup}, {Type: "dropoff", Location: destination, Final: true}}
+	}
+	if len(raw) < 2 || len(raw) > 3 {
+		return nil, errors.New("a booking must contain one pickup and one or two drop-offs")
+	}
+	result := make([]RouteStop, len(raw))
+	for index, item := range raw {
+		label := "Destination"
+		expectedType := "dropoff"
+		if index == 0 {
+			label, expectedType = "Pickup", "pickup"
+		}
+		if _, err := core.RequireCoordinate(item.Location, label); err != nil {
+			return nil, err
+		}
+		if item.Type != "" && item.Type != expectedType {
+			return nil, fmt.Errorf("route stop %d must be %s", index, expectedType)
+		}
+		item.Sequence, item.Type, item.Final = index, expectedType, index == len(raw)-1
+		item.Name, item.Address = strings.TrimSpace(item.Name), strings.TrimSpace(item.Address)
+		result[index] = item
+	}
+	if pickup.Valid() && core.HaversineMeters(pickup, result[0].Location) > 2 {
+		return nil, errors.New("pickup does not match the first route stop")
+	}
+	if destination.Valid() && core.HaversineMeters(destination, result[len(result)-1].Location) > 2 {
+		return nil, errors.New("destination does not match the final route stop")
+	}
+	return result, nil
+}
+
+func durationSeconds(value string) int {
+	trimmed := strings.TrimSuffix(strings.TrimSpace(value), "s")
+	seconds, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil || seconds < 0 {
+		return 0
+	}
+	return int(math.Ceil(seconds))
 }
 
 func activeRestrictionIDs(restrictions []core.Restriction) []string {

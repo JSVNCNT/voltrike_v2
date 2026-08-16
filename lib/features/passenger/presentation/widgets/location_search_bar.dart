@@ -13,6 +13,7 @@ class LocationSearchBar extends StatelessWidget {
     required this.hintText,
     this.onTap,
     this.icon = Icons.location_on_outlined,
+    this.trailing,
   });
 
   /// Selected location or placeholder.
@@ -23,6 +24,7 @@ class LocationSearchBar extends StatelessWidget {
 
   /// Leading icon.
   final IconData icon;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +65,11 @@ class LocationSearchBar extends StatelessWidget {
                 ),
               ),
 
-              Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
+              trailing ??
+                  Icon(
+                    Icons.chevron_right,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
             ],
           ),
         ),

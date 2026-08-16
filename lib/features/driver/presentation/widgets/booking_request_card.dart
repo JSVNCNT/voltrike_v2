@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_semantic_colors.dart';
 import '../../../common/presentation/widgets/adaptive_participant_name.dart';
+import '../../../../data/models/booking.dart';
 
 /// ===========================================================================
 /// Booking Request Card
@@ -23,6 +24,8 @@ class BookingRequestCard extends StatelessWidget {
     required this.estimatedFare,
     required this.distance,
     this.routeAdvisory = '',
+    this.routeStops = const <BookingRouteStop>[],
+    this.passengerNote = '',
     this.passengerPhotoUrl,
     this.onAccept,
     this.onDecline,
@@ -36,6 +39,8 @@ class BookingRequestCard extends StatelessWidget {
   final String estimatedFare;
   final String distance;
   final String routeAdvisory;
+  final List<BookingRouteStop> routeStops;
+  final String passengerNote;
   final String? passengerPhotoUrl;
 
   final VoidCallback? onAccept;
@@ -144,13 +149,51 @@ class BookingRequestCard extends StatelessWidget {
               color: semantic.success,
             ),
             const SizedBox(height: 8),
-            _LocationLine(
-              icon: Icons.location_on,
-              label: 'Destination',
-              name: destinationName,
-              address: destinationAddress,
-              color: colorScheme.error,
-            ),
+            if (routeStops.where((stop) => stop.isDropoff).isEmpty)
+              _LocationLine(
+                icon: Icons.location_on,
+                label: 'Destination',
+                name: destinationName,
+                address: destinationAddress,
+                color: colorScheme.error,
+              )
+            else
+              ...routeStops
+                  .where((stop) => stop.isDropoff)
+                  .map(
+                    (stop) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _LocationLine(
+                        icon: stop.isFinal
+                            ? Icons.flag_rounded
+                            : Icons.location_on,
+                        label: stop.isFinal ? 'Final drop-off' : 'Drop-off 1',
+                        name: stop.name,
+                        address: stop.address,
+                        color: colorScheme.error,
+                      ),
+                    ),
+                  ),
+            if (passengerNote.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: colorScheme.outline),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.sticky_note_2_outlined, size: 19),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(passengerNote)),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
 
             Row(

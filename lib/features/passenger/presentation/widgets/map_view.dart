@@ -24,6 +24,7 @@ class MapView extends ConsumerStatefulWidget {
     super.key,
     this.pickup,
     this.destination,
+    this.intermediateDestination,
     this.routePoints = const [],
   });
 
@@ -32,6 +33,7 @@ class MapView extends ConsumerStatefulWidget {
 
   /// Selected destination.
   final LatLng? destination;
+  final LatLng? intermediateDestination;
 
   /// Decoded route polyline.
   final List<LatLng> routePoints;
@@ -99,6 +101,18 @@ class _MapViewState extends ConsumerState<MapView> {
           position: widget.destination!,
           infoWindow: const InfoWindow(title: 'Destination'),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        ),
+      );
+    }
+    if (widget.intermediateDestination != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('intermediate_destination'),
+          position: widget.intermediateDestination!,
+          infoWindow: const InfoWindow(title: 'Drop-off 1'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            45,
+          ),
         ),
       );
     }

@@ -61,4 +61,35 @@ void main() {
       throwsA(isA<GoQuoteException>()),
     );
   });
+
+  test('two drop-offs are sent in authoritative sequence', () async {
+    late Map<String, dynamic> captured;
+    final bridge = BookingQuoteService(
+      quoteRequest: (input) async {
+        captured = input;
+        return {
+          'distanceMeters': 2000,
+          'estimatedFare': 40,
+          'authoritativeRoutePolyline': 'abc',
+          'fareBreakdown': {'additionalDropoffFare': 10, 'total': 40},
+          'quoteToken': 'multi-token',
+        };
+      },
+    );
+    await bridge.tryBookingQuote(
+      pickup: const LatLng(10.67, 122.95),
+      destination: const LatLng(10.68, 122.96),
+      additionalDestination: const LatLng(10.69, 122.97),
+      additionalPassengers: 0,
+      baggageCount: 0,
+    );
+    final stops = captured['routeStops'] as List<dynamic>;
+    expect(stops, hasLength(3));
+    expect((stops[1] as Map<String, dynamic>)['final'], isFalse);
+    expect((stops[2] as Map<String, dynamic>)['final'], isTrue);
+    expect(
+      (captured['destination'] as Map<String, dynamic>)['latitude'],
+      10.69,
+    );
+  });
 }

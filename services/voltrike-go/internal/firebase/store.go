@@ -221,6 +221,7 @@ func parseFare(data map[string]any) core.FareConfig {
 	applyFloat(data, &result.AdditionalPassengerFee, "additionalPassengerFee")
 	applyFloat(data, &result.BaggageFee, "baggageFee")
 	applyFloat(data, &result.OutsideTodaSurcharge, "outsideTodaSurcharge")
+	applyFloat(data, &result.AdditionalDropoffFee, "additionalDropoffFee")
 	if value := text(data, "currency"); value == "PHP" {
 		result.Currency = value
 	}

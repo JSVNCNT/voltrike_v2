@@ -124,6 +124,7 @@ export interface FareConfig {
   additionalPassengerFee: number;
   baggageFee: number;
   outsideTodaSurcharge: number;
+  additionalDropoffFee: number;
 }
 
 export interface TodaCommission {
@@ -248,6 +249,17 @@ export interface BookingOperation {
   destinationName?: string | null;
   pickupAddress: string;
   destinationAddress: string;
+  routeStops: Array<{
+    sequence: number;
+    type: 'pickup' | 'dropoff';
+    name?: string;
+    address?: string;
+    final?: boolean;
+    status?: string;
+  }>;
+  dropoffCount: number;
+  activeStopIndex: number;
+  passengerNote?: string | null;
   amountDue: number;
   paymentMethod: string;
   settlementStatus: string;

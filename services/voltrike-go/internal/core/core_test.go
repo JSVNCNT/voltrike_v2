@@ -98,6 +98,24 @@ func TestCoverageAndPolylineBoundaries(t *testing.T) {
 	}
 }
 
+func TestTwoDropoffsAggregateFareCoverageAndPolyline(t *testing.T) {
+	config := DefaultFare
+	config.AdditionalDropoffFee = 12.50
+	result := CalculateFareForDropoffs(config, 1000, 0, 0, 2, false)
+	if result.AdditionalDropoffs != 1 || result.AdditionalDropoffFare != 12.50 || result.Total != 32.50 {
+		t.Fatalf("unexpected two-dropoff fare: %#v", result)
+	}
+	points := []Coordinate{{Latitude: 10.1, Longitude: 122.1}, {Latitude: 10.2, Longitude: 122.2}, {Latitude: 10.3, Longitude: 122.3}}
+	encoded, err := EncodePolyline(points)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodePolyline(encoded)
+	if err != nil || len(decoded) != len(points) {
+		t.Fatalf("combined polyline did not round-trip: points=%d err=%v", len(decoded), err)
+	}
+}
+
 func TestOutsideTodaSurchargeRequiresConfiguredCoverage(t *testing.T) {
 	pickup := Coordinate{Latitude: 10.5, Longitude: 122.5}
 	destinationOutside := Coordinate{Latitude: 11.5, Longitude: 122.5}

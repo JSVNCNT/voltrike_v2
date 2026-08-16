@@ -23,6 +23,11 @@ class BookingSession {
     this.destination,
     this.destinationName,
     this.destinationAddress,
+    this.additionalDropoffEnabled = false,
+    this.additionalDestination,
+    this.additionalDestinationName,
+    this.additionalDestinationAddress,
+    this.passengerNote = '',
     this.routePoints = const [],
     this.routeAdvisory = '',
     this.routePolicy = const RoutePolicyAdvisory(),
@@ -35,6 +40,7 @@ class BookingSession {
     this.additionalPassengerFee = 0,
     this.baggageFee = 0,
     this.boundarySurcharge = 0,
+    this.additionalDropoffFare = 0,
     this.estimatedFare = 0,
 
     // Booking options
@@ -66,6 +72,21 @@ class BookingSession {
   /// Readable formatted destination address returned by Places.
   final String? destinationAddress;
 
+  /// Optional second and final drop-off. The original destination remains
+  /// drop-off 1 so old single-stop flows continue to work unchanged.
+  final bool additionalDropoffEnabled;
+  final LatLng? additionalDestination;
+  final String? additionalDestinationName;
+  final String? additionalDestinationAddress;
+  final String passengerNote;
+
+  LatLng? get finalDestination => additionalDestination ?? destination;
+  String? get finalDestinationName =>
+      additionalDestinationName ?? destinationName;
+  String? get finalDestinationAddress =>
+      additionalDestinationAddress ?? destinationAddress;
+  int get dropoffCount => additionalDestination == null ? 1 : 2;
+
   /// Decoded Google Routes polyline.
   final List<LatLng> routePoints;
 
@@ -93,6 +114,7 @@ class BookingSession {
 
   /// Outside TODA surcharge.
   final double boundarySurcharge;
+  final double additionalDropoffFare;
 
   /// Estimated total fare.
   final double estimatedFare;
@@ -120,6 +142,12 @@ class BookingSession {
     LatLng? destination,
     String? destinationName,
     String? destinationAddress,
+    bool? additionalDropoffEnabled,
+    LatLng? additionalDestination,
+    String? additionalDestinationName,
+    String? additionalDestinationAddress,
+    bool clearAdditionalDestination = false,
+    String? passengerNote,
     List<LatLng>? routePoints,
     String? routeAdvisory,
     RoutePolicyAdvisory? routePolicy,
@@ -131,6 +159,7 @@ class BookingSession {
     double? additionalPassengerFee,
     double? baggageFee,
     double? boundarySurcharge,
+    double? additionalDropoffFare,
     double? estimatedFare,
 
     int? additionalPassengers,
@@ -148,6 +177,18 @@ class BookingSession {
       destination: destination ?? this.destination,
       destinationName: destinationName ?? this.destinationName,
       destinationAddress: destinationAddress ?? this.destinationAddress,
+      additionalDropoffEnabled:
+          additionalDropoffEnabled ?? this.additionalDropoffEnabled,
+      additionalDestination: clearAdditionalDestination
+          ? null
+          : additionalDestination ?? this.additionalDestination,
+      additionalDestinationName: clearAdditionalDestination
+          ? null
+          : additionalDestinationName ?? this.additionalDestinationName,
+      additionalDestinationAddress: clearAdditionalDestination
+          ? null
+          : additionalDestinationAddress ?? this.additionalDestinationAddress,
+      passengerNote: passengerNote ?? this.passengerNote,
       routePoints: routePoints ?? this.routePoints,
       routeAdvisory: routeAdvisory ?? this.routeAdvisory,
       routePolicy: routePolicy ?? this.routePolicy,
@@ -160,6 +201,8 @@ class BookingSession {
           additionalPassengerFee ?? this.additionalPassengerFee,
       baggageFee: baggageFee ?? this.baggageFee,
       boundarySurcharge: boundarySurcharge ?? this.boundarySurcharge,
+      additionalDropoffFare:
+          additionalDropoffFare ?? this.additionalDropoffFare,
       estimatedFare: estimatedFare ?? this.estimatedFare,
 
       additionalPassengers: additionalPassengers ?? this.additionalPassengers,
@@ -207,12 +250,56 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       additionalPassengerFee: 0,
       baggageFee: 0,
       boundarySurcharge: 0,
+      additionalDropoffFare: 0,
       estimatedFare: 0,
       isOutsideToda: false,
       goQuoteToken: '',
       clearGoQuoteExpiry: true,
       hasRoute: false,
     );
+  }
+
+  void enableAdditionalDropoff() {
+    state = state.copyWith(
+      additionalDropoffEnabled: true,
+      routePoints: const <LatLng>[],
+      goQuoteToken: '',
+      clearGoQuoteExpiry: true,
+      hasRoute: false,
+    );
+  }
+
+  void removeAdditionalDropoff() {
+    state = state.copyWith(
+      additionalDropoffEnabled: false,
+      clearAdditionalDestination: true,
+      additionalDropoffFare: 0,
+      routePoints: const <LatLng>[],
+      goQuoteToken: '',
+      clearGoQuoteExpiry: true,
+      hasRoute: false,
+    );
+  }
+
+  void updateAdditionalDestination({
+    required LatLng destination,
+    required String destinationName,
+    required String destinationAddress,
+  }) {
+    state = state.copyWith(
+      additionalDropoffEnabled: true,
+      additionalDestination: destination,
+      additionalDestinationName: destinationName,
+      additionalDestinationAddress: destinationAddress,
+      routePoints: const <LatLng>[],
+      goQuoteToken: '',
+      clearGoQuoteExpiry: true,
+      hasRoute: false,
+    );
+  }
+
+  void updatePassengerNote(String value) {
+    state = state.copyWith(passengerNote: value.trim());
   }
 
   /// Update only the destination.

@@ -104,15 +104,47 @@ class BookingQuoteService {
   Future<GoBookingQuote?> tryBookingQuote({
     required LatLng pickup,
     required LatLng destination,
+    LatLng? additionalDestination,
     required int additionalPassengers,
     required int baggageCount,
   }) async {
+    final finalDestination = additionalDestination ?? destination;
+    final routeStops = <Map<String, dynamic>>[
+      {
+        'sequence': 0,
+        'type': 'pickup',
+        'location': {
+          'latitude': pickup.latitude,
+          'longitude': pickup.longitude,
+        },
+      },
+      {
+        'sequence': 1,
+        'type': 'dropoff',
+        'location': {
+          'latitude': destination.latitude,
+          'longitude': destination.longitude,
+        },
+        'final': additionalDestination == null,
+      },
+      if (additionalDestination != null)
+        {
+          'sequence': 2,
+          'type': 'dropoff',
+          'location': {
+            'latitude': additionalDestination.latitude,
+            'longitude': additionalDestination.longitude,
+          },
+          'final': true,
+        },
+    ];
     final input = <String, dynamic>{
       'pickup': {'latitude': pickup.latitude, 'longitude': pickup.longitude},
       'destination': {
-        'latitude': destination.latitude,
-        'longitude': destination.longitude,
+        'latitude': finalDestination.latitude,
+        'longitude': finalDestination.longitude,
       },
+      'routeStops': routeStops,
       'additionalPassengers': additionalPassengers,
       'baggageCount': baggageCount,
     };
@@ -124,6 +156,7 @@ class BookingQuoteService {
         response = await (_api ?? VoltrikeApi.instance).quote(
           pickup: input['pickup'] as Map<String, dynamic>,
           destination: input['destination'] as Map<String, dynamic>,
+          routeStops: routeStops,
           additionalPassengers: additionalPassengers,
           baggageCount: baggageCount,
         );

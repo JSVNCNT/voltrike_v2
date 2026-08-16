@@ -335,7 +335,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
 
     final route = await _navigation.computeTrafficRoute(
       origin: driverLocation,
-      destination: booking.destination,
+      destination: booking.activeDestinationStop.location,
     );
 
     if (route == null) {
@@ -408,8 +408,13 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
       await controller.confirmDropOff(booking);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Drop-off confirmed. Confirm cash next.'),
+          SnackBar(
+            content: Text(
+              booking.hasMultipleDropoffs &&
+                      !booking.activeDestinationStop.isFinal
+                  ? 'First drop-off confirmed. Continue to the final stop.'
+                  : 'Drop-off confirmed. Confirm cash next.',
+            ),
           ),
         );
       }
@@ -491,7 +496,8 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
             child: DriverMapView(
               driverLocation: driverLocation,
               pickupLocation: displayBooking?.pickup,
-              destinationLocation: displayBooking?.destination,
+              destinationLocation:
+                  displayBooking?.activeDestinationStop.location,
               routePoints: _routePoints,
             ),
           ),
@@ -517,6 +523,8 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
                   distance:
                       '${(incomingBooking.distanceMeters / 1000).toStringAsFixed(1)} km',
                   routeAdvisory: incomingBooking.routePolicy.driverMessage,
+                  routeStops: incomingBooking.routeStops,
+                  passengerNote: incomingBooking.passengerNote,
                   onAccept: canRespondToOffer ? _acceptBooking : null,
                   onDecline: canRespondToOffer ? _declineBooking : null,
                 ),

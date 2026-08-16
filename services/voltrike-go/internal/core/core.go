@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 )
 
 const (
@@ -63,13 +64,14 @@ type FareConfig struct {
 	AdditionalPassengerFee float64 `json:"additionalPassengerFee"`
 	BaggageFee             float64 `json:"baggageFee"`
 	OutsideTodaSurcharge   float64 `json:"outsideTodaSurcharge"`
+	AdditionalDropoffFee   float64 `json:"additionalDropoffFee"`
 	Currency               string  `json:"currency"`
 }
 
 var DefaultFare = FareConfig{
 	Version: 1, BaseFare: 20, IncludedMeters: 1000, DistanceStepMeters: 500,
 	DistanceStepPrice: 5, AdditionalPassengerFee: 40, BaggageFee: 20,
-	OutsideTodaSurcharge: 20, Currency: "PHP",
+	OutsideTodaSurcharge: 20, AdditionalDropoffFee: 10, Currency: "PHP",
 }
 
 type FareBreakdown struct {
@@ -86,6 +88,9 @@ type FareBreakdown struct {
 	BaggageFare             float64 `json:"baggageFare"`
 	IsOutsideToda           bool    `json:"isOutsideToda"`
 	BoundarySurcharge       float64 `json:"boundarySurcharge"`
+	DropoffCount            int     `json:"dropoffCount"`
+	AdditionalDropoffs      int     `json:"additionalDropoffs"`
+	AdditionalDropoffFare   float64 `json:"additionalDropoffFare"`
 	Currency                string  `json:"currency"`
 	Total                   float64 `json:"total"`
 }
@@ -119,6 +124,9 @@ func SnapshotFare(raw FareConfig) FareConfig {
 	if raw.OutsideTodaSurcharge >= 0 {
 		result.OutsideTodaSurcharge = currency(raw.OutsideTodaSurcharge)
 	}
+	if raw.AdditionalDropoffFee >= 0 {
+		result.AdditionalDropoffFee = currency(raw.AdditionalDropoffFee)
+	}
 	if raw.Currency == "PHP" {
 		result.Currency = raw.Currency
 	}
@@ -126,6 +134,10 @@ func SnapshotFare(raw FareConfig) FareConfig {
 }
 
 func CalculateFare(raw FareConfig, distanceMeters, additionalPassengers, baggageCount int, outside bool) FareBreakdown {
+	return CalculateFareForDropoffs(raw, distanceMeters, additionalPassengers, baggageCount, 1, outside)
+}
+
+func CalculateFareForDropoffs(raw FareConfig, distanceMeters, additionalPassengers, baggageCount, dropoffCount int, outside bool) FareBreakdown {
 	cfg := SnapshotFare(raw)
 	if distanceMeters < 0 {
 		distanceMeters = 0
@@ -136,6 +148,10 @@ func CalculateFare(raw FareConfig, distanceMeters, additionalPassengers, baggage
 	if baggageCount < 0 {
 		baggageCount = 0
 	}
+	if dropoffCount < 1 {
+		dropoffCount = 1
+	}
+	additionalDropoffs := max(0, dropoffCount-1)
 	chargeable := max(0, distanceMeters-cfg.IncludedMeters)
 	steps := int(math.Ceil(float64(chargeable) / float64(cfg.DistanceStepMeters)))
 	distanceFareCents := steps * cents(cfg.DistanceStepPrice)
@@ -145,14 +161,17 @@ func CalculateFare(raw FareConfig, distanceMeters, additionalPassengers, baggage
 	if outside {
 		boundaryCents = cents(cfg.OutsideTodaSurcharge)
 	}
-	totalCents := cents(cfg.BaseFare) + distanceFareCents + passengerCents + baggageCents + boundaryCents
+	additionalDropoffCents := additionalDropoffs * cents(cfg.AdditionalDropoffFee)
+	totalCents := cents(cfg.BaseFare) + distanceFareCents + passengerCents + baggageCents + boundaryCents + additionalDropoffCents
 	return FareBreakdown{
 		BaseFare: cfg.BaseFare, IncludedMeters: cfg.IncludedMeters, ChargeableMeters: chargeable,
 		DistanceSteps: steps, DistanceStepMeters: cfg.DistanceStepMeters, DistanceStepPrice: cfg.DistanceStepPrice,
 		DistanceFare: pesos(distanceFareCents), AdditionalPassengers: additionalPassengers,
 		AdditionalPassengerFare: pesos(passengerCents), BaggageCount: baggageCount,
 		BaggageFare: pesos(baggageCents), IsOutsideToda: outside,
-		BoundarySurcharge: pesos(boundaryCents), Currency: cfg.Currency, Total: pesos(totalCents),
+		BoundarySurcharge: pesos(boundaryCents), DropoffCount: dropoffCount,
+		AdditionalDropoffs: additionalDropoffs, AdditionalDropoffFare: pesos(additionalDropoffCents),
+		Currency: cfg.Currency, Total: pesos(totalCents),
 	}
 }
 
@@ -183,11 +202,20 @@ type Coverage struct {
 }
 
 func ClassifyCoverage(geofences []Geofence, pickup, destination Coordinate) (Coverage, error) {
+	return ClassifyCoverageStops(geofences, pickup, []Coordinate{destination})
+}
+
+func ClassifyCoverageStops(geofences []Geofence, pickup Coordinate, destinations []Coordinate) (Coverage, error) {
 	if _, err := RequireCoordinate(pickup, "Pickup"); err != nil {
 		return Coverage{}, err
 	}
-	if _, err := RequireCoordinate(destination, "Destination"); err != nil {
-		return Coverage{}, err
+	if len(destinations) == 0 {
+		return Coverage{}, fmt.Errorf("at least one destination is required")
+	}
+	for index, destination := range destinations {
+		if _, err := RequireCoordinate(destination, fmt.Sprintf("Destination %d", index+1)); err != nil {
+			return Coverage{}, err
+		}
 	}
 	valid := make([]Geofence, 0, len(geofences))
 	for _, item := range geofences {
@@ -205,14 +233,27 @@ func ClassifyCoverage(geofences []Geofence, pickup, destination Coordinate) (Cov
 		}
 		return sortedKeys(matches)
 	}
-	pickupIDs, destinationIDs := matching(pickup), matching(destination)
-	destinationSet := toSet(destinationIDs)
-	shared := make([]string, 0)
-	for _, id := range pickupIDs {
-		if _, ok := destinationSet[id]; ok {
-			shared = append(shared, id)
+	pickupIDs := matching(pickup)
+	destinationUnion := map[string]struct{}{}
+	sharedSet := toSet(pickupIDs)
+	allDestinationsCovered := true
+	for _, destination := range destinations {
+		ids := matching(destination)
+		if len(ids) == 0 {
+			allDestinationsCovered = false
+		}
+		current := toSet(ids)
+		for id := range current {
+			destinationUnion[id] = struct{}{}
+		}
+		for id := range sharedSet {
+			if _, ok := current[id]; !ok {
+				delete(sharedSet, id)
+			}
 		}
 	}
+	destinationIDs := sortedKeys(destinationUnion)
+	shared := sortedKeys(sharedSet)
 	primary := shared
 	if len(primary) == 0 {
 		primary = pickupIDs
@@ -239,7 +280,7 @@ func ClassifyCoverage(geofences []Geofence, pickup, destination Coordinate) (Cov
 		switch {
 		case len(shared) > 0:
 			coverageClass = "intra_toda"
-		case len(pickupIDs) > 0 && len(destinationIDs) > 0:
+		case len(pickupIDs) > 0 && allDestinationsCovered:
 			coverageClass = "cross_boundary"
 		case len(pickupIDs) > 0:
 			coverageClass = "destination_outside_coverage"
@@ -262,10 +303,19 @@ func ClassifyCoverage(geofences []Geofence, pickup, destination Coordinate) (Cov
 }
 
 func FirstEndpointConflict(pickup, destination Coordinate, restrictions []Restriction) *Restriction {
+	return FirstEndpointConflictStops(append([]Coordinate{pickup}, destination), restrictions)
+}
+
+func FirstEndpointConflictStops(points []Coordinate, restrictions []Restriction) *Restriction {
 	for index := range restrictions {
 		item := &restrictions[index]
-		if endpointBlocking(*item) && (containsAny(item.Areas, pickup) || containsAny(item.Areas, destination)) {
-			return item
+		if !endpointBlocking(*item) {
+			continue
+		}
+		for _, point := range points {
+			if containsAny(item.Areas, point) {
+				return item
+			}
 		}
 	}
 	return nil
@@ -347,6 +397,36 @@ func DecodePolyline(encoded string) ([]Coordinate, error) {
 		}
 	}
 	return points, nil
+}
+
+func EncodePolyline(points []Coordinate) (string, error) {
+	if len(points) < 2 || len(points) > MaxRoutePoints {
+		return "", errors.New("route polyline point count is invalid")
+	}
+	var builder strings.Builder
+	previousLatitude, previousLongitude := 0, 0
+	encode := func(delta int) {
+		value := delta << 1
+		if delta < 0 {
+			value = ^value
+		}
+		for value >= 0x20 {
+			builder.WriteByte(byte((0x20 | (value & 0x1f)) + 63))
+			value >>= 5
+		}
+		builder.WriteByte(byte(value + 63))
+	}
+	for _, point := range points {
+		if !point.Valid() {
+			return "", errors.New("route polyline contains an invalid point")
+		}
+		latitude := int(math.Round(point.Latitude * 1e5))
+		longitude := int(math.Round(point.Longitude * 1e5))
+		encode(latitude - previousLatitude)
+		encode(longitude - previousLongitude)
+		previousLatitude, previousLongitude = latitude, longitude
+	}
+	return builder.String(), nil
 }
 
 func HaversineMeters(left, right Coordinate) float64 {

@@ -217,6 +217,7 @@ async function main() {
     additionalPassengerFee: 40,
     baggageFee: 20,
     outsideTodaSurcharge: 20,
+    additionalDropoffFee: 10,
     currency: 'PHP',
     version: 1,
     updatedBy: accounts.developer.uid,

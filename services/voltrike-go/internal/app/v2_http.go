@@ -13,6 +13,7 @@ import (
 type v2QuoteRequest struct {
 	Pickup               core.Coordinate `json:"pickup"`
 	Destination          core.Coordinate `json:"destination"`
+	RouteStops           []RouteStop     `json:"routeStops,omitempty"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
 }
@@ -35,6 +36,7 @@ func (server *HTTPServer) handleV2Capabilities(writer http.ResponseWriter, _ *ht
 				"driverSessions":  true,
 				"driverLocations": true,
 				"outbox":          true,
+				"multiStopRides":  true,
 			},
 		},
 	})
@@ -67,6 +69,7 @@ func (server *HTTPServer) handleV2Quote(writer http.ResponseWriter, request *htt
 		ActorID:              principal.UID,
 		Pickup:               input.Pickup,
 		Destination:          input.Destination,
+		RouteStops:           input.RouteStops,
 		AdditionalPassengers: input.AdditionalPassengers,
 		BaggageCount:         input.BaggageCount,
 		IssueToken:           true,

@@ -33,6 +33,57 @@ enum BookingStatus {
   cancelled,
 }
 
+class BookingRouteStop {
+  const BookingRouteStop({
+    required this.sequence,
+    required this.type,
+    required this.location,
+    required this.name,
+    required this.address,
+    this.isFinal = false,
+    this.status = 'pending',
+    this.completedAt,
+  });
+
+  final int sequence;
+  final String type;
+  final LatLng location;
+  final String name;
+  final String address;
+  final bool isFinal;
+  final String status;
+  final DateTime? completedAt;
+
+  bool get isDropoff => type == 'dropoff';
+
+  factory BookingRouteStop.fromMap(Map<String, dynamic> data) {
+    return BookingRouteStop(
+      sequence: _asInt(data['sequence']),
+      type: _asString(data['type']),
+      location: _parseLatLng(data['location']),
+      name: _asString(data['name']),
+      address: _asString(data['address']),
+      isFinal: data['final'] == true,
+      status: _asString(data['status'], fallback: 'pending'),
+      completedAt: parseModelDate(data['completedAt']),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'sequence': sequence,
+    'type': type,
+    'location': {
+      'latitude': location.latitude,
+      'longitude': location.longitude,
+    },
+    'name': name,
+    'address': address,
+    'final': isFinal,
+    'status': status,
+    if (completedAt != null) 'completedAt': Timestamp.fromDate(completedAt!),
+  };
+}
+
 /// ===========================================================================
 /// Booking Model
 ///
@@ -42,7 +93,7 @@ enum BookingStatus {
 /// bookings/{bookingId}
 /// ===========================================================================
 class Booking {
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   const Booking({
     this.schemaVersion = currentSchemaVersion,
@@ -92,6 +143,10 @@ class Booking {
     required this.isOutsideToda,
     this.routePolicyVersion = 0,
     this.routePolicy = const RoutePolicyAdvisory(),
+    this.routeStops = const <BookingRouteStop>[],
+    this.dropoffCount = 1,
+    this.activeStopIndex = 0,
+    this.passengerNote = '',
     required this.status,
     required this.createdAt,
     required this.updatedAt,
@@ -189,6 +244,39 @@ class Booking {
   final int routePolicyVersion;
 
   final RoutePolicyAdvisory routePolicy;
+  final List<BookingRouteStop> routeStops;
+  final int dropoffCount;
+  final int activeStopIndex;
+  final String passengerNote;
+
+  List<BookingRouteStop> get dropoffStops {
+    final parsed = routeStops.where((stop) => stop.isDropoff).toList()
+      ..sort((a, b) => a.sequence.compareTo(b.sequence));
+    if (parsed.isNotEmpty) return parsed;
+    return <BookingRouteStop>[
+      BookingRouteStop(
+        sequence: 1,
+        type: 'dropoff',
+        location: destination,
+        name: destinationName ?? 'Destination',
+        address: destinationAddress,
+        isFinal: true,
+      ),
+    ];
+  }
+
+  bool get hasMultipleDropoffs => dropoffStops.length > 1;
+  String get orderedDropoffLabel => dropoffStops
+      .map((stop) => stop.name.trim().isNotEmpty ? stop.name : stop.address)
+      .join(' → ');
+  BookingRouteStop get activeDestinationStop {
+    final stops = dropoffStops;
+    if (status == BookingStatus.passengerOnBoard) {
+      final pending = stops.where((stop) => stop.status != 'completed');
+      if (pending.isNotEmpty) return pending.first;
+    }
+    return stops.last;
+  }
 
   //==========================================================================
   // Status
@@ -350,6 +438,10 @@ class Booking {
               data['avoidedRouteRestrictionNames'],
             ),
           ),
+      routeStops: _routeStops(data['routeStops']),
+      dropoffCount: _asInt(data['dropoffCount'], fallback: 1),
+      activeStopIndex: _asInt(data['activeStopIndex']),
+      passengerNote: _asString(data['passengerNote']),
       status: _parseStatus(data['status']),
       createdAt:
           createdAt ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
@@ -432,6 +524,10 @@ class Booking {
       'isOutsideToda': isOutsideToda,
       'routePolicyVersion': routePolicyVersion,
       'highwayRouteAdvisory': routePolicy.toMap(),
+      'routeStops': routeStops.map((stop) => stop.toMap()).toList(),
+      'dropoffCount': dropoffCount,
+      'activeStopIndex': activeStopIndex,
+      'passengerNote': passengerNote,
 
       //======================================================================
       // Status
@@ -515,6 +611,10 @@ class Booking {
     bool? isOutsideToda,
     int? routePolicyVersion,
     RoutePolicyAdvisory? routePolicy,
+    List<BookingRouteStop>? routeStops,
+    int? dropoffCount,
+    int? activeStopIndex,
+    String? passengerNote,
 
     //======================================================================
     // Status
@@ -587,6 +687,10 @@ class Booking {
       isOutsideToda: isOutsideToda ?? this.isOutsideToda,
       routePolicyVersion: routePolicyVersion ?? this.routePolicyVersion,
       routePolicy: routePolicy ?? this.routePolicy,
+      routeStops: routeStops ?? this.routeStops,
+      dropoffCount: dropoffCount ?? this.dropoffCount,
+      activeStopIndex: activeStopIndex ?? this.activeStopIndex,
+      passengerNote: passengerNote ?? this.passengerNote,
 
       //====================================================================
       // Status
@@ -608,6 +712,23 @@ class Booking {
       completedAt: completedAt ?? this.completedAt,
     );
   }
+}
+
+List<BookingRouteStop> _routeStops(Object? value) {
+  if (value is! Iterable) return const <BookingRouteStop>[];
+  final stops = <BookingRouteStop>[];
+  for (final raw in value) {
+    if (raw is! Map) continue;
+    final data = raw.map((key, item) => MapEntry(key.toString(), item));
+    try {
+      stops.add(BookingRouteStop.fromMap(data));
+    } on FormatException {
+      // Skip malformed optional stop records; top-level legacy fields remain
+      // the compatibility fallback.
+    }
+  }
+  stops.sort((a, b) => a.sequence.compareTo(b.sequence));
+  return List<BookingRouteStop>.unmodifiable(stops);
 }
 
 String _asString(Object? value, {String fallback = ''}) {

@@ -19,6 +19,7 @@ class FareConfiguration {
     required this.additionalPassengerFee,
     required this.baggageFee,
     required this.outsideTodaSurcharge,
+    this.additionalDropoffFee = 10,
   });
 
   final int version;
@@ -49,6 +50,7 @@ class FareConfiguration {
 
   /// Outside TODA surcharge.
   final double outsideTodaSurcharge;
+  final double additionalDropoffFee;
 }
 
 /// ===========================================================================
@@ -77,6 +79,9 @@ const FareConfiguration devFareConfiguration = FareConfiguration(
 
   // Outside TODA.
   outsideTodaSurcharge: 20,
+
+  // One flat charge when a passenger adds a second drop-off.
+  additionalDropoffFee: 10,
 );
 
 /// ===========================================================================
@@ -89,6 +94,7 @@ class FareResult {
     required this.additionalPassengerFee,
     required this.baggageFee,
     required this.boundarySurcharge,
+    required this.additionalDropoffFare,
     required this.totalFare,
     required this.distanceMeters,
     required this.additionalPassengers,
@@ -104,6 +110,7 @@ class FareResult {
   final double baggageFee;
 
   final double boundarySurcharge;
+  final double additionalDropoffFare;
 
   final double totalFare;
 
@@ -141,6 +148,8 @@ class FareService {
     int baggageCount = 0,
 
     bool isOutsideToda = false,
+
+    int dropoffCount = 1,
   }) {
     //----------------------------------------------------------------------
     // Distance Charge
@@ -178,6 +187,9 @@ class FareService {
     final boundaryFeeCentavos = isOutsideToda
         ? _toCentavos(config.outsideTodaSurcharge)
         : 0;
+    final additionalDropoffs = max(0, dropoffCount - 1);
+    final additionalDropoffFeeCentavos =
+        additionalDropoffs * _toCentavos(config.additionalDropoffFee);
 
     //----------------------------------------------------------------------
     // Total
@@ -189,7 +201,8 @@ class FareService {
         distanceFareCentavos +
         passengerFeeCentavos +
         baggageFeeCentavos +
-        boundaryFeeCentavos;
+        boundaryFeeCentavos +
+        additionalDropoffFeeCentavos;
 
     return FareResult(
       baseFare: _fromCentavos(baseFareCentavos),
@@ -197,6 +210,7 @@ class FareService {
       additionalPassengerFee: _fromCentavos(passengerFeeCentavos),
       baggageFee: _fromCentavos(baggageFeeCentavos),
       boundarySurcharge: _fromCentavos(boundaryFeeCentavos),
+      additionalDropoffFare: _fromCentavos(additionalDropoffFeeCentavos),
       totalFare: _fromCentavos(totalCentavos),
       distanceMeters: distanceMeters,
       additionalPassengers: additionalPassengers,

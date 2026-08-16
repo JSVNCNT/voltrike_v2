@@ -24,6 +24,8 @@ class FareCard extends StatelessWidget {
     this.additionalPassengerFee = '₱0.00',
     this.baggageFee = '₱0.00',
     this.boundarySurcharge = '₱0.00',
+    this.additionalDropoffFare = '₱0.00',
+    this.dropoffCount = 1,
     this.isOutsideToda = false,
   });
 
@@ -42,6 +44,8 @@ class FareCard extends StatelessWidget {
 
   final String boundarySurcharge;
   final bool isOutsideToda;
+  final String additionalDropoffFare;
+  final int dropoffCount;
 
   @override
   Widget build(BuildContext context) {
@@ -80,6 +84,12 @@ class FareCard extends StatelessWidget {
 
             _FareRow(title: 'Baggage Fee', value: baggageFee),
 
+            if (dropoffCount > 1)
+              _FareRow(
+                title: 'Additional drop-off fee',
+                value: additionalDropoffFare,
+              ),
+
             if (isOutsideToda) ...[
               const SizedBox(height: 6),
               _OutsideTodaFareRow(value: boundarySurcharge),
@@ -88,7 +98,8 @@ class FareCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Fare = base fare + distance surcharge + selected passenger, '
-              'baggage${isOutsideToda ? ', and Outside TODA' : ''} charges.',
+              'baggage${dropoffCount > 1 ? ', additional drop-off' : ''}'
+              '${isOutsideToda ? ', and Outside TODA' : ''} charges.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

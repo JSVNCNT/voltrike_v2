@@ -49,12 +49,14 @@ type CreateBookingCommand struct {
 	OperationID          string          `json:"commandId"`
 	Pickup               core.Coordinate `json:"pickup"`
 	Destination          core.Coordinate `json:"destination"`
+	RouteStops           []RouteStop     `json:"routeStops,omitempty"`
 	PickupName           string          `json:"pickupName"`
 	DestinationName      string          `json:"destinationName"`
 	PickupAddress        string          `json:"pickupAddress"`
 	DestinationAddress   string          `json:"destinationAddress"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
+	PassengerNote        string          `json:"passengerNote,omitempty"`
 	QuoteToken           string          `json:"quoteToken"`
 }
 
@@ -66,6 +68,7 @@ type TransitionBookingCommand struct {
 	DriverID         string `json:"driverId,omitempty"`
 	ReasonCode       string `json:"reasonCode,omitempty"`
 	ReasonDetail     string `json:"reasonDetail,omitempty"`
+	StopIndex        int    `json:"stopIndex,omitempty"`
 }
 
 type CreateDriverSessionCommand struct {
@@ -171,6 +174,15 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 	if command.QuoteToken == "" {
 		return BookingRecord{}, fmt.Errorf("%w: quoteToken is required", ErrInvalidArgument)
 	}
+	stops, normalizeErr := normalizeRouteStops(command.Pickup, command.Destination, command.RouteStops)
+	if normalizeErr != nil {
+		return BookingRecord{}, fmt.Errorf("%w: %v", ErrInvalidArgument, normalizeErr)
+	}
+	command.Pickup, command.Destination, command.RouteStops = stops[0].Location, stops[len(stops)-1].Location, stops
+	command.PassengerNote = strings.TrimSpace(command.PassengerNote)
+	if len([]rune(command.PassengerNote)) > 120 {
+		return BookingRecord{}, fmt.Errorf("%w: passengerNote must be 120 characters or fewer", ErrInvalidArgument)
+	}
 	store, err := domainStore(service)
 	if err != nil {
 		return BookingRecord{}, err
@@ -188,6 +200,7 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 		ActorID:              principal.UID,
 		Pickup:               command.Pickup,
 		Destination:          command.Destination,
+		RouteStops:           command.RouteStops,
 		AdditionalPassengers: command.AdditionalPassengers,
 		BaggageCount:         command.BaggageCount,
 		QuoteToken:           command.QuoteToken,
