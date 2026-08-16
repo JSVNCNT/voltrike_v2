@@ -46,3 +46,27 @@ func TestAdminIdentityRequiresMatchingActiveClaims(t *testing.T) {
 		t.Fatal("mismatched administrator claim was accepted")
 	}
 }
+
+func TestAdminBookingMatchesSearchOperationalFields(t *testing.T) {
+	booking := map[string]any{
+		"passengerName":      "Passenger Test",
+		"driverName":         "Driver Test",
+		"plateNumber":        "ABC-1234",
+		"todaName":           "Barangay 40 TODA",
+		"pickupAddress":      "Burgos Avenue",
+		"destinationAddress": "Metro Bacolod Hospital",
+		"receiptNumber":      "VT-NEW-RIDE",
+		"status":             "passengerOnBoard",
+	}
+	for _, needle := range []string{
+		"new-booking-id", "passenger test", "driver test", "abc-1234",
+		"barangay 40", "burgos", "hospital", "vt-new-ride", "passengeronboard",
+	} {
+		if !adminBookingMatchesSearch("new-booking-id", booking, needle) {
+			t.Fatalf("booking did not match %q", needle)
+		}
+	}
+	if adminBookingMatchesSearch("new-booking-id", booking, "unrelated ride") {
+		t.Fatal("booking matched unrelated search")
+	}
+}

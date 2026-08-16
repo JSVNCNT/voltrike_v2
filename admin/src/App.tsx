@@ -26,19 +26,26 @@ const ChatSafetyPage = lazy(() => import('./components/ChatSafetyPage').then((mo
 type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'commission' | 'ratings' | 'operations' | 'safety' | 'violations' | 'reports' | 'coverage' | 'route_rules' | 'chat_safety';
 const pages = new Set<Page>(['overview', 'todas', 'fares', 'drivers', 'live_drivers', 'commission', 'ratings', 'operations', 'safety', 'violations', 'reports', 'coverage', 'route_rules', 'chat_safety']);
 
-function useRefreshOnVisible(refresh: () => void | Promise<void>) {
+function useRefreshOnVisible(
+  refresh: () => void | Promise<void>,
+  intervalMs?: number,
+) {
   useEffect(() => {
     void refresh();
     const onVisible = () => {
       if (document.visibilityState === 'visible') void refresh();
     };
+    const interval = intervalMs
+      ? window.setInterval(onVisible, intervalMs)
+      : undefined;
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     return () => {
+      if (interval !== undefined) window.clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [refresh]);
+  }, [intervalMs, refresh]);
 }
 
 function adminRoute(): { page: Page; violationId: string | null } {
@@ -1228,7 +1235,7 @@ function OperationsPage({ session }: { session: AdminSession }) {
     }
   }, [search]);
 
-  useRefreshOnVisible(load);
+  useRefreshOnVisible(load, overviewMetricsRefreshMs);
 
   async function resolveDispute(booking: BookingOperation) {
     const resolution = window.prompt('Settlement dispute resolution:')?.trim();
@@ -1239,7 +1246,7 @@ function OperationsPage({ session }: { session: AdminSession }) {
 
   return <section className="panel wide">
     <h2>{session.role === 'developer_admin' ? 'All bookings and cash settlements' : 'TODA bookings and cash settlements'}</h2>
-    <p className="muted">{session.role === 'developer_admin' ? 'Every Firebase booking is available here, including pending, active, completed, and cancelled rides.' : 'Firebase restricts this list to bookings assigned to a driver in your TODA.'} Search names, booking reference, driver ID, plate, receipt, or lifecycle status.</p>
+    <p className="muted">{session.role === 'developer_admin' ? 'Every Firebase booking is available here, including pending, active, completed, and cancelled rides.' : 'Firebase restricts this list to bookings assigned to a driver in your TODA.'} Newest activity appears first and refreshes every 15 seconds. Search names, booking reference, driver ID, plate, receipt, or lifecycle status.</p>
     <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ride operations" aria-label="Search ride operations" />
     {error && <div className="notice">{error}</div>}
     <div className="table">

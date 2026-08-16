@@ -52,6 +52,85 @@ func (store *Store) adminList(ctx context.Context, actor adminIdentity, collecti
 	return map[string]any{"items": items, "nextCursor": next}, nil
 }
 
+// adminListBookings keeps the operational views ordered by authoritative ride
+// activity rather than UUID. Booking IDs are random, so limiting an ascending
+// document-ID query can permanently hide a newly created booking from both the
+// System Admin and TODA Admin pages once the collection grows.
+func (store *Store) adminListBookings(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
+	pageSize := integer(payload, "pageSize", "limit")
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 25
+	}
+	bookings := store.firestore.Collection("bookings")
+	query := bookings.OrderBy("updatedAt", firestore.Desc)
+	if !actor.developer() {
+		query = query.Where("todaId", "==", actor.TodaID)
+	}
+	if cursor := text(payload, "cursor"); cursor != "" {
+		cursorSnapshot, err := bookings.Doc(cursor).Get(ctx)
+		if err != nil {
+			if isNotFound(err) {
+				return map[string]any{"items": []map[string]any{}, "nextCursor": ""}, nil
+			}
+			return nil, fmt.Errorf("read booking page cursor: %w", err)
+		}
+		query = query.StartAfter(cursorSnapshot)
+	}
+
+	// Search is intentionally applied to presentation-safe snapshots. Scan more
+	// than one visible page so a specific booking/name can still be found without
+	// exposing a separate unrestricted search index.
+	const maximumScan = 200
+	documents, err := query.Limit(maximumScan).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("list recent admin bookings: %w", err)
+	}
+	needle := strings.ToLower(strings.TrimSpace(text(payload, "search")))
+	items := make([]map[string]any, 0, pageSize)
+	next := ""
+	for _, document := range documents {
+		data := document.Data()
+		if !actor.canAccessToda(text(data, "todaId", "ownerTodaId", "driverTodaId")) {
+			continue
+		}
+		if !adminBookingMatchesSearch(document.Ref.ID, data, needle) {
+			continue
+		}
+		data["id"], data["bookingId"] = document.Ref.ID, document.Ref.ID
+		items = append(items, data)
+		if len(items) == pageSize {
+			next = document.Ref.ID
+			break
+		}
+	}
+	if next == "" && len(documents) == maximumScan {
+		next = documents[len(documents)-1].Ref.ID
+	}
+	return map[string]any{"items": items, "nextCursor": next}, nil
+}
+
+func adminBookingMatchesSearch(bookingID string, data map[string]any, needle string) bool {
+	if needle == "" {
+		return true
+	}
+	candidate := strings.ToLower(strings.Join([]string{
+		bookingID,
+		text(data, "passengerId", "passengerID"),
+		text(data, "passengerName"),
+		text(data, "driverId", "driverID"),
+		text(data, "driverName"),
+		text(data, "plateNumber"),
+		text(data, "todaId", "driverTodaId"),
+		text(data, "todaName"),
+		text(data, "pickupName", "pickupAddress"),
+		text(data, "destinationName", "destinationAddress"),
+		text(data, "receiptNumber"),
+		text(data, "status"),
+		text(data, "cancellationCode"),
+	}, " "))
+	return strings.Contains(candidate, needle)
+}
+
 // adminListRatings hydrates immutable rating records with the current readable
 // driver/passenger names. Older rating records were created before all booking
 // name snapshots were enforced, so treating the stored name as the only source
