@@ -11,6 +11,7 @@ class ProfileIdentityHeader extends StatelessWidget {
     this.photoUrl,
     this.statusLabel,
     this.statusColor,
+    this.onEditPhoto,
   });
 
   final String name;
@@ -18,6 +19,7 @@ class ProfileIdentityHeader extends StatelessWidget {
   final String? photoUrl;
   final String? statusLabel;
   final Color? statusColor;
+  final VoidCallback? onEditPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -30,19 +32,50 @@ class ProfileIdentityHeader extends StatelessWidget {
       tintColor: colorScheme.primary,
       child: Column(
         children: [
-          CircleAvatar(
-            radius: 48,
-            backgroundColor: colorScheme.primaryContainer,
-            foregroundImage: image?.isNotEmpty == true
-                ? NetworkImage(image!)
-                : null,
-            child: image?.isNotEmpty == true
-                ? null
-                : Icon(
-                    Icons.person_outline_rounded,
-                    size: 48,
-                    color: colorScheme.onPrimaryContainer,
+          SizedBox.square(
+            dimension: 108,
+            child: Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 48,
+                  backgroundColor: colorScheme.primaryContainer,
+                  foregroundImage: image?.isNotEmpty == true
+                      ? NetworkImage(image!)
+                      : null,
+                  child: image?.isNotEmpty == true
+                      ? null
+                      : Icon(
+                          Icons.person_outline_rounded,
+                          size: 48,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                ),
+                if (onEditPhoto != null)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Material(
+                      color: colorScheme.primary,
+                      elevation: 3,
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        onPressed: onEditPhoto,
+                        tooltip: 'Edit profile photo',
+                        icon: const Icon(Icons.edit_rounded),
+                        color: colorScheme.onPrimary,
+                        iconSize: 18,
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints.tightFor(
+                          width: 36,
+                          height: 36,
+                        ),
+                      ),
+                    ),
                   ),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
           AdaptiveParticipantName(

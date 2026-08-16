@@ -71,3 +71,4 @@ app.*.map.json
 # ignore compiler
 
 android\.kotlin\sessions
+docs/

@@ -27,9 +27,13 @@ class LocationSearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final fieldColor = theme.brightness == Brightness.dark
+        ? const Color(0xFF293536)
+        : const Color(0xFFE8ECEC);
 
     return Material(
-      elevation: 2,
+      elevation: 1,
       borderRadius: BorderRadius.circular(16),
       color: Colors.transparent,
       child: InkWell(
@@ -37,19 +41,14 @@ class LocationSearchBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Ink(
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
+            color: fieldColor,
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant),
           ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              Icon(
-                icon,
-                color: theme.colorScheme.primary,
-              ),
+              Icon(icon, color: colorScheme.primary),
 
               const SizedBox(width: 12),
 
@@ -58,14 +57,13 @@ class LocationSearchBar extends StatelessWidget {
                   hintText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyLarge,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                  ),
                 ),
               ),
 
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.outline,
-              ),
+              Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
             ],
           ),
         ),

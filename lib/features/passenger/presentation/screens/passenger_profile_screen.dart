@@ -97,6 +97,8 @@ class PassengerProfileScreen extends ConsumerWidget {
                       statusColor: appUser.isActive
                           ? semantic.success
                           : colors.error,
+                      onEditPhoto: () =>
+                          context.push(AppRoutes.editPassengerProfile),
                     ),
                     const SizedBox(height: 24),
                     ProfileSection(

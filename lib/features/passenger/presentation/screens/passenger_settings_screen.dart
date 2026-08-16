@@ -19,10 +19,7 @@ class PassengerSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: const AppAppBar(title: 'Settings'),
-      body: VolTrikeSettingsView(
-        onEditPhoto: () => context.push(AppRoutes.editPassengerProfile),
-        onLogout: () => _logout(context, ref),
-      ),
+      body: VolTrikeSettingsView(onLogout: () => _logout(context, ref)),
     );
   }
 

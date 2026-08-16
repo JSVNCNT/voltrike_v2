@@ -8,13 +8,8 @@ import 'profile_widgets.dart';
 import 'system_diagnostics_tile.dart';
 
 class VolTrikeSettingsView extends ConsumerWidget {
-  const VolTrikeSettingsView({
-    super.key,
-    required this.onEditPhoto,
-    required this.onLogout,
-  });
+  const VolTrikeSettingsView({super.key, required this.onLogout});
 
-  final VoidCallback onEditPhoto;
   final VoidCallback onLogout;
 
   @override
@@ -27,20 +22,7 @@ class VolTrikeSettingsView extends ConsumerWidget {
       children: [
         ProfileSection(
           title: 'Account',
-          children: [
-            ListTile(
-              minTileHeight: 64,
-              leading: Icon(
-                Icons.account_circle_outlined,
-                color: colorScheme.primary,
-              ),
-              title: const Text('Change profile photo'),
-              subtitle: const Text('Choose a new account photo'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: onEditPhoto,
-            ),
-            const SystemDiagnosticsTile(),
-          ],
+          children: const [SystemDiagnosticsTile()],
         ),
         const SizedBox(height: 24),
         ProfileSection(

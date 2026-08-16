@@ -74,6 +74,8 @@ class DriverProfileScreen extends ConsumerWidget {
                       statusColor: driver.isOnline
                           ? semantic.success
                           : colors.onSurfaceVariant,
+                      onEditPhoto: () =>
+                          context.push(AppRoutes.editDriverProfile),
                     ),
                     const SizedBox(height: 24),
                     ProfileSection(

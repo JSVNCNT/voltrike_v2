@@ -10,6 +10,7 @@ import 'package:voltrike_v2/features/common/presentation/widgets/app_navigation_
 import 'package:voltrike_v2/features/common/presentation/widgets/profile_widgets.dart';
 import 'package:voltrike_v2/features/driver/controllers/driver_earnings_controller.dart';
 import 'package:voltrike_v2/features/driver/presentation/screens/driver_earnings_screen.dart';
+import 'package:voltrike_v2/features/passenger/presentation/widgets/location_search_bar.dart';
 
 void main() {
   testWidgets('accent card remains interactive in dark mode', (tester) async {
@@ -225,5 +226,50 @@ void main() {
     expect((nameCenter.dx - cardCenter.dx).abs(), lessThan(1));
     expect((statusCenter.dx - cardCenter.dx).abs(), lessThan(1));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('profile identity exposes an accessible photo edit action', (
+    tester,
+  ) async {
+    var editPressed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: ProfileIdentityHeader(
+            name: 'Passenger Test',
+            subtitle: 'passenger@example.com',
+            onEditPhoto: () => editPressed = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Edit profile photo'));
+    expect(editPressed, isTrue);
+  });
+
+  testWidgets('location search bars use neutral grey theme surfaces', (
+    tester,
+  ) async {
+    Future<Color?> fieldColor(ThemeMode mode) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: mode,
+          themeAnimationDuration: Duration.zero,
+          home: const Scaffold(
+            body: LocationSearchBar(hintText: 'Select pickup'),
+          ),
+        ),
+      );
+      await tester.pump();
+      final ink = tester.widget<Ink>(find.byType(Ink));
+      return (ink.decoration as BoxDecoration).color;
+    }
+
+    expect(await fieldColor(ThemeMode.light), const Color(0xFFE8ECEC));
+    expect(await fieldColor(ThemeMode.dark), const Color(0xFF293536));
   });
 }

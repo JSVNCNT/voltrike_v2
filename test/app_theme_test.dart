@@ -108,15 +108,15 @@ void main() {
               theme: AppTheme.lightTheme,
               darkTheme: AppTheme.darkTheme,
               themeMode: mode,
-              home: Scaffold(
-                body: VolTrikeSettingsView(onEditPhoto: () {}, onLogout: () {}),
-              ),
+              home: Scaffold(body: VolTrikeSettingsView(onLogout: () {})),
             );
           },
         ),
       ),
     );
 
+    expect(find.text('Change profile photo'), findsNothing);
+    expect(find.text('System diagnostics'), findsOneWidget);
     expect(
       Theme.of(tester.element(find.text('Dark mode'))).brightness,
       Brightness.light,
