@@ -43,7 +43,6 @@ export interface Driver {
   rating: number;
   ratingCount?: number;
   completedTrips: number;
-  totalEarnings: number;
   licenseNumber?: string;
   licenseExpiry?: string;
   profilePhotoUrl?: string;
@@ -127,65 +126,6 @@ export interface FareConfig {
   additionalDropoffFee: number;
 }
 
-export interface TodaCommission {
-  percent: number;
-  recommendedPercent: number;
-  maximumPercent: number;
-  updatedAt?: string | null;
-}
-
-export interface TodaCommissionReportSummary {
-  grossFare: number;
-  commissionAmount: number;
-  commissionDue: number;
-  commissionSettled: number;
-  driverNetEarnings: number;
-  completedRides: number;
-  pendingSettlements: number;
-  settledSettlements: number;
-  disputedSettlements: number;
-}
-
-export interface TodaCommissionReportItem {
-  bookingId: string;
-  receiptNumber?: string | null;
-  driverId: string;
-  driverName: string;
-  completedAt: string | null;
-  grossFare: number;
-  commissionPercent: number;
-  commissionAmount: number;
-  commissionSettlementStatus: 'due' | 'settled';
-  commissionSettledAt?: string | null;
-  driverNetEarnings: number;
-  settlementStatus: string;
-  adjustmentStatus?: string | null;
-  disputeReason?: string | null;
-}
-
-export interface TodaCommissionDriverSummary {
-  driverId: string;
-  driverName: string;
-  completedRides: number;
-  grossFare: number;
-  commissionAmount: number;
-  commissionDue: number;
-  commissionSettled: number;
-  driverNetEarnings: number;
-}
-
-export interface TodaCommissionReport {
-  summary: TodaCommissionReportSummary;
-  items: TodaCommissionReportItem[];
-  driverSummaries: TodaCommissionDriverSummary[];
-  nextCursor: string | null;
-}
-
-export interface TodaCommissionReportOptions {
-  cursor?: string | null;
-  summaryOnly?: boolean;
-}
-
 export interface LiveDriver {
   uid: string;
   name: string;
@@ -219,9 +159,6 @@ export interface OverviewAnalyticsDay {
   date: string;
   bookings: number;
   completedRides: number;
-  grossFare: number;
-  commissionAmount: number;
-  driverNetEarnings: number;
 }
 
 export interface OverviewAnalytics {
@@ -260,7 +197,6 @@ export interface BookingOperation {
   dropoffCount: number;
   activeStopIndex: number;
   passengerNote?: string | null;
-  amountDue: number;
   paymentMethod: string;
   settlementStatus: string;
   adjustmentStatus: string;

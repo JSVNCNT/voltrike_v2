@@ -4,7 +4,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { adminApi } from './admin-api';
 import { loadPhilippineLocations, type Barangay, type City, type Region } from './data/locations';
-import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, OverviewAnalytics, OverviewAnalyticsDay, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaCommissionDriverSummary, TodaCommissionReportItem, TodaCommissionReportSummary, TodaRegistration, ZoneRequest } from './types';
+import type { AdminSession, BookingOperation, Driver, DriverRatingRecord, FareConfig, LiveDriver, OverviewAnalytics, OverviewAnalyticsDay, Point, Report, RouteRestriction, SafetyIncident, Toda, TodaRegistration, ZoneRequest } from './types';
 import {
   enableAdminWebPush,
   listenForAdminPush,
@@ -23,8 +23,8 @@ const AdminLocationMap = lazy(() => import('./components/AdminLocationMap').then
 const ViolationsPage = lazy(() => import('./components/ViolationsPage').then((module) => ({ default: module.ViolationsPage })));
 const ChatSafetyPage = lazy(() => import('./components/ChatSafetyPage').then((module) => ({ default: module.ChatSafetyPage })));
 
-type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'commission' | 'ratings' | 'operations' | 'safety' | 'violations' | 'reports' | 'coverage' | 'route_rules' | 'chat_safety';
-const pages = new Set<Page>(['overview', 'todas', 'fares', 'drivers', 'live_drivers', 'commission', 'ratings', 'operations', 'safety', 'violations', 'reports', 'coverage', 'route_rules', 'chat_safety']);
+type Page = 'overview' | 'todas' | 'fares' | 'drivers' | 'live_drivers' | 'ratings' | 'operations' | 'safety' | 'violations' | 'reports' | 'coverage' | 'route_rules' | 'chat_safety';
+const pages = new Set<Page>(['overview', 'todas', 'fares', 'drivers', 'live_drivers', 'ratings', 'operations', 'safety', 'violations', 'reports', 'coverage', 'route_rules', 'chat_safety']);
 
 function useRefreshOnVisible(
   refresh: () => void | Promise<void>,
@@ -73,37 +73,8 @@ const todaEvidenceFields = [
 
 function peso(value: number) { return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value || 0); }
 function label(text: string) { return text.replace(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()); }
-function dateInputValue(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-function currentMonthRange() {
-  const now = new Date();
-  return {
-    startDate: dateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)),
-    endDate: dateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
-  };
-}
-function currentDayRange() {
-  const today = new Date();
-  const value = dateInputValue(today);
-  return { startDate: value, endDate: value };
-}
-function currentWeekRange() {
-  const today = new Date();
-  const mondayOffset = (today.getDay() + 6) % 7;
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - mondayOffset);
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
-  return { startDate: dateInputValue(start), endDate: dateInputValue(end) };
-}
 const overviewMetricsRefreshMs = 15 * 1000;
-const overviewCommissionRefreshMs = 5 * 60 * 1000;
 const overviewAnalyticsRefreshMs = 15 * 60 * 1000;
-function percentLabel(value: number) {
-  return `${new Intl.NumberFormat('en-PH', { maximumFractionDigits: 2 }).format(value || 0)}%`;
-}
 function statusLabel(value: string | null | undefined) {
   return value?.trim() ? value.split('_').join(' ') : 'not recorded';
 }
@@ -222,7 +193,7 @@ export default function App() {
   const isDeveloper = session.role === 'developer_admin';
   const visiblePages: Array<[Page, string]> = isDeveloper
     ? [['overview', 'Overview'], ['todas', 'TODAs'], ['fares', 'City fares'], ['drivers', 'Drivers'], ['live_drivers', 'Live drivers'], ['operations', 'Ride operations'], ['safety', 'Safety incidents'], ['violations', 'Violations'], ['chat_safety', 'Chat safety'], ['reports', 'Reports'], ['coverage', 'Coverage areas'], ['route_rules', 'Route restrictions']]
-    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['live_drivers', 'Live drivers'], ['commission', 'Driver commission'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['violations', 'Violations'], ['chat_safety', 'Chat reports'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
+    : [['overview', 'Overview'], ['drivers', 'My drivers'], ['live_drivers', 'Live drivers'], ['ratings', 'Driver ratings'], ['operations', 'TODA rides'], ['safety', 'TODA safety'], ['violations', 'Violations'], ['chat_safety', 'Chat reports'], ['reports', 'TODA reports'], ['coverage', 'Zone request']];
 
   function navigate(nextPage: Page) {
     setPage(nextPage);
@@ -280,7 +251,6 @@ export default function App() {
       {page === 'fares' && isDeveloper && <Fares onMessage={setMessage} />}
       {page === 'drivers' && <DriversPage todaId={isDeveloper ? undefined : session.todaId!} onMessage={setMessage} />}
       {page === 'live_drivers' && <LiveDriversPage />}
-      {page === 'commission' && !isDeveloper && <CommissionPage onMessage={setMessage} />}
       {page === 'ratings' && !isDeveloper && <RatingsPage />}
       {page === 'operations' && <OperationsPage session={session} />}
       {page === 'safety' && <SafetyIncidentsPage session={session} />}
@@ -364,18 +334,10 @@ function Overview({ session }: { session: AdminSession }) {
     safetyIncidents: 0,
     scope: session.role === 'toda_admin' ? session.todaId || '' : 'platform',
   });
-  const [commission, setCommission] = useState<{
-    percent: number;
-    summary: TodaCommissionReportSummary;
-  } | null>(null);
   const [analytics, setAnalytics] = useState<OverviewAnalytics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  const [commissionLoading, setCommissionLoading] = useState(
-    session.role === 'toda_admin',
-  );
   const [metricsError, setMetricsError] = useState('');
-  const [commissionError, setCommissionError] = useState('');
   const [analyticsError, setAnalyticsError] = useState('');
   useEffect(() => {
     let active = true;
@@ -428,72 +390,6 @@ function Overview({ session }: { session: AdminSession }) {
     };
   }, [session.role, session.todaId]);
   useEffect(() => {
-    if (session.role !== 'toda_admin') {
-      setCommissionLoading(false);
-      setCommissionError('');
-      return;
-    }
-    let active = true;
-    let inFlight = false;
-    let lastAttemptedAt = 0;
-    setCommissionLoading(true);
-    const refreshCommission = async () => {
-      const now = Date.now();
-      if (!active ||
-          inFlight ||
-          now - lastAttemptedAt < overviewCommissionRefreshMs ||
-          document.visibilityState !== 'visible') {
-        return;
-      }
-      inFlight = true;
-      lastAttemptedAt = now;
-      const range = currentMonthRange();
-      try {
-        const [configuration, report] = await Promise.all([
-          adminApi.todaCommission(),
-          adminApi.todaCommissionReport(
-            range.startDate,
-            range.endDate,
-            { summaryOnly: true },
-          ),
-        ]);
-        if (!active) return;
-        setCommission({
-          percent: configuration.percent,
-          summary: report.summary,
-        });
-        setCommissionError('');
-      } catch (reason) {
-        if (!active) return;
-        setCommissionError(reason instanceof Error
-          ? reason.message
-          : 'Unable to load this month\'s TODA commission totals.');
-      } finally {
-        inFlight = false;
-        if (active) setCommissionLoading(false);
-      }
-    };
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshCommission();
-      }
-    };
-    void refreshCommission();
-    const timer = window.setInterval(
-      () => void refreshCommission(),
-      overviewCommissionRefreshMs,
-    );
-    document.addEventListener('visibilitychange', refreshWhenVisible);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      document.removeEventListener(
-        'visibilitychange',
-        refreshWhenVisible,
-      );
-    };
-  }, [session.role, session.todaId]);
-  useEffect(() => {
     let active = true;
     let inFlight = false;
     let lastAttemptedAt = 0;
@@ -530,14 +426,13 @@ function Overview({ session }: { session: AdminSession }) {
   }, [session.role, session.todaId]);
 
   const isTodaAdmin = session.role === 'toda_admin';
-  const loading = metricsLoading || commissionLoading || analyticsLoading;
-  const error = [metricsError, commissionError, analyticsError].filter(Boolean).join(' ');
+  const loading = metricsLoading || analyticsLoading;
+  const error = [metricsError, analyticsError].filter(Boolean).join(' ');
   const completionRate = stats.bookings > 0 ? Math.round((stats.trips / stats.bookings) * 100) : 0;
   const attentionItems = [
     { label: 'Open reports', value: stats.reports, tone: 'attention' as const },
     { label: 'Open safety incidents', value: stats.safetyIncidents, tone: 'danger' as const },
     { label: 'Pending zone requests', value: stats.zones, tone: 'governance' as const },
-    ...(isTodaAdmin ? [{ label: 'Disputed settlements', value: commission?.summary.disputedSettlements || 0, tone: 'attention' as const }] : []),
   ];
 
   return <div className="overview-dashboard">
@@ -553,19 +448,12 @@ function Overview({ session }: { session: AdminSession }) {
     {analytics?.truncated && <div className="notice">The 14-day chart reached its safe record limit. Values shown are real but partial; shorten the analytics window before operational use at this volume.</div>}
 
     <div className="cards overview-hero">
-      {isTodaAdmin
-        ? <>
-          <Metric tone="operations" label="Completed rides this month" value={commission ? String(commission.summary.completedRides) : '—'} hint="Settled completed rides" />
-          <Metric tone="finance" label="Gross fares this month" value={commission ? peso(commission.summary.grossFare) : '—'} hint="Passenger cash fares" />
-          <Metric tone={commission?.summary.commissionDue ? 'attention' : 'finance'} label="Commission due" value={commission ? peso(commission.summary.commissionDue) : '—'} warning={Boolean(commission?.summary.commissionDue)} hint="Selected TODA only" />
-          <Metric tone={stats.safetyIncidents ? 'danger' : 'operations'} label="Open safety incidents" value={String(stats.safetyIncidents)} warning={Boolean(stats.safetyIncidents)} hint="Requires operational review" />
-        </>
-        : <>
-          <Metric tone="operations" label="All bookings" value={String(stats.bookings)} hint="Platform scope" />
-          <Metric tone="operations" label="Completed rides" value={String(stats.trips)} hint={`${completionRate}% completion snapshot`} />
-          <Metric tone="governance" label="Registered drivers" value={String(stats.drivers)} hint="All TODAs" />
-          <Metric tone={stats.safetyIncidents ? 'danger' : 'operations'} label="Open safety incidents" value={String(stats.safetyIncidents)} warning={Boolean(stats.safetyIncidents)} hint="Requires operational review" />
-        </>}
+      <Metric tone="governance" label="Registered drivers" value={String(stats.drivers)} />
+      <Metric tone="operations" label="All bookings" value={String(stats.bookings)} />
+      <Metric tone="operations" label="Completed rides" value={String(stats.trips)} hint={`${completionRate}% of all bookings`} />
+      <Metric tone={stats.safetyIncidents ? 'danger' : 'operations'} label="Open safety incidents" value={String(stats.safetyIncidents)} warning={Boolean(stats.safetyIncidents)} />
+      <Metric tone={stats.reports ? 'attention' : 'governance'} label="Open reports" value={String(stats.reports)} warning={Boolean(stats.reports)} />
+      <Metric tone="governance" label="Pending zone requests" value={String(stats.zones)} />
     </div>
 
     <div className="overview-charts">
@@ -579,46 +467,17 @@ function Overview({ session }: { session: AdminSession }) {
         ]}
         valueFormatter={(value) => String(value)}
       />
-      {isTodaAdmin && <DailyBarChart
-        title="14-day completed-fare distribution"
-        description="Every bar comes from settled ride snapshots; driver net plus TODA commission equals the completed gross fare."
-        days={analytics?.days || []}
-        series={[
-          { key: 'driverNetEarnings', label: 'Driver net', tone: 'finance' },
-          { key: 'commissionAmount', label: 'TODA commission', tone: 'governance' },
-        ]}
-        valueFormatter={peso}
-      />}
       <SnapshotBarChart title="Current operational workload" items={attentionItems} />
     </div>
 
-    <section className="overview-section" aria-labelledby="additional-overview-title">
-      <div className="overview-section-heading">
-        <div><p className="eyebrow">Supporting totals</p><h2 id="additional-overview-title">Additional overview</h2></div>
-      </div>
-      <div className="cards overview-secondary">
-        <Metric tone="governance" label="Registered drivers" value={String(stats.drivers)} />
-        <Metric tone="operations" label="All bookings" value={String(stats.bookings)} />
-        <Metric tone="operations" label="Completed rides" value={String(stats.trips)} hint={`${completionRate}% of all bookings`} />
-        <Metric tone={stats.reports ? 'attention' : 'governance'} label="Open reports" value={String(stats.reports)} warning={Boolean(stats.reports)} />
-        <Metric tone="governance" label="Pending zone requests" value={String(stats.zones)} />
-        {isTodaAdmin && <>
-          <Metric tone="finance" label="Current commission rate" value={commission ? percentLabel(commission.percent) : '—'} />
-          <Metric tone="finance" label="Commission earned this month" value={commission ? peso(commission.summary.commissionAmount) : '—'} />
-          <Metric tone="finance" label="Commission paid this month" value={commission ? peso(commission.summary.commissionSettled) : '—'} />
-          <Metric tone="finance" label="Driver net this month" value={commission ? peso(commission.summary.driverNetEarnings) : '—'} />
-        </>}
-      </div>
-    </section>
-
     <details className="panel overview-boundaries">
       <summary>How these figures are scoped</summary>
-      <p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These figures and commission totals are restricted by Firebase to your authenticated TODA. Monthly earnings use each completed ride’s snapshotted commission rate; changing today’s rate never recalculates older rides. Marking commission paid records a separate TODA payout and never changes the passenger cash receipt.'}</p>
+      <p>{session.role === 'developer_admin' ? 'These figures cover Firebase bookings, drivers, reports, SOS incidents, and zone requests across the platform.' : 'These operational figures are restricted by Firebase to your authenticated TODA.'}</p>
     </details>
   </div>;
 }
 
-type MetricTone = 'neutral' | 'operations' | 'finance' | 'governance' | 'attention' | 'danger';
+type MetricTone = 'neutral' | 'operations' | 'governance' | 'attention' | 'danger';
 type ChartTone = Exclude<MetricTone, 'neutral' | 'danger'> | 'danger';
 type OverviewNumericKey = Exclude<keyof OverviewAnalyticsDay, 'date'>;
 
@@ -685,234 +544,6 @@ function DailyBarChart({ title, description, days, series, valueFormatter }: {
 function SnapshotBarChart({ title, items }: { title: string; items: Array<{ label: string; value: number; tone: ChartTone }> }) {
   const maximum = Math.max(1, ...items.map((item) => item.value));
   return <section className="overview-chart snapshot-chart"><div className="chart-heading"><div><h3>{title}</h3><p>Current authenticated scope, shown with exact values.</p></div></div><div className="snapshot-bars">{items.map((item) => <div className="snapshot-bar" key={item.label}><div><span>{item.label}</span><b>{item.value}</b></div><div className="snapshot-track" aria-hidden="true"><span className={`chart-bar--${item.tone}`} style={{ width: `${item.value > 0 ? Math.max(4, (item.value / maximum) * 100) : 0}%` }} /></div></div>)}</div></section>;
-}
-
-function CommissionPage({ onMessage }: { onMessage: (value: string) => void }) {
-  const initialRange = useMemo(currentMonthRange, []);
-  const todayRange = useMemo(currentDayRange, []);
-  const weekRange = useMemo(currentWeekRange, []);
-  const [percent, setPercent] = useState(0);
-  const [recommended, setRecommended] = useState(10);
-  const [maximum, setMaximum] = useState(30);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [settlingDriverId, setSettlingDriverId] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState(initialRange.startDate);
-  const [endDate, setEndDate] = useState(initialRange.endDate);
-  const [appliedRange, setAppliedRange] = useState(initialRange);
-  const [summary, setSummary] = useState<TodaCommissionReportSummary | null>(null);
-  const [items, setItems] = useState<TodaCommissionReportItem[]>([]);
-  const [driverSummaries, setDriverSummaries] = useState<TodaCommissionDriverSummary[]>([]);
-  const [todaySummary, setTodaySummary] = useState<TodaCommissionReportSummary | null>(null);
-  const [weekSummary, setWeekSummary] = useState<TodaCommissionReportSummary | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [reportLoading, setReportLoading] = useState(true);
-  const [reportError, setReportError] = useState('');
-  useEffect(() => {
-    void adminApi.todaCommission()
-      .then((value) => {
-        setPercent(value.percent);
-        setRecommended(value.recommendedPercent);
-        setMaximum(value.maximumPercent);
-        setUpdatedAt(value.updatedAt || null);
-      })
-      .catch((error: unknown) => {
-        onMessage(error instanceof Error ? error.message : 'Unable to load the current commission setting.');
-      });
-  }, [onMessage]);
-  const loadReport = useCallback(async (cursor?: string | null, append = false) => {
-    setReportLoading(true);
-    try {
-      const report = await adminApi.todaCommissionReport(
-        appliedRange.startDate,
-        appliedRange.endDate,
-        { cursor },
-      );
-      setSummary(report.summary);
-      setItems((current) => append
-        ? [
-          ...current,
-          ...report.items.filter((item) =>
-            !current.some((existing) => existing.bookingId === item.bookingId)),
-        ]
-        : report.items);
-      if (!append) setDriverSummaries(report.driverSummaries);
-      setNextCursor(report.nextCursor);
-      setReportError('');
-    } catch (error) {
-      setReportError(error instanceof Error ? error.message : 'Unable to load the TODA commission report.');
-    } finally {
-      setReportLoading(false);
-    }
-  }, [appliedRange]);
-  const loadPeriodSummaries = useCallback(async () => {
-    try {
-      const [today, week] = await Promise.all([
-        adminApi.todaCommissionReport(todayRange.startDate, todayRange.endDate, { summaryOnly: true }),
-        adminApi.todaCommissionReport(weekRange.startDate, weekRange.endDate, { summaryOnly: true }),
-      ]);
-      setTodaySummary(today.summary);
-      setWeekSummary(week.summary);
-    } catch (error) {
-      setReportError(error instanceof Error ? error.message : 'Unable to load today and this week\'s commission totals.');
-    }
-  }, [todayRange, weekRange]);
-  useEffect(() => {
-    void loadReport();
-  }, [loadReport]);
-  useEffect(() => {
-    void loadPeriodSummaries();
-  }, [loadPeriodSummaries]);
-  function applyReportRange(event: FormEvent) {
-    event.preventDefault();
-    if (!startDate || !endDate) {
-      setReportError('Choose both a start and end date.');
-      return;
-    }
-    if (endDate < startDate) {
-      setReportError('The end date must be on or after the start date.');
-      return;
-    }
-    setItems([]);
-    setNextCursor(null);
-    const nextRange = { startDate, endDate };
-    if (nextRange.startDate === appliedRange.startDate && nextRange.endDate === appliedRange.endDate) {
-      void loadReport();
-    } else {
-      setAppliedRange(nextRange);
-    }
-  }
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    if (!window.confirm(`Set the TODA commission to ${percent}% for future ride assignments? Existing and completed rides will not be changed.`)) return;
-    setBusy(true);
-    try {
-      const value = await adminApi.setTodaCommission(percent);
-      setPercent(value.percent);
-      setUpdatedAt(value.updatedAt || null);
-      onMessage('Driver commission saved. It applies only when a future booking is assigned.');
-    } catch (error) {
-      onMessage(error instanceof Error ? error.message : 'Unable to update commission.');
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function settleDriverCommission(driver: TodaCommissionDriverSummary) {
-    if (driver.commissionDue <= 0 || settlingDriverId) return;
-    const confirmed = window.confirm(
-      `Mark ${peso(driver.commissionDue)} TODA commission as paid for ${driver.driverName} in the selected date range? This records a separate commission payout and does not change completed passenger receipts.`,
-    );
-    if (!confirmed) return;
-    setSettlingDriverId(driver.driverId);
-    try {
-      const result = await adminApi.settleDriverCommission(
-        driver.driverId,
-        appliedRange.startDate,
-        appliedRange.endDate,
-      );
-      onMessage(`${peso(result.commissionAmount)} commission settled for ${driver.driverName} across ${result.settledBookingCount} completed ride${result.settledBookingCount === 1 ? '' : 's'}.`);
-      await Promise.all([loadReport(), loadPeriodSummaries()]);
-    } catch (error) {
-      onMessage(error instanceof Error ? error.message : 'Unable to settle this driver commission.');
-    } finally {
-      setSettlingDriverId(null);
-    }
-  }
-  return <>
-    <section className="panel wide">
-      <h2>Driver commission</h2>
-      <p className="muted">Set the percentage retained by your TODA from future completed rides. The percentage is snapshotted when a driver accepts a booking, so later changes cannot rewrite existing ride earnings.</p>
-      <form className="commission-form" onSubmit={save}>
-        <label>Commission percentage<input type="range" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /></label>
-        <label className="commission-number"><input type="number" min="0" max={maximum} step="0.5" value={percent} onChange={(event) => setPercent(Number(event.target.value))} /><span>%</span></label>
-        <button type="button" onClick={() => setPercent(recommended)}>Use recommended {recommended}%</button>
-        <button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save commission'}</button>
-      </form>
-      <div className="fare-summary">Guardrails: 0–{maximum}% only, explicit confirmation, an audit record for every change, and no retroactive recalculation. Example on a ₱100 fare: driver receives {peso(100 - percent)} and TODA commission is {peso(percent)}.</div>
-      {updatedAt && <p className="muted">Last changed {new Date(updatedAt).toLocaleString('en-PH')}.</p>}
-    </section>
-    <section className="panel wide">
-      <div className="section-heading">
-        <div>
-          <h2>Completed-ride commission report</h2>
-          <p className="muted">Totals use the immutable rate captured for each ride. A ride appears only after completion; pending and already-assigned rides are not recalculated when the setting above changes.</p>
-        </div>
-        <button type="button" onClick={() => void Promise.all([loadReport(), loadPeriodSummaries()])} disabled={reportLoading}>Refresh report</button>
-      </div>
-      <form className="commission-filters" onSubmit={applyReportRange}>
-        <label>Start date<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
-        <label>End date<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} required /></label>
-        <button className="primary" disabled={reportLoading}>Apply dates</button>
-      </form>
-      {reportError && <div className="notice">{reportError}</div>}
-      <div className="cards commission-cards">
-        <Metric label="Completed rides" value={summary ? String(summary.completedRides) : '—'} />
-        <Metric label="Gross passenger fares" value={summary ? peso(summary.grossFare) : '—'} />
-        <Metric label="TODA commission earned" value={summary ? peso(summary.commissionAmount) : '—'} />
-        <Metric label="TODA commission due" value={summary ? peso(summary.commissionDue) : '—'} warning={Boolean(summary?.commissionDue)} />
-        <Metric label="TODA commission paid" value={summary ? peso(summary.commissionSettled) : '—'} />
-        <Metric label="Driver net earnings" value={summary ? peso(summary.driverNetEarnings) : '—'} />
-        <Metric label="Pending settlements" value={summary ? String(summary.pendingSettlements) : '—'} warning={Boolean(summary?.pendingSettlements)} />
-        <Metric label="Settled rides" value={summary ? String(summary.settledSettlements) : '—'} />
-        <Metric label="Disputed settlements" value={summary ? String(summary.disputedSettlements) : '—'} warning={Boolean(summary?.disputedSettlements)} />
-      </div>
-      <div className="cards commission-cards">
-        <Metric label="Completed rides today" value={todaySummary ? String(todaySummary.completedRides) : '—'} />
-        <Metric label="Commission due today" value={todaySummary ? peso(todaySummary.commissionDue) : '—'} />
-        <Metric label="Completed rides this week" value={weekSummary ? String(weekSummary.completedRides) : '—'} />
-        <Metric label="Commission due this week" value={weekSummary ? peso(weekSummary.commissionDue) : '—'} />
-      </div>
-      <section className="commission-report-section commission-driver-breakdown" aria-labelledby="commission-driver-heading">
-        <div className="commission-report-heading">
-          <div>
-            <span className="commission-section-kicker">Driver totals</span>
-            <h3 id="commission-driver-heading">Commission by registered driver</h3>
-            <p className="muted">Every driver assigned to this TODA is listed, including drivers with no completed ride in the selected date range.</p>
-          </div>
-          <span className="commission-section-count">{driverSummaries.length} driver{driverSummaries.length === 1 ? '' : 's'}</span>
-        </div>
-        <div className="table commission-table">
-          {driverSummaries.map((driver) => <div className="row commission-row commission-driver-row" key={driver.driverId}>
-            <span data-label="Driver"><b>{driver.driverName}</b><small className="technical-id">Driver: {driver.driverId}</small></span>
-            <span data-label="Completed rides"><b>{driver.completedRides}</b><small>completed ride{driver.completedRides === 1 ? '' : 's'}</small></span>
-            <span data-label="Gross fares"><b>{peso(driver.grossFare)}</b><small>gross passenger fares</small></span>
-            <span data-label="Commission"><b>{peso(driver.commissionDue)}</b><small>commission due of {peso(driver.commissionAmount)}</small></span>
-            <span data-label="Driver net"><b>{peso(driver.driverNetEarnings)}</b><small>driver net earnings</small></span>
-            <span data-label="Settlement" className={driver.commissionDue > 0 ? 'warning' : 'ok'}><b>{driver.commissionDue > 0 ? 'Due' : 'Settled'}</b><small>{peso(driver.commissionSettled)} paid</small><button type="button" onClick={() => void settleDriverCommission(driver)} disabled={driver.commissionDue <= 0 || settlingDriverId !== null}>{settlingDriverId === driver.driverId ? 'Settling…' : driver.commissionDue > 0 ? 'Mark commission settled' : 'Commission settled'}</button></span>
-          </div>)}
-          {!reportLoading && driverSummaries.length === 0 && <p className="muted">No registered drivers are available for this TODA scope.</p>}
-        </div>
-      </section>
-      <section className="commission-report-section commission-trip-history" aria-labelledby="commission-trip-heading">
-        <div className="commission-report-heading">
-          <div>
-            <span className="commission-section-kicker">Ride ledger</span>
-            <h3 id="commission-trip-heading">Trip commission history</h3>
-            <p className="muted">Each row is one completed ride, with its captured rate, TODA share, driver net earnings, receipt, and settlement status.</p>
-          </div>
-          <span className="commission-section-count">{items.length} ride{items.length === 1 ? '' : 's'} shown</span>
-        </div>
-        <div className="table commission-table">
-          {items.map((item) => {
-            const disputed = item.adjustmentStatus === 'disputed'
-              || item.settlementStatus === 'disputed';
-            return <div className="row commission-row commission-trip-row" key={item.bookingId}>
-              <span data-label="Completed"><b>{item.completedAt ? new Date(item.completedAt).toLocaleString('en-PH') : 'Completion time unavailable'}</b><small className="technical-id">Booking: {item.bookingId}</small>{item.receiptNumber && <small>Receipt: {item.receiptNumber}</small>}</span>
-              <span data-label="Driver"><b>{item.driverName || 'Driver name unavailable'}</b><small className="technical-id">Driver: {item.driverId}</small></span>
-              <span data-label="Gross fare"><b>{peso(item.grossFare)} gross</b><small>{percentLabel(item.commissionPercent)} captured rate</small></span>
-              <span data-label="Distribution"><b>{peso(item.commissionAmount)} TODA</b><small>{item.commissionSettlementStatus === 'settled' ? 'Commission paid' : 'Commission due'} · {peso(item.driverNetEarnings)} driver net</small></span>
-              <span data-label="Settlement" className={disputed ? 'warning' : item.settlementStatus === 'settled' ? 'ok' : ''}><b>{statusLabel(item.settlementStatus)}</b>{item.adjustmentStatus && <small>Adjustment: {statusLabel(item.adjustmentStatus)}</small>}{item.disputeReason && <small>{item.disputeReason}</small>}</span>
-            </div>;
-          })}
-          {reportLoading && items.length === 0 && <p className="muted">Loading completed-ride commissions…</p>}
-          {!reportLoading && !reportError && items.length === 0 && <p className="muted">No completed rides were recorded in this date range.</p>}
-        </div>
-        <div className="commission-pagination">
-          <button type="button" onClick={() => void loadReport(nextCursor, true)} disabled={reportLoading || !nextCursor}>{reportLoading && items.length > 0 ? 'Loading…' : nextCursor ? 'Load older completed rides' : 'End of results'}</button>
-        </div>
-      </section>
-    </section>
-  </>;
 }
 
 function LiveDriversPage() {
@@ -1081,7 +712,7 @@ function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value
         </div>
       </div>
       <span data-label="Status" className={`status-cell ${driver.driverStatus === 'pending' ? 'warning' : driver.driverStatus === 'approved' ? 'ok' : ''}`}>{driver.driverStatus}</span>
-      <span data-label="Performance">{todaId && <>★ {driver.rating || 0} from {driver.ratingCount || 0} ratings<br /></>}<small>{driver.completedTrips || 0} trips · {peso(driver.totalEarnings || 0)} net earnings</small></span>
+      <span data-label="Performance">{todaId && <>★ {driver.rating || 0} from {driver.ratingCount || 0} ratings<br /></>}<small>{driver.completedTrips || 0} completed trips</small></span>
       <span data-label="Actions" className="actions">
         {todaId && driver.vehicle && <button className={driver.vehicle.isVerified ? 'warning-button' : ''} onClick={() => verifyVehicle(driver, !driver.vehicle?.isVerified)}>{driver.vehicle.isVerified ? 'Remove vehicle verification' : 'Verify vehicle'}</button>}
         {todaId && (driver.driverStatus === 'pending' || driver.driverStatus === 'suspended') && <DriverReviewActions driver={driver} onApprove={(license) => update(driver, 'approved', license)} onReject={driver.driverStatus === 'pending' ? () => update(driver, 'rejected') : undefined} />}
@@ -1255,7 +886,7 @@ function OperationsPage({ session }: { session: AdminSession }) {
         <span data-label="Driver"><b>{booking.driverName || 'Searching for driver'}</b><small>{booking.plateNumber || 'No plate assigned'} · {booking.todaName || 'No TODA assigned'}</small></span>
         {(booking.routeStops.length > 2 || booking.passengerNote) && <span data-label="Ordered drop-offs"><b>{booking.dropoffCount} drop-off{booking.dropoffCount === 1 ? '' : 's'}</b>{booking.routeStops.filter((stop) => stop.type === 'dropoff').map((stop, index) => <small key={`${booking.bookingId}-${stop.sequence}`}>{index + 1}. {stop.name || stop.address || 'Drop-off'}{stop.final ? ' (final)' : ''} · {statusLabel(stop.status || 'pending')}</small>)}{booking.passengerNote && <small className="notice">Passenger note: {booking.passengerNote}</small>}</span>}
         <span data-label="Ride status" className={`status-cell ${booking.status === 'cancelled' ? 'warning' : booking.status === 'completed' ? 'ok' : ''}`}>{statusLabel(booking.status)}{booking.cancellationCode && <small>{statusLabel(booking.cancellationCode)}</small>}</span>
-        <span data-label="Fare and settlement"><b>{peso(booking.amountDue)}</b><small>{booking.paymentMethod} · {statusLabel(booking.settlementStatus)}</small><small>Adjustment: {statusLabel(booking.adjustmentStatus)}</small>{booking.receiptNumber && <small>Receipt: {booking.receiptNumber}</small>}{booking.adjustmentStatus === 'disputed' && <button onClick={() => resolveDispute(booking)}>Resolve dispute</button>}</span>
+        <span data-label="Payment status"><b>{statusLabel(booking.settlementStatus)}</b><small>{booking.paymentMethod}</small><small>Adjustment: {statusLabel(booking.adjustmentStatus)}</small>{booking.receiptNumber && <small>Receipt: {booking.receiptNumber}</small>}{booking.adjustmentStatus === 'disputed' && <button onClick={() => resolveDispute(booking)}>Resolve dispute</button>}</span>
       </div>)}
       {loading && items.length === 0 && <p className="muted">Loading Firebase bookings…</p>}
       {!loading && !error && items.length === 0 && <p className="muted">No ride operations match this search.</p>}

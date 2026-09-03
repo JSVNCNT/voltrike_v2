@@ -28,10 +28,6 @@ import type {
   RouteRestriction,
   SafetyIncident,
   Toda,
-  TodaCommission,
-  TodaCommissionDriverSummary,
-  TodaCommissionReport,
-  TodaCommissionReportOptions,
   ViolationFilters,
   ViolationMessage,
   ZoneRequest,
@@ -205,7 +201,6 @@ function normalizeDriver(value: unknown): Driver {
     rating: finiteNumber(source.rating) ?? 0,
     ratingCount: finiteNumber(source.ratingCount) ?? 0,
     completedTrips: finiteNumber(source.completedTrips) ?? 0,
-    totalEarnings: finiteNumber(source.totalEarnings) ?? 0,
     licenseNumber: textValue(source.licenseNumber),
     licenseExpiry: dateString(source.licenseExpiry) ?? undefined,
     profilePhotoUrl: textValue(source.profilePhotoUrl ?? source.profileImage) || undefined,
@@ -259,7 +254,6 @@ function normalizeBookingOperation(value: unknown): BookingOperation {
     dropoffCount: finiteNumber(source.dropoffCount) ?? Math.max(1, routeStops.filter((stop) => stop.type === 'dropoff').length),
     activeStopIndex: finiteNumber(source.activeStopIndex) ?? 0,
     passengerNote: textValue(source.passengerNote) || null,
-    amountDue: finiteNumber(source.amountDue ?? source.totalFare) ?? 0,
     paymentMethod: textValue(source.paymentMethod, 'not recorded'),
     settlementStatus: textValue(source.settlementStatus, 'not_recorded'),
     adjustmentStatus: textValue(source.adjustmentStatus, 'not_recorded'),
@@ -379,64 +373,6 @@ function normalizeSafetyIncident(value: unknown): SafetyIncident {
     lastResponseNote: textValue(source.lastResponseNote ?? source.responseNote) || null,
     resolutionNote: textValue(source.resolutionNote) || null,
   } as SafetyIncident;
-}
-
-function normalizeCommissionReport(value: unknown): TodaCommissionReport {
-  const source = asRecord(value);
-  const summary = asRecord(source.summary);
-  const items = Array.isArray(source.items) ? source.items : [];
-  const driverSummaries = Array.isArray(source.driverSummaries)
-    ? source.driverSummaries
-    : [];
-  return {
-    summary: {
-      grossFare: finiteNumber(summary.grossFare) ?? 0,
-      commissionAmount: finiteNumber(summary.commissionAmount) ?? 0,
-      commissionDue: finiteNumber(summary.commissionDue) ?? 0,
-      commissionSettled: finiteNumber(summary.commissionSettled) ?? 0,
-      driverNetEarnings: finiteNumber(summary.driverNetEarnings) ?? 0,
-      completedRides: finiteNumber(summary.completedRides ?? summary.tripCount) ?? 0,
-      pendingSettlements: finiteNumber(summary.pendingSettlements) ?? 0,
-      settledSettlements: finiteNumber(summary.settledSettlements) ?? 0,
-      disputedSettlements: finiteNumber(summary.disputedSettlements) ?? 0,
-    },
-    items: items.map((value) => {
-      const item = asRecord(value);
-      return {
-        bookingId: textValue(item.bookingId ?? item.id),
-        receiptNumber: textValue(item.receiptNumber) || null,
-        driverId: textValue(item.driverId),
-        driverName: textValue(item.driverName, 'Driver name unavailable'),
-        completedAt: dateString(item.completedAt ?? item.settlementTimestamp),
-        grossFare: finiteNumber(item.grossFare ?? item.amountDue) ?? 0,
-        commissionPercent: finiteNumber(item.commissionPercent) ?? 0,
-        commissionAmount: finiteNumber(item.commissionAmount) ?? 0,
-        commissionSettlementStatus: item.commissionSettlementStatus === 'settled'
-          ? 'settled' as const
-          : 'due' as const,
-        commissionSettledAt: dateString(item.commissionSettledAt),
-        driverNetEarnings: finiteNumber(item.driverNetEarnings) ?? 0,
-        settlementStatus: textValue(item.settlementStatus ?? item.status, 'not_recorded'),
-        adjustmentStatus: textValue(item.adjustmentStatus) || null,
-        disputeReason: textValue(item.disputeReason) || null,
-      };
-    }).filter((item) => Boolean(item.bookingId)),
-    driverSummaries: driverSummaries.map((value): TodaCommissionDriverSummary => {
-      const item = asRecord(value);
-      const driverId = textValue(item.driverId ?? item.uid);
-      return {
-        driverId,
-        driverName: textValue(item.driverName ?? item.name, 'Registered driver'),
-        completedRides: finiteNumber(item.completedRides ?? item.tripCount) ?? 0,
-        grossFare: finiteNumber(item.grossFare) ?? 0,
-        commissionAmount: finiteNumber(item.commissionAmount) ?? 0,
-        commissionDue: finiteNumber(item.commissionDue) ?? 0,
-        commissionSettled: finiteNumber(item.commissionSettled) ?? 0,
-        driverNetEarnings: finiteNumber(item.driverNetEarnings) ?? 0,
-      };
-    }).filter((item) => Boolean(item.driverId)),
-    nextCursor: textValue(source.nextCursor) || null,
-  };
 }
 
 function decodePoint(value: unknown): Point | null {
@@ -800,9 +736,6 @@ function callableErrorMessage(name: string, error: unknown): string {
   if (name === 'adminListDriverViolations') {
     return 'The server could not load restriction violations for this administrator scope. Refresh and try again.';
   }
-  if (name === 'adminGetTodaCommissionReport') {
-    return 'The server could not load this TODA commission report. Refresh and try again.';
-  }
   if (name === 'adminUpdateDriverViolation') {
     return 'The server could not update this violation case. Refresh the case and try again.';
   }
@@ -943,34 +876,6 @@ export const adminApi = {
     return Array.isArray(result.items)
       ? result.items.map(normalizeLiveDriver).filter((item) => Boolean(item.uid))
       : [];
-  },
-  todaCommission: () => call<TodaCommission>('adminGetTodaCommission', {}),
-  setTodaCommission: (percent: number) =>
-    call<TodaCommission>('adminSetTodaCommission', { percent }),
-  settleDriverCommission: (driverId: string, startDate: string, endDate: string) =>
-    call<{ settledBookingCount: number; commissionAmount: number }>(
-      'adminSettleDriverCommission',
-      { driverId, startDate, endDate },
-    ),
-  async todaCommissionReport(
-    startDate: string,
-    endDate: string,
-    options: TodaCommissionReportOptions = {},
-  ): Promise<TodaCommissionReport> {
-    const data: Record<string, unknown> = {
-      startDate,
-      endDate,
-      summaryOnly: options.summaryOnly === true,
-    };
-    if (!options.summaryOnly) {
-      data.cursor = options.cursor || '';
-      data.pageSize = 25;
-    }
-    const result = await call<unknown>(
-      'adminGetTodaCommissionReport',
-      data,
-    );
-    return normalizeCommissionReport(result);
   },
   cancelBookingForSafety: (incidentId: string) =>
     call<{ cancelled: boolean }>('adminCancelBookingForSafety', { incidentId }),

@@ -35,12 +35,11 @@ requirements as those regulations and local policies evolve.
   view receipts, and rate completed trips.
 - Lets drivers submit registration documents, be reviewed by TODA operations,
   go online, receive and accept offers, navigate to pickup and destination,
-  update trip stages, confirm cash receipt, view earnings, and communicate with
+  update trip stages, confirm cash receipt, view completed ride fares, and communicate with
   the passenger.
 - Lets system and TODA administrators manage drivers, ride operations, TODA
-  coverage and zones, fares, commissions, route restrictions, safety incidents,
-  reports, chat-safety incidents, settlements, and real-data operational
-  dashboards.
+  coverage and zones, fares, route restrictions, safety incidents, reports,
+  chat-safety incidents, settlements, and count-only operational dashboards.
 - Keeps sensitive business decisions on the server while using realtime Firebase
   data for responsive tracking and operational views.
 

@@ -50,7 +50,7 @@ class DriverEarningsController {
       total: aggregate.total,
       completedTripAmount: aggregate.completedTripAmount,
       completedTrips: aggregate.completedTrips,
-      averageFare: aggregate.averageNetEarnings,
+      averageFare: aggregate.averageFare,
     );
   }
 }

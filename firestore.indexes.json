@@ -102,14 +102,6 @@
       ]
     },
     {
-      "collectionGroup": "drivers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "todaId", "order": "ASCENDING" },
-        { "fieldPath": "totalEarnings", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "ratings",
       "queryScope": "COLLECTION",
       "fields": [
@@ -131,17 +123,6 @@
       "fields": [
         { "fieldPath": "todaId", "order": "ASCENDING" },
         { "fieldPath": "settlementTimestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "settlements",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "todaId", "order": "ASCENDING" },
-        { "fieldPath": "settlementTimestamp", "order": "DESCENDING" },
-        { "fieldPath": "commissionAmount", "order": "DESCENDING" },
-        { "fieldPath": "driverNetEarnings", "order": "DESCENDING" },
-        { "fieldPath": "grossFare", "order": "DESCENDING" }
       ]
     },
     {

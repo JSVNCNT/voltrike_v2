@@ -35,14 +35,10 @@ func TestBuildOverviewAnalyticsUsesRealScopedDocuments(t *testing.T) {
 	if got := integer(days[1], "completedRides"); got != 1 {
 		t.Fatalf("day two completed rides = %d, want 1", got)
 	}
-	if got := number(days[1], "grossFare"); got != 100 {
-		t.Fatalf("day two gross fare = %.2f, want 100", got)
-	}
-	if got := number(days[1], "commissionAmount"); got != 10 {
-		t.Fatalf("day two commission = %.2f, want 10", got)
-	}
-	if got := number(days[1], "driverNetEarnings"); got != 90 {
-		t.Fatalf("day two driver net = %.2f, want 90", got)
+	for _, field := range []string{"grossFare", "commissionAmount", "driverNetEarnings"} {
+		if _, exposed := days[1][field]; exposed {
+			t.Fatalf("admin analytics exposed financial field %q", field)
+		}
 	}
 	if result["scope"] != "toda-a" {
 		t.Fatalf("scope = %v, want toda-a", result["scope"])
@@ -83,5 +79,32 @@ func TestAdminMetricStatusOpenExcludesTerminalRecords(t *testing.T) {
 				t.Fatalf("adminMetricStatusOpen() = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestRedactAdminFinancialFields(t *testing.T) {
+	data := map[string]any{
+		"bookingId":         "booking-1",
+		"status":            "completed",
+		"amountDue":         80.0,
+		"grossFare":         80.0,
+		"commissionAmount":  2.0,
+		"driverNetEarnings": 78.0,
+		"totalEarnings":     500.0,
+		"fareBreakdown":     map[string]any{"total": 80.0},
+	}
+
+	redactAdminFinancialFields(data)
+
+	for _, field := range []string{
+		"amountDue", "grossFare", "commissionAmount", "driverNetEarnings",
+		"totalEarnings", "fareBreakdown",
+	} {
+		if _, exposed := data[field]; exposed {
+			t.Fatalf("admin record exposed financial field %q", field)
+		}
+	}
+	if data["bookingId"] != "booking-1" || data["status"] != "completed" {
+		t.Fatal("redaction removed operational booking fields")
 	}
 }

@@ -16,7 +16,7 @@ class DriverEarningsScreen extends ConsumerWidget {
     final earnings = ref.watch(driverEarningsProvider(driverId));
 
     return Scaffold(
-      appBar: const AppAppBar(title: 'Driver Earnings', centerTitle: true),
+      appBar: const AppAppBar(title: 'Completed Ride Fares', centerTitle: true),
       body: earnings.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => Center(
@@ -44,35 +44,28 @@ class DriverEarningsSummaryView extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
         _EarningsCard(
-          title: "Today's earnings",
+          title: "Today's ride fares",
           value: _currency(data.today),
           icon: Icons.today_outlined,
           accentColor: semantic.success,
         ),
         const SizedBox(height: 12),
         _EarningsCard(
-          title: 'Completed-trip amount',
-          value: _currency(data.completedTripAmount),
-          icon: Icons.receipt_long_outlined,
-          accentColor: colors.primary,
-        ),
-        const SizedBox(height: 12),
-        _EarningsCard(
-          title: 'Weekly earnings',
+          title: 'Weekly ride fares',
           value: _currency(data.week),
           icon: Icons.date_range_outlined,
           accentColor: colors.primary,
         ),
         const SizedBox(height: 12),
         _EarningsCard(
-          title: 'Monthly earnings',
+          title: 'Monthly ride fares',
           value: _currency(data.month),
           icon: Icons.calendar_month_outlined,
           accentColor: semantic.info,
         ),
         const SizedBox(height: 12),
         _EarningsCard(
-          title: 'Total net earnings',
+          title: 'Total ride fares',
           value: _currency(data.total),
           icon: Icons.payments_outlined,
           accentColor: semantic.success,
@@ -86,7 +79,7 @@ class DriverEarningsSummaryView extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _EarningsCard(
-          title: 'Average net earnings',
+          title: 'Average ride fare',
           value: _currency(data.averageFare),
           icon: Icons.account_balance_wallet_outlined,
           accentColor: semantic.warning,

@@ -135,14 +135,6 @@ func (store *Store) executeAdminOperation(ctx context.Context, principal app.Pri
 		return store.createRestriction(ctx, actor, command.Payload)
 	case "adminSetRouteRestrictionStatus":
 		return store.setRestrictionStatus(ctx, actor, command.Payload)
-	case "adminGetTodaCommission":
-		return store.getTodaCommission(ctx, actor)
-	case "adminSetTodaCommission":
-		return store.setTodaCommission(ctx, actor, command.Payload)
-	case "adminSettleDriverCommission":
-		return store.settleDriverCommission(ctx, actor, command.CommandID, command.Payload)
-	case "adminGetTodaCommissionReport":
-		return store.commissionReport(ctx, actor, command.Payload)
 	case "adminGetMetrics":
 		return store.adminMetrics(ctx, actor)
 	case "adminGetOverviewAnalytics":

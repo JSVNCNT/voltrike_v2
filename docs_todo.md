@@ -169,7 +169,7 @@ The current default configurable fare policy is:
 
 Evidence: `functions/fare-policy.js`; the portal's fare configuration; booking fare snapshots and breakdowns.
 
-The implemented payment lifecycle is cash-based, with confirmation, receipt acknowledgment, commission/settlement snapshots, and dispute support. Do not claim GCash, Maya, PayMongo, Xendit, card processing, or multiple active payment methods unless code is added later. Describe configured values as defaults, not immutable legal fares.
+The implemented payment lifecycle is cash-based, with confirmation, receipt acknowledgment, ride-price settlement snapshots, and dispute support. Do not claim GCash, Maya, PayMongo, Xendit, card processing, or multiple active payment methods unless code is added later. Describe configured values as defaults, not immutable legal fares.
 
 ### 4.7 Maps, service areas, and route restrictions
 
@@ -198,7 +198,7 @@ Documentation must distinguish a **TODA service-area boundary** from a **route-r
 
 - One React/Vite admin portal authenticates both roles.
 - System Admin sees platform-wide TODAs, fares, drivers, ride operations, safety, violations, reports, coverage areas, and route restrictions.
-- TODA Admin sees only authorized TODA-scoped drivers, live operations, commission, ratings, rides, safety, violations, reports, and coverage requests.
+- TODA Admin sees only authorized TODA-scoped drivers, live operations, ratings, rides, safety, violations, reports, and coverage requests.
 - Firestore rules and Cloud Functions enforce role/scope boundaries; the distinction is not only visual navigation.
 - Reports, SOS/safety incidents, violation cases, ratings, in-app chat, and voice-call support exist in code.
 - External emergency dispatch remains a development placeholder and must not be described as an integrated public emergency service.
@@ -378,7 +378,7 @@ For each activity flow:
 
 - Preserve the existing function structure.
 - Replace the proposed zone matrix/PHP 15-per-kilometer fallback with the actual configurable fare snapshot and breakdown.
-- Describe the cash confirmation, driver acknowledgment, commission snapshot, settlement, dispute, and receipt behavior at the appropriate level.
+- Describe the cash confirmation, driver acknowledgment, ride-price settlement, dispute, and receipt behavior at the appropriate level.
 - Remove unsupported payment gateways.
 
 #### Same-format additions to consider

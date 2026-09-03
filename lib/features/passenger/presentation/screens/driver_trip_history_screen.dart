@@ -13,7 +13,7 @@ import '../../../../data/repositories/booking_repository.dart';
 /// Future:
 /// • Trip Details
 /// • Passenger Information
-/// • Earnings Breakdown
+/// • Ride price
 /// ===========================================================================
 class DriverTripHistoryScreen
     extends ConsumerWidget {

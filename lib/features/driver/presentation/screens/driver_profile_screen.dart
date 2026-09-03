@@ -143,15 +143,6 @@ class DriverProfileScreen extends ConsumerWidget {
                           value: '${driver.completedTrips}',
                           iconColor: semantic.success,
                         ),
-                        ProfileInfoTile(
-                          icon: Icons.account_balance_wallet_outlined,
-                          label: 'Profile earnings total',
-                          value: NumberFormat.currency(
-                            locale: 'en_PH',
-                            symbol: '₱',
-                          ).format(driver.totalEarnings),
-                          iconColor: semantic.success,
-                        ),
                       ],
                     ),
                   ],

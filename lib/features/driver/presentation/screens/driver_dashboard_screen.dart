@@ -93,7 +93,7 @@ class DriverDashboardScreen extends ConsumerWidget {
                   .where((booking) => booking.status == BookingStatus.cancelled)
                   .length;
               final currentBooking = _activeBooking(bookings);
-              final fallbackToday = _todayNetEarnings(bookings);
+              final fallbackToday = _todayCompletedFares(bookings);
 
               return SafeArea(
                 child: ListView(
@@ -154,9 +154,9 @@ class DriverDashboardScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 24),
                     DashboardSection(
-                      title: 'Earnings',
+                      title: 'Completed ride fares',
                       child: DashboardMoneySummary(
-                        primaryLabel: "Today's earnings",
+                        primaryLabel: "Today's ride fares",
                         primaryValue: earnings.maybeWhen(
                           data: (summary) => _currency(summary.today),
                           orElse: () => _currency(fallbackToday),
@@ -230,9 +230,9 @@ class DriverDashboardScreen extends ConsumerWidget {
                                 Icons.account_balance_wallet_outlined,
                                 color: colors.primary,
                               ),
-                              title: const Text('Earnings details'),
+                              title: const Text('Fare totals'),
                               subtitle: const Text(
-                                'View today, week, month, and total summaries',
+                                'View completed ride prices by period',
                               ),
                               trailing: const Icon(Icons.chevron_right_rounded),
                               onTap: () => context.push(
@@ -425,7 +425,7 @@ Booking? _activeBooking(List<Booking> bookings) {
   return null;
 }
 
-double _todayNetEarnings(List<Booking> bookings) {
+double _todayCompletedFares(List<Booking> bookings) {
   final now = _manilaTime(DateTime.now());
   return bookings.fold<double>(0, (total, booking) {
     final completed = booking.completedAt == null
@@ -438,7 +438,7 @@ double _todayNetEarnings(List<Booking> bookings) {
         completed.year == now.year &&
         completed.month == now.month &&
         completed.day == now.day;
-    return completedToday ? total + booking.driverNetEarnings : total;
+    return completedToday ? total + booking.amountDue : total;
   });
 }
 

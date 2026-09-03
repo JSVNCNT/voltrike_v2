@@ -517,7 +517,6 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 			updates["todaId"] = text(acceptingDriver, "todaId")
 			updates["driverTodaId"] = text(acceptingDriver, "todaId")
 			updates["todaName"] = text(acceptingToda, "name")
-			updates["commissionPercent"] = normalizedCommission(number(acceptingToda, "driverCommissionPercent"))
 			updates["assignedAt"] = now
 			tx.Set(acceptingDriverRef, map[string]any{
 				"currentBookingId": command.BookingID,
@@ -537,9 +536,6 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 			updates["settlementTimestamp"] = now
 			updates["receiptNumber"] = settlement["receiptNumber"]
 			updates["grossFare"] = settlement["grossFare"]
-			updates["commissionPercent"] = settlement["commissionPercent"]
-			updates["commissionAmount"] = settlement["commissionAmount"]
-			updates["driverNetEarnings"] = settlement["driverNetEarnings"]
 			tx.Set(store.firestore.Collection("settlements").Doc(command.BookingID), settlement, firestore.MergeAll)
 		}
 		if next == "cancelled" {
@@ -604,7 +600,7 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 				driverUpdates["dispatchStats"] = nextDriverDispatchStats(terminalDriverData, "completed", now)
 				driverUpdates["pendingReceiptBookingId"] = command.BookingID
 				driverUpdates["completedTrips"] = integer(terminalDriverData, "completedTrips") + 1
-				driverUpdates["totalEarnings"] = number(terminalDriverData, "totalEarnings") + number(updates, "driverNetEarnings")
+				driverUpdates["totalEarnings"] = number(terminalDriverData, "totalEarnings") + number(updates, "grossFare")
 			case "cancelled":
 				outcome := "cancelled"
 				if principal.UID == driver || text(updates, "cancellationCode") == "driver_no_show" {
@@ -687,17 +683,10 @@ func withoutString(values []string, excluded string) []string {
 
 func settlementSnapshot(data map[string]any, bookingID string, now time.Time) (map[string]any, error) {
 	grossFare := number(data, "amountDue", "estimatedFare")
-	commissionPercent := number(data, "commissionPercent")
-	if math.IsNaN(grossFare) || math.IsInf(grossFare, 0) || math.IsNaN(commissionPercent) || math.IsInf(commissionPercent, 0) || grossFare < 0 || grossFare > 1_000_000_000 || commissionPercent < 0 || commissionPercent > 30 {
-		return nil, fmt.Errorf("invalid settlement amount or commission percentage")
+	if math.IsNaN(grossFare) || math.IsInf(grossFare, 0) || grossFare < 0 || grossFare > 1_000_000_000 {
+		return nil, fmt.Errorf("invalid settlement amount")
 	}
 	grossCentavos := int64(math.Round(grossFare * 100))
-	percentHundredths := int64(math.Round(commissionPercent * 100))
-	commissionCentavos := int64(math.Round(float64(grossCentavos) * float64(percentHundredths) / 10000))
-	driverNetCentavos := grossCentavos - commissionCentavos
-	if commissionCentavos < 0 || driverNetCentavos < 0 || commissionCentavos+driverNetCentavos != grossCentavos {
-		return nil, fmt.Errorf("settlement amounts do not balance")
-	}
 	receiptNumber := text(data, "receiptNumber")
 	if receiptNumber == "" {
 		cleanID := strings.Map(func(value rune) rune {
@@ -719,9 +708,6 @@ func settlementSnapshot(data map[string]any, bookingID string, now time.Time) (m
 		"paymentMethod":       "cash",
 		"amountDue":           float64(grossCentavos) / 100,
 		"grossFare":           float64(grossCentavos) / 100,
-		"commissionPercent":   float64(percentHundredths) / 100,
-		"commissionAmount":    float64(commissionCentavos) / 100,
-		"driverNetEarnings":   float64(driverNetCentavos) / 100,
 		"currency":            "PHP",
 		"status":              "settled",
 		"receiptNumber":       receiptNumber,
@@ -849,13 +835,6 @@ func firstText(primary, secondary map[string]any, keys ...string) string {
 		return value
 	}
 	return text(secondary, keys...)
-}
-
-func normalizedCommission(value float64) float64 {
-	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 30 {
-		return 0
-	}
-	return math.Round(value*100) / 100
 }
 
 func (store *Store) CreateDriverSession(ctx context.Context, principal app.Principal, command app.CreateDriverSessionCommand) (app.DriverSessionRecord, error) {

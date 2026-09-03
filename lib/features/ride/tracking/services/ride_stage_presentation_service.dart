@@ -98,7 +98,7 @@ class RideStagePresentationService {
         return const RideStagePresentation(
           status: RideStatus(
             title: 'Trip Completed',
-            description: 'The trip and driver earnings are recorded.',
+            description: 'The trip and ride payment are recorded.',
             icon: Icons.check_circle,
           ),
           primaryAction: RidePrimaryAction.viewReceipt,

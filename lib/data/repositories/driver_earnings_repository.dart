@@ -12,7 +12,7 @@ class DriverEarningsAggregate {
     required this.total,
     required this.completedTripAmount,
     required this.completedTrips,
-    required this.averageNetEarnings,
+    required this.averageFare,
   });
 
   final double today;
@@ -21,7 +21,7 @@ class DriverEarningsAggregate {
   final double total;
   final double completedTripAmount;
   final int completedTrips;
-  final double averageNetEarnings;
+  final double averageFare;
 }
 
 class DriverEarningsRepository {
@@ -55,7 +55,7 @@ class DriverEarningsRepository {
     final bookings = await _loadCompleted(driverId);
     return bookings.fold<double>(
       0,
-      (total, booking) => total + booking.driverNetEarnings,
+      (total, booking) => total + booking.amountDue,
     );
   }
 
@@ -78,7 +78,7 @@ class DriverEarningsRepository {
       if (completed.year == now.year &&
           completed.month == now.month &&
           completed.day == now.day) {
-        total += booking.driverNetEarnings;
+        total += booking.amountDue;
       }
     }
 
@@ -108,7 +108,7 @@ class DriverEarningsRepository {
       if (completed == null) continue;
 
       if (!completed.isBefore(weekStart)) {
-        total += booking.driverNetEarnings;
+        total += booking.amountDue;
       }
     }
 
@@ -132,7 +132,7 @@ class DriverEarningsRepository {
       if (completed == null) continue;
 
       if (completed.year == now.year && completed.month == now.month) {
-        total += booking.driverNetEarnings;
+        total += booking.amountDue;
       }
     }
 
@@ -163,14 +163,14 @@ class DriverEarningsRepository {
     double total = 0.0;
 
     for (final booking in bookings) {
-      total += booking.driverNetEarnings;
+      total += booking.amountDue;
     }
 
     return total / bookings.length;
   }
 
   /// Loads completed rides once, then derives every earnings period from the
-  /// same authoritative driver-net snapshot.
+  /// same authoritative completed-ride price.
   Future<DriverEarningsAggregate> loadAggregate(
     String driverId, {
     DateTime? now,
@@ -178,7 +178,7 @@ class DriverEarningsRepository {
     if (now == null) {
       try {
         final response = await _api.operation(
-          'getDriverEarningsSummary',
+          'getDriverFareSummary',
           const <String, dynamic>{},
         );
         final aggregate = _aggregateFromCallable(response);
@@ -195,7 +195,7 @@ class DriverEarningsRepository {
           total: aggregate.total,
           completedTripAmount: _completedTripAmount(bookings),
           completedTrips: aggregate.completedTrips,
-          averageNetEarnings: aggregate.averageNetEarnings,
+          averageFare: aggregate.averageFare,
         );
       } on VoltrikeApiException catch (error) {
         if (!const {
@@ -221,16 +221,16 @@ class DriverEarningsRepository {
     var total = 0.0;
     var completedTripAmount = 0.0;
     for (final booking in bookings) {
-      final net = booking.driverNetEarnings;
-      total += net;
+      final fare = booking.amountDue;
+      total += fare;
       completedTripAmount += booking.grossFare;
       final completed = booking.completedAt == null
           ? null
           : _manilaTime(booking.completedAt!);
       if (completed == null) continue;
-      if (!completed.isBefore(dayStart)) today += net;
-      if (!completed.isBefore(weekStart)) week += net;
-      if (!completed.isBefore(monthStart)) month += net;
+      if (!completed.isBefore(dayStart)) today += fare;
+      if (!completed.isBefore(weekStart)) week += fare;
+      if (!completed.isBefore(monthStart)) month += fare;
     }
 
     return DriverEarningsAggregate(
@@ -240,7 +240,7 @@ class DriverEarningsRepository {
       total: total,
       completedTripAmount: completedTripAmount,
       completedTrips: bookings.length,
-      averageNetEarnings: bookings.isEmpty ? 0 : total / bookings.length,
+      averageFare: bookings.isEmpty ? 0 : total / bookings.length,
     );
   }
 
@@ -269,7 +269,9 @@ class DriverEarningsRepository {
           ? money('completedTripAmount')
           : money('total'),
       completedTrips: completed.toInt(),
-      averageNetEarnings: money('averageNetEarnings'),
+      averageFare: data['averageFare'] is num
+          ? money('averageFare')
+          : money('averageNetEarnings'),
     );
   }
 

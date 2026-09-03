@@ -153,7 +153,7 @@ void main() {
     expect(selected, 1);
   });
 
-  testWidgets('earnings view keeps today and separates completed gross', (
+  testWidgets('fare totals show completed ride prices without a split', (
     tester,
   ) async {
     const summary = DriverEarningsSummary(
@@ -173,11 +173,11 @@ void main() {
       ),
     );
 
-    expect(find.text("Today's earnings"), findsOneWidget);
+    expect(find.text("Today's ride fares"), findsOneWidget);
     expect(find.text('₱125.00'), findsOneWidget);
-    expect(find.text('Completed-trip amount'), findsOneWidget);
-    expect(find.text('₱1000.00'), findsOneWidget);
-    expect(find.text('Total net earnings'), findsOneWidget);
+    expect(find.text('Completed-trip amount'), findsNothing);
+    expect(find.text('Total ride fares'), findsOneWidget);
+    expect(find.text('Average ride fare'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

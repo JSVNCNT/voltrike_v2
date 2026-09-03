@@ -69,11 +69,7 @@ class _ReceiptBody extends ConsumerWidget {
       final reason = await showDialog<String>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(
-            driverView
-                ? 'Request earnings review'
-                : 'Request settlement review',
-          ),
+          title: const Text('Request settlement review'),
           content: TextField(
             controller: controller,
             maxLines: 3,
@@ -124,9 +120,7 @@ class _ReceiptBody extends ConsumerWidget {
         .toLowerCase();
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(driverView ? 'Trip Earnings' : 'Trip Receipt'),
-      ),
+      appBar: AppBar(title: const Text('Trip Receipt')),
       bottomNavigationBar: _ReceiptHomeButton(
         bookingId: booking.bookingId,
         driverView: driverView,
@@ -169,7 +163,7 @@ class _ReceiptBody extends ConsumerWidget {
                     const SizedBox(height: 6),
                     Text(
                       driverView
-                          ? 'Your cash earnings have been settled.'
+                          ? 'The displayed ride price has been paid.'
                           : 'Your trip and cash payment are complete.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -178,7 +172,7 @@ class _ReceiptBody extends ConsumerWidget {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      '\u20B1${(driverView ? booking.driverNetEarnings : booking.amountDue).toStringAsFixed(2)}',
+                      '\u20B1${booking.amountDue.toStringAsFixed(2)}',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineMedium
                           ?.copyWith(
@@ -187,7 +181,7 @@ class _ReceiptBody extends ConsumerWidget {
                           ),
                     ),
                     Text(
-                      driverView ? 'Net trip earnings' : 'Amount paid',
+                      driverView ? 'Ride price' : 'Amount paid',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: colors.onSurfaceVariant,
                       ),
@@ -195,50 +189,6 @@ class _ReceiptBody extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (driverView) ...[
-                const SizedBox(height: 24),
-                Text(
-                  'Earnings breakdown',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Card(
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 6,
-                    ),
-                    child: Column(
-                      children: [
-                        _ReceiptRow(
-                          icon: Icons.payments_outlined,
-                          label: 'Gross passenger fare',
-                          value:
-                              '\u20B1${booking.grossFare.toStringAsFixed(2)}',
-                        ),
-                        const Divider(),
-                        _ReceiptRow(
-                          icon: Icons.account_balance_outlined,
-                          label:
-                              'TODA commission (${booking.commissionPercent.toStringAsFixed(2)}%)',
-                          value:
-                              '-\u20B1${booking.commissionAmount.toStringAsFixed(2)}',
-                        ),
-                        const Divider(),
-                        _ReceiptRow(
-                          icon: Icons.account_balance_wallet_outlined,
-                          label: 'Driver net earnings',
-                          value:
-                              '\u20B1${booking.driverNetEarnings.toStringAsFixed(2)}',
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
               const SizedBox(height: 24),
               Text(
                 'Trip details',
@@ -340,11 +290,7 @@ class _ReceiptBody extends ConsumerWidget {
               OutlinedButton.icon(
                 onPressed: () => _disputeSettlement(context),
                 icon: const Icon(Icons.receipt_long_outlined),
-                label: Text(
-                  driverView
-                      ? 'Request earnings review'
-                      : 'Request settlement review',
-                ),
+                label: const Text('Request settlement review'),
               ),
             ],
           ),

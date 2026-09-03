@@ -13,12 +13,9 @@ const (
 )
 
 type overviewAnalyticsDay struct {
-	date              string
-	bookings          int
-	completedRides    int
-	grossFare         float64
-	commissionAmount  float64
-	driverNetEarnings float64
+	date           string
+	bookings       int
+	completedRides int
 }
 
 // adminOverviewAnalytics returns a small, presentation-safe set of daily
@@ -114,20 +111,14 @@ func buildOverviewAnalytics(
 			continue
 		}
 		days[index].completedRides++
-		days[index].grossFare += number(settlement, "grossFare", "amountDue")
-		days[index].commissionAmount += number(settlement, "commissionAmount")
-		days[index].driverNetEarnings += number(settlement, "driverNetEarnings")
 	}
 
 	items := make([]map[string]any, 0, len(days))
 	for _, day := range days {
 		items = append(items, map[string]any{
-			"date":              day.date,
-			"bookings":          day.bookings,
-			"completedRides":    day.completedRides,
-			"grossFare":         mathRound(day.grossFare, 2),
-			"commissionAmount":  mathRound(day.commissionAmount, 2),
-			"driverNetEarnings": mathRound(day.driverNetEarnings, 2),
+			"date":           day.date,
+			"bookings":       day.bookings,
+			"completedRides": day.completedRides,
 		})
 	}
 	scope := "platform"

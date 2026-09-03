@@ -525,9 +525,6 @@ class Booking {
       'paymentMethod': paymentMethod,
       'amountDue': amountDue,
       'grossFare': grossFare,
-      'commissionPercent': commissionPercent,
-      'commissionAmount': commissionAmount,
-      'driverNetEarnings': driverNetEarnings,
       'passengerPaidAt': passengerPaidAt == null
           ? null
           : Timestamp.fromDate(passengerPaidAt!),

@@ -32,8 +32,8 @@ func (store *Store) ExecuteOperation(ctx context.Context, principal app.Principa
 		return store.updateMySafetyIncident(ctx, principal, command.Payload)
 	case "getShareTripInformation":
 		return store.getShareTripInformation(ctx, principal, command.Payload)
-	case "getDriverEarningsSummary":
-		return store.getDriverEarningsSummary(ctx, principal)
+	case "getDriverFareSummary", "getDriverEarningsSummary":
+		return store.getDriverFareSummary(ctx, principal)
 	case "startBookingCall":
 		return store.startBookingCall(ctx, principal, command.Payload)
 	case "respondBookingCall":
@@ -348,7 +348,7 @@ func (store *Store) getShareTripInformation(ctx context.Context, principal app.P
 	}, nil
 }
 
-func (store *Store) getDriverEarningsSummary(ctx context.Context, principal app.Principal) (map[string]any, error) {
+func (store *Store) getDriverFareSummary(ctx context.Context, principal app.Principal) (map[string]any, error) {
 	documents, err := store.firestore.Collection("bookings").Where("driverId", "==", principal.UID).Where("status", "==", "completed").Documents(ctx).GetAll()
 	if err != nil {
 		return nil, err
@@ -361,8 +361,8 @@ func (store *Store) getDriverEarningsSummary(ctx context.Context, principal app.
 	var todayTotal, weekTotal, monthTotal, total, completedTripAmount float64
 	for _, document := range documents {
 		data := document.Data()
-		amount := number(data, "driverNetEarnings", "grossFare", "amountDue", "estimatedFare")
-		grossFare := number(data, "grossFare", "amountDue", "estimatedFare")
+		amount := number(data, "grossFare", "amountDue", "estimatedFare")
+		grossFare := amount
 		total += amount
 		completedTripAmount += grossFare
 		completed, ok := data["completedAt"].(time.Time)
@@ -383,7 +383,7 @@ func (store *Store) getDriverEarningsSummary(ctx context.Context, principal app.
 	if len(documents) > 0 {
 		average = total / float64(len(documents))
 	}
-	return map[string]any{"today": todayTotal, "week": weekTotal, "month": monthTotal, "total": total, "completedTripAmount": completedTripAmount, "completedTrips": len(documents), "averageNetEarnings": average}, nil
+	return map[string]any{"today": todayTotal, "week": weekTotal, "month": monthTotal, "total": total, "completedTripAmount": completedTripAmount, "completedTrips": len(documents), "averageFare": average}, nil
 }
 
 func (store *Store) startBookingCall(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {
