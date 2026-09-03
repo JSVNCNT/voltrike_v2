@@ -252,42 +252,82 @@
     {
       "collectionGroup": "bookingCalls",
       "fieldPath": "purgeAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     },
     {
       "collectionGroup": "chat",
       "fieldPath": "purgeAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     },
     {
       "collectionGroup": "chatModerationIncidents",
       "fieldPath": "purgeAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     },
     {
       "collectionGroup": "command_receipts",
       "fieldPath": "expiresAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     },
     {
       "collectionGroup": "communicationDeliveries",
       "fieldPath": "expiresAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     },
     {
       "collectionGroup": "messages",
       "fieldPath": "purgeAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     },
     {
       "collectionGroup": "outbox",
       "fieldPath": "expiresAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     },
     {
       "collectionGroup": "typing",
       "fieldPath": "purgeAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     }
   ]
 }
