@@ -252,50 +252,42 @@
     {
       "collectionGroup": "bookingCalls",
       "fieldPath": "purgeAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     },
     {
       "collectionGroup": "chat",
       "fieldPath": "purgeAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     },
     {
       "collectionGroup": "chatModerationIncidents",
       "fieldPath": "purgeAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     },
     {
       "collectionGroup": "command_receipts",
       "fieldPath": "expiresAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     },
     {
       "collectionGroup": "communicationDeliveries",
       "fieldPath": "expiresAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     },
     {
       "collectionGroup": "messages",
       "fieldPath": "purgeAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     },
     {
       "collectionGroup": "outbox",
       "fieldPath": "expiresAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     },
     {
       "collectionGroup": "typing",
       "fieldPath": "purgeAt",
-      "ttl": true,
-      "indexes": []
+      "ttl": true
     }
   ]
 }
