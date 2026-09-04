@@ -126,6 +126,7 @@ class _RideTypeCard extends StatelessWidget {
         ? Color.alphaBlend(colors.primary.withValues(alpha: 0.10), baseColor)
         : baseColor;
     final borderColor = selected ? colors.primary : colors.outlineVariant;
+    final assetPath = type.assetPathFor(Theme.of(context).brightness);
 
     return Semantics(
       button: true,
@@ -146,7 +147,7 @@ class _RideTypeCard extends StatelessWidget {
           child: InkWell(
             onTap: enabled ? onTap : null,
             child: SizedBox(
-              height: 174,
+              height: 182,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
                 child: Column(
@@ -180,13 +181,22 @@ class _RideTypeCard extends StatelessWidget {
                       ],
                     ),
                     Expanded(
-                      child: Center(
-                        child: Image.asset(
-                          type.assetPath,
-                          height: 78,
-                          fit: BoxFit.contain,
-                          semanticLabel: '${type.label} vehicle',
-                          filterQuality: FilterQuality.medium,
+                      child: ClipRect(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: AnimatedScale(
+                            scale: selected ? 1.03 : 1,
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            child: Image.asset(
+                              assetPath,
+                              key: ValueKey(assetPath),
+                              width: double.infinity,
+                              fit: BoxFit.contain,
+                              semanticLabel: '${type.label} vehicle',
+                              filterQuality: FilterQuality.medium,
+                            ),
+                          ),
                         ),
                       ),
                     ),

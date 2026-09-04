@@ -130,8 +130,52 @@ void main() {
     expect(find.text('E-Trike'), findsOneWidget);
     expect(find.text('E-Tuktuk'), findsOneWidget);
     expect(find.byType(Image), findsNWidgets(2));
+    expect(
+      find.image(const AssetImage('assets/images/etrike_white.png')),
+      findsOneWidget,
+    );
+    expect(
+      find.image(const AssetImage('assets/images/etuktuk_white.png')),
+      findsOneWidget,
+    );
     expect(find.textContaining('maximum capacity of 2'), findsOneWidget);
     await tester.tap(find.text('E-Trike'));
     expect(selected, isNull);
+  });
+
+  testWidgets('ride selector uses black vehicle assets in light mode', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.light(),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              child: RideTypeSelector(
+                selectedType: RideType.eTrike,
+                passengerCount: 1,
+                eTrikeFare: 'PHP 45.00',
+                eTuktukFare: 'PHP 55.00',
+                eTrikeEnabled: true,
+                eTuktukEnabled: true,
+                onSelected: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.image(const AssetImage('assets/images/etrike_black.png')),
+      findsOneWidget,
+    );
+    expect(
+      find.image(const AssetImage('assets/images/etuktuk_black.png')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 }
