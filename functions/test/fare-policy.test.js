@@ -10,12 +10,24 @@ const {
   calculateFareBreakdown,
   fareSnapshot,
   roundCurrency,
+  normalizeRideType,
 } = require('../fare-policy');
 
 test('fare snapshots are versioned and legacy-safe', () => {
   assert.deepEqual(fareSnapshot(null), DEFAULT_FARE);
   assert.equal(fareSnapshot({ version: 4, baseFare: 30 }).version, 4);
   assert.equal(fareSnapshot({ version: 4, baseFare: 30 }).baseFare, 30);
+});
+
+test('ride type adjustment is normalized and included once', () => {
+  const breakdown = calculateFareBreakdown({
+    config: DEFAULT_FARE,
+    distanceMeters: 1000,
+    requestedVehicleType: 'Electric Tuktuk',
+  });
+  assert.equal(normalizeRideType('Electric Tuktuk'), 'electric_tuktuk');
+  assert.equal(breakdown.rideTypeFare, 10);
+  assert.equal(breakdown.total, 30);
 });
 
 test('backend fare matches the stepped VolTrike formula', () => {

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/services/fare_service.dart';
+import 'package:voltrike_v2/data/models/ride_type.dart';
 
 void main() {
   final fixture =
@@ -43,6 +44,16 @@ void main() {
   test('half-cent currency values round identically to Node', () {
     expect(FareService.roundCurrency(10.075), 10.08);
     expect(FareService.roundCurrency(1.005), 1.01);
+  });
+
+  test('E-Tuktuk adjustment is included exactly once', () {
+    final result = FareService.calculateFare(
+      config: devFareConfiguration,
+      distanceMeters: 1000,
+      rideType: RideType.eTuktuk,
+    );
+    expect(result.rideTypeFare, 10);
+    expect(result.totalFare, 30);
   });
 }
 

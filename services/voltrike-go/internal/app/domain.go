@@ -56,6 +56,7 @@ type CreateBookingCommand struct {
 	DestinationAddress   string          `json:"destinationAddress"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
+	RequestedVehicleType string          `json:"requestedVehicleType"`
 	PassengerNote        string          `json:"passengerNote,omitempty"`
 	QuoteToken           string          `json:"quoteToken"`
 }
@@ -179,6 +180,10 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 		return BookingRecord{}, fmt.Errorf("%w: %v", ErrInvalidArgument, normalizeErr)
 	}
 	command.Pickup, command.Destination, command.RouteStops = stops[0].Location, stops[len(stops)-1].Location, stops
+	command.RequestedVehicleType = resolvedRideType(command.RequestedVehicleType, command.AdditionalPassengers+1)
+	if command.RequestedVehicleType == "" || !core.RideTypeCanCarry(command.RequestedVehicleType, command.AdditionalPassengers+1) {
+		return BookingRecord{}, fmt.Errorf("%w: requestedVehicleType is invalid for this booking", ErrInvalidArgument)
+	}
 	command.PassengerNote = strings.TrimSpace(command.PassengerNote)
 	if len([]rune(command.PassengerNote)) > 120 {
 		return BookingRecord{}, fmt.Errorf("%w: passengerNote must be 120 characters or fewer", ErrInvalidArgument)
@@ -203,6 +208,7 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 		RouteStops:           command.RouteStops,
 		AdditionalPassengers: command.AdditionalPassengers,
 		BaggageCount:         command.BaggageCount,
+		RequestedVehicleType: command.RequestedVehicleType,
 		QuoteToken:           command.QuoteToken,
 	})
 	if err != nil {
@@ -219,8 +225,9 @@ func (service *Service) CreateBooking(ctx context.Context, principal Principal, 
 	candidates, dispatchErr := service.DispatchCandidates(ctx, DispatchRequest{
 		Pickup: command.Pickup, PrimaryTodaIDs: quote.Coverage.PrimaryTodaIDs,
 		SecondaryTodaIDs: quote.Coverage.SecondaryTodaIDs, AllowAnyActiveToda: quote.Coverage.AllowAnyActiveToda,
-		MaximumResults: 5,
-		RequiredSeats:  command.AdditionalPassengers + 1,
+		MaximumResults:       5,
+		RequiredSeats:        command.AdditionalPassengers + 1,
+		RequestedVehicleType: command.RequestedVehicleType,
 	})
 	// Booking creation is already committed at this point. Dispatch is a
 	// retryable projection and must never turn a successful idempotent create

@@ -14,6 +14,7 @@ import '../../../../core/services/route_restriction_service.dart';
 import '../../../../core/services/routes_service.dart';
 import '../../../../core/services/toda_coverage_service.dart';
 import '../../../../data/models/place_prediction.dart';
+import '../../../../data/models/ride_type.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_provider.dart';
@@ -301,6 +302,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         additionalDestination: additionalDestination,
         additionalPassengers: previousSession.additionalPassengers,
         baggageCount: previousSession.baggageCount,
+        rideType: previousSession.rideType,
       );
       if (!mounted || calculationGeneration != _routeCalculationGeneration) {
         return;
@@ -344,6 +346,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 baggageFee: component('baggageFare'),
                 boundarySurcharge: component('boundarySurcharge'),
                 additionalDropoffFare: component('additionalDropoffFare'),
+                rideTypeFare: component('rideTypeFare'),
                 estimatedFare: goQuote.estimatedFare,
                 isOutsideToda: goQuote.isOutsideToda,
                 goQuoteToken: goQuote.quoteToken,
@@ -488,6 +491,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       baggageCount: booking.baggageCount,
       isOutsideToda: coverage.isOutsideToda,
       dropoffCount: booking.dropoffCount,
+      rideType: booking.rideType,
     );
 
     ref
@@ -513,6 +517,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             boundarySurcharge: fare.boundarySurcharge,
             additionalDropoffFare: fare.additionalDropoffFare,
             estimatedFare: fare.totalFare,
+            rideTypeFare: fare.rideTypeFare,
             isOutsideToda: coverage.isOutsideToda,
 
             hasRoute: true,
@@ -568,6 +573,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       baggageCount: session.baggageCount,
       isOutsideToda: session.isOutsideToda,
       dropoffCount: session.dropoffCount,
+      rideType: session.rideType,
     );
 
     ref
@@ -581,6 +587,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             boundarySurcharge: fare.boundarySurcharge,
             additionalDropoffFare: fare.additionalDropoffFare,
             estimatedFare: fare.totalFare,
+            rideTypeFare: fare.rideTypeFare,
           ),
         );
   }
@@ -593,11 +600,16 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
     final session = ref.read(bookingSessionProvider);
     if (session.additionalPassengers >= 3) return;
 
+    final passengerCount = session.additionalPassengers + 2;
+    final rideType = session.rideType.canCarry(passengerCount)
+        ? session.rideType
+        : RideType.eTuktuk;
     ref
         .read(bookingSessionProvider.notifier)
         .update(
           session.copyWith(
             additionalPassengers: session.additionalPassengers + 1,
+            rideType: rideType,
             goQuoteToken: '',
             clearGoQuoteExpiry: true,
           ),
@@ -624,6 +636,42 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         );
 
     _recalculateFare();
+  }
+
+  void _selectRideType(RideType rideType) {
+    final session = ref.read(bookingSessionProvider);
+    final passengerCount = session.additionalPassengers + 1;
+    final config = _fareConfiguration;
+    if (!rideType.canCarry(passengerCount) ||
+        !config.isRideTypeEnabled(rideType) ||
+        rideType == session.rideType) {
+      return;
+    }
+    ref
+        .read(bookingSessionProvider.notifier)
+        .update(
+          session.copyWith(
+            rideType: rideType,
+            goQuoteToken: '',
+            clearGoQuoteExpiry: true,
+          ),
+        );
+    _recalculateFare();
+  }
+
+  RideType _availableRideType(
+    BookingSession session,
+    FareConfiguration config,
+  ) {
+    final passengerCount = session.additionalPassengers + 1;
+    if (session.rideType.canCarry(passengerCount) &&
+        config.isRideTypeEnabled(session.rideType)) {
+      return session.rideType;
+    }
+    return RideType.values.firstWhere(
+      (type) => type.canCarry(passengerCount) && config.isRideTypeEnabled(type),
+      orElse: () => session.rideType,
+    );
   }
 
   //==========================================================================
@@ -681,12 +729,45 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         return;
       }
       Future<void>.microtask(() {
+        if (mounted) {
+          final session = ref.read(bookingSessionProvider);
+          final config = next.value!;
+          final availableType = _availableRideType(session, config);
+          if (availableType != session.rideType) {
+            ref
+                .read(bookingSessionProvider.notifier)
+                .update(
+                  session.copyWith(
+                    rideType: availableType,
+                    goQuoteToken: '',
+                    clearGoQuoteExpiry: true,
+                  ),
+                );
+          }
+        }
         if (mounted && ref.read(bookingSessionProvider).hasRoute) {
           _recalculateFare();
         }
       });
     });
     final session = ref.watch(bookingSessionProvider);
+    final fareConfiguration =
+        ref.watch(fareConfigurationProvider).value ?? devFareConfiguration;
+    final passengerCount = session.additionalPassengers + 1;
+    double fareFor(RideType rideType) => session.hasRoute
+        ? FareService.calculateFare(
+            config: fareConfiguration,
+            distanceMeters: session.distanceMeters,
+            passengerCount: passengerCount,
+            baggageCount: session.baggageCount,
+            isOutsideToda: session.isOutsideToda,
+            dropoffCount: session.dropoffCount,
+            rideType: rideType,
+          ).totalFare
+        : 0;
+    final selectedRideIsAvailable =
+        session.rideType.canCarry(passengerCount) &&
+        fareConfiguration.isRideTypeEnabled(session.rideType);
 
     final bookingState = ref.watch(bookingProvider);
     final routeSelectionLocked =
@@ -773,6 +854,15 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 isOutsideToda: session.isOutsideToda,
 
                 routeAdvisory: session.routeAdvisory,
+                rideTypeFare: '₱${session.rideTypeFare.toStringAsFixed(2)}',
+                selectedRideType: session.rideType,
+                eTrikeFare: '₱${fareFor(RideType.eTrike).toStringAsFixed(2)}',
+                eTuktukFare: '₱${fareFor(RideType.eTuktuk).toStringAsFixed(2)}',
+                eTrikeEnabled: fareConfiguration.eTrikeEnabled,
+                eTuktukEnabled: fareConfiguration.eTuktukEnabled,
+                onRideTypeSelected: routeSelectionLocked
+                    ? null
+                    : _selectRideType,
 
                 hasRoute: session.hasRoute,
 
@@ -788,7 +878,10 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
 
                 onDecreaseBaggage: _decreaseBaggage,
 
-                onBookRide: session.hasRoute && !_bookingCreationInProgress
+                onBookRide:
+                    session.hasRoute &&
+                        selectedRideIsAvailable &&
+                        !_bookingCreationInProgress
                     ? _bookRide
                     : null,
               );
@@ -954,6 +1047,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       additionalDestination: session.additionalDestination,
       additionalPassengers: session.additionalPassengers,
       baggageCount: session.baggageCount,
+      rideType: session.rideType,
     );
     if (quote == null || quote.quoteToken.trim().isEmpty) {
       throw const GoQuoteException(
@@ -990,6 +1084,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
       baggageFee: component('baggageFare'),
       boundarySurcharge: component('boundarySurcharge'),
       additionalDropoffFare: component('additionalDropoffFare'),
+      rideTypeFare: component('rideTypeFare'),
       estimatedFare: quote.estimatedFare,
       isOutsideToda: quote.isOutsideToda,
       goQuoteToken: quote.quoteToken,

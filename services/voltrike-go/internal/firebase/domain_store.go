@@ -134,6 +134,7 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 			"estimatedFare":              quote.EstimatedFare,
 			"amountDue":                  quote.EstimatedFare,
 			"additionalPassengers":       command.AdditionalPassengers,
+			"requestedVehicleType":       command.RequestedVehicleType,
 			"baggageCount":               command.BaggageCount,
 			"fareSnapshot":               fareSnapshot,
 			"fareBreakdown":              fareBreakdown,
@@ -351,7 +352,7 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 					return fmt.Errorf("%w: driver vehicle or TODA is unavailable", app.ErrPrecondition)
 				}
 				acceptingVehicle, acceptingToda = vehicleSnapshot.Data(), todaSnapshot.Data()
-				if !booleanDefault(acceptingVehicle, false, "isVerified") || !vehicleCanServe(acceptingVehicle, integer(data, "additionalPassengers")+1) || !booleanDefault(acceptingToda, false, "isActive") || text(acceptingDriver, "licenseNumber") == "" || !futureTime(acceptingDriver["licenseExpiry"], time.Now().UTC()) {
+				if !booleanDefault(acceptingVehicle, false, "isVerified") || !vehicleCanServe(acceptingVehicle, integer(data, "additionalPassengers")+1, text(data, "requestedVehicleType")) || !booleanDefault(acceptingToda, false, "isActive") || text(acceptingDriver, "licenseNumber") == "" || !futureTime(acceptingDriver["licenseExpiry"], time.Now().UTC()) {
 					return fmt.Errorf("%w: driver vehicle, TODA, or license is not eligible", app.ErrPrecondition)
 				}
 			}
@@ -792,19 +793,16 @@ func contains(values []string, expected string) bool {
 	return false
 }
 
-func vehicleCanServe(vehicle map[string]any, requiredSeats int) bool {
+func vehicleCanServe(vehicle map[string]any, requiredSeats int, requestedVehicleTypes ...string) bool {
 	capacity := integer(vehicle, "capacity")
 	if requiredSeats < 1 || requiredSeats > 4 || capacity < requiredSeats {
 		return false
 	}
-	vehicleType := strings.ToLower(firstText(vehicle, vehicle, "vehicleType", "type", "model", "vehicleNumber"))
-	vehicleType = strings.Map(func(value rune) rune {
-		if value >= 'a' && value <= 'z' {
-			return value
-		}
-		return -1
-	}, vehicleType)
-	return requiredSeats <= 2 || vehicleType == "electrictuktuk" || vehicleType == "etuktuk" || vehicleType == "electrictricycle"
+	vehicleType := core.NormalizeRideType(firstText(vehicle, vehicle, "vehicleType", "type", "vehicleNumber", "model"))
+	if len(requestedVehicleTypes) > 0 && strings.TrimSpace(requestedVehicleTypes[0]) != "" {
+		return vehicleType != "" && vehicleType == core.NormalizeRideType(requestedVehicleTypes[0])
+	}
+	return requiredSeats <= 2 || vehicleType == "electric_tuktuk"
 }
 
 func personName(profile map[string]any) string {

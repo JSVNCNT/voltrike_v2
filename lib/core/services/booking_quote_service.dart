@@ -1,6 +1,7 @@
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../data/models/route_policy_advisory.dart';
+import '../../data/models/ride_type.dart';
 import 'voltrike_api.dart';
 
 typedef BookingQuoteRequest =
@@ -107,7 +108,11 @@ class BookingQuoteService {
     LatLng? additionalDestination,
     required int additionalPassengers,
     required int baggageCount,
+    RideType? rideType,
   }) async {
+    final resolvedRideType =
+        rideType ??
+        (additionalPassengers + 1 >= 3 ? RideType.eTuktuk : RideType.eTrike);
     final finalDestination = additionalDestination ?? destination;
     final routeStops = <Map<String, dynamic>>[
       {
@@ -147,6 +152,7 @@ class BookingQuoteService {
       'routeStops': routeStops,
       'additionalPassengers': additionalPassengers,
       'baggageCount': baggageCount,
+      'requestedVehicleType': resolvedRideType.value,
     };
     try {
       final Object? response;
@@ -159,6 +165,7 @@ class BookingQuoteService {
           routeStops: routeStops,
           additionalPassengers: additionalPassengers,
           baggageCount: baggageCount,
+          requestedVehicleType: resolvedRideType.value,
         );
       }
       return GoBookingQuote.fromCallable(response);

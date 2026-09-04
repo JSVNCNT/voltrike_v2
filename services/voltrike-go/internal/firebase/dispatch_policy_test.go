@@ -36,3 +36,17 @@ func TestDispatchServicePriority(t *testing.T) {
 		t.Fatalf("fallback TODA priority = %d, want 2", got)
 	}
 }
+
+func TestVehicleCanServeHonorsRequestedRideType(t *testing.T) {
+	eTrike := map[string]any{"vehicleNumber": "E-Trike", "capacity": 2}
+	eTuktuk := map[string]any{"vehicleNumber": "Electric Tuktuk", "capacity": 4}
+	if !vehicleCanServe(eTrike, 2, "e_trike") || vehicleCanServe(eTrike, 2, "electric_tuktuk") {
+		t.Fatal("E-Trike matching ignored the requested ride type")
+	}
+	if !vehicleCanServe(eTuktuk, 2, "electric_tuktuk") || vehicleCanServe(eTuktuk, 2, "e_trike") {
+		t.Fatal("E-Tuktuk matching ignored the requested ride type")
+	}
+	if vehicleCanServe(eTrike, 3, "e_trike") {
+		t.Fatal("E-Trike exceeded its registered two-passenger capacity")
+	}
+}

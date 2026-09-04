@@ -64,6 +64,7 @@ class VoltrikeApi {
     List<Map<String, dynamic>> routeStops = const [],
     required int additionalPassengers,
     required int baggageCount,
+    String requestedVehicleType = 'e_trike',
   }) async {
     final response = await _request(
       'POST',
@@ -74,6 +75,7 @@ class VoltrikeApi {
         if (routeStops.isNotEmpty) 'routeStops': routeStops,
         'additionalPassengers': additionalPassengers,
         'baggageCount': baggageCount,
+        'requestedVehicleType': requestedVehicleType,
       },
     );
     final data = _record(response['data']);

@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import '../../data/models/ride_type.dart';
+
 /// ===========================================================================
 /// Fare Configuration
 ///
@@ -20,6 +22,10 @@ class FareConfiguration {
     required this.baggageFee,
     required this.outsideTodaSurcharge,
     this.additionalDropoffFee = 10,
+    this.eTrikeSurcharge = 0,
+    this.eTuktukSurcharge = 10,
+    this.eTrikeEnabled = true,
+    this.eTuktukEnabled = true,
   });
 
   final int version;
@@ -51,6 +57,20 @@ class FareConfiguration {
   /// Outside TODA surcharge.
   final double outsideTodaSurcharge;
   final double additionalDropoffFee;
+  final double eTrikeSurcharge;
+  final double eTuktukSurcharge;
+  final bool eTrikeEnabled;
+  final bool eTuktukEnabled;
+
+  bool isRideTypeEnabled(RideType rideType) => switch (rideType) {
+    RideType.eTrike => eTrikeEnabled,
+    RideType.eTuktuk => eTuktukEnabled,
+  };
+
+  double rideTypeSurcharge(RideType rideType) => switch (rideType) {
+    RideType.eTrike => eTrikeSurcharge,
+    RideType.eTuktuk => eTuktukSurcharge,
+  };
 }
 
 /// ===========================================================================
@@ -82,6 +102,8 @@ const FareConfiguration devFareConfiguration = FareConfiguration(
 
   // One flat charge when a passenger adds a second drop-off.
   additionalDropoffFee: 10,
+  eTrikeSurcharge: 0,
+  eTuktukSurcharge: 10,
 );
 
 /// ===========================================================================
@@ -99,6 +121,7 @@ class FareResult {
     required this.distanceMeters,
     required this.additionalPassengers,
     required this.baggageCount,
+    required this.rideTypeFare,
   });
 
   final double baseFare;
@@ -119,6 +142,7 @@ class FareResult {
   final int additionalPassengers;
 
   final int baggageCount;
+  final double rideTypeFare;
 }
 
 /// ===========================================================================
@@ -150,6 +174,7 @@ class FareService {
     bool isOutsideToda = false,
 
     int dropoffCount = 1,
+    RideType rideType = RideType.eTrike,
   }) {
     //----------------------------------------------------------------------
     // Distance Charge
@@ -190,6 +215,9 @@ class FareService {
     final additionalDropoffs = max(0, dropoffCount - 1);
     final additionalDropoffFeeCentavos =
         additionalDropoffs * _toCentavos(config.additionalDropoffFee);
+    final rideTypeFareCentavos = _toCentavos(
+      config.rideTypeSurcharge(rideType),
+    );
 
     //----------------------------------------------------------------------
     // Total
@@ -202,7 +230,8 @@ class FareService {
         passengerFeeCentavos +
         baggageFeeCentavos +
         boundaryFeeCentavos +
-        additionalDropoffFeeCentavos;
+        additionalDropoffFeeCentavos +
+        rideTypeFareCentavos;
 
     return FareResult(
       baseFare: _fromCentavos(baseFareCentavos),
@@ -215,6 +244,7 @@ class FareService {
       distanceMeters: distanceMeters,
       additionalPassengers: additionalPassengers,
       baggageCount: normalizedBaggageCount,
+      rideTypeFare: _fromCentavos(rideTypeFareCentavos),
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 import 'model_date_parser.dart';
 import 'route_policy_advisory.dart';
+import 'ride_type.dart';
 
 /// ===========================================================================
 /// Booking Status
@@ -140,6 +141,7 @@ class Booking {
     required this.destinationAddress,
     required this.distanceMeters,
     required this.estimatedFare,
+    this.requestedVehicleType = 'e_trike',
     this.authoritativeRoutePolyline = '',
     this.fareVersion = 0,
     this.fareSnapshot = const <String, dynamic>{},
@@ -236,6 +238,8 @@ class Booking {
   final int distanceMeters;
 
   final double estimatedFare;
+  final String requestedVehicleType;
+  RideType get rideType => RideType.fromValue(requestedVehicleType);
   final String authoritativeRoutePolyline;
   final int fareVersion;
   final Map<String, dynamic> fareSnapshot;
@@ -404,6 +408,9 @@ class Booking {
       ], fallback: 'Destination'),
       distanceMeters: _asInt(data['distanceMeters']),
       estimatedFare: _asDouble(data['estimatedFare']),
+      requestedVehicleType: RideType.fromValue(
+        data['requestedVehicleType'],
+      ).value,
       authoritativeRoutePolyline: _asString(data['authoritativeRoutePolyline']),
       fareVersion: _asInt(
         data['fareVersion'],
@@ -515,6 +522,7 @@ class Booking {
       'destinationAddress': destinationAddress,
       'distanceMeters': distanceMeters,
       'estimatedFare': estimatedFare,
+      'requestedVehicleType': requestedVehicleType,
       'authoritativeRoutePolyline': authoritativeRoutePolyline,
       'fareVersion': fareVersion,
       'fareSnapshot': fareSnapshot,
@@ -605,6 +613,7 @@ class Booking {
     String? destinationAddress,
     int? distanceMeters,
     double? estimatedFare,
+    String? requestedVehicleType,
     String? authoritativeRoutePolyline,
     int? fareVersion,
     Map<String, dynamic>? fareSnapshot,
@@ -680,6 +689,7 @@ class Booking {
       destinationAddress: destinationAddress ?? this.destinationAddress,
       distanceMeters: distanceMeters ?? this.distanceMeters,
       estimatedFare: estimatedFare ?? this.estimatedFare,
+      requestedVehicleType: requestedVehicleType ?? this.requestedVehicleType,
       authoritativeRoutePolyline:
           authoritativeRoutePolyline ?? this.authoritativeRoutePolyline,
       fareVersion: fareVersion ?? this.fareVersion,

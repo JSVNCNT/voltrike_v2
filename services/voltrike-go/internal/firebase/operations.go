@@ -850,12 +850,16 @@ func (store *Store) createDriverRegistration(ctx context.Context, principal app.
 		"revision": 1, "schemaVersion": 2, "createdAt": now, "updatedAt": now,
 	}
 	capacity := integer(rawVehicle, "capacity")
-	if capacity < 1 || capacity > 20 {
-		return nil, fmt.Errorf("%w: vehicle capacity must be between 1 and 20", app.ErrInvalidArgument)
+	rideType := core.NormalizeRideType(text(rawVehicle, "vehicleNumber", "vehicleType", "type"))
+	if rideType == "" {
+		return nil, fmt.Errorf("%w: vehicle type must be E-Trike or Electric Tuktuk", app.ErrInvalidArgument)
+	}
+	if (rideType == "e_trike" && capacity != 2) || (rideType == "electric_tuktuk" && (capacity < 3 || capacity > 4)) {
+		return nil, fmt.Errorf("%w: E-Trike capacity must be 2; Electric Tuktuk capacity must be 3 or 4", app.ErrInvalidArgument)
 	}
 	vehicle := map[string]any{
 		"id": vehicleID, "driverId": principal.UID, "plateNumber": truncate(text(rawVehicle, "plateNumber"), 40),
-		"vehicleNumber": truncate(text(rawVehicle, "vehicleNumber"), 80), "model": truncate(text(rawVehicle, "model"), 120),
+		"vehicleNumber": truncate(text(rawVehicle, "vehicleNumber"), 80), "vehicleType": rideType, "model": truncate(text(rawVehicle, "model"), 120),
 		"color": truncate(text(rawVehicle, "color"), 40), "capacity": capacity, "isVerified": false,
 		"schemaVersion": 2, "createdAt": now, "updatedAt": now,
 	}

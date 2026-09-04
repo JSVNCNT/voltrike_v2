@@ -72,6 +72,7 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
         'distanceMeters': session.distanceMeters,
         'estimatedFare': session.estimatedFare,
         'additionalPassengers': session.additionalPassengers,
+        'requestedVehicleType': session.rideType.value,
         'baggageCount': session.baggageCount,
         'isOutsideToda': session.isOutsideToda,
         'routePolicy': session.routePolicy.toMap(),
@@ -119,6 +120,7 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
                 session.finalDestinationAddress ?? destinationAddress,
             distanceMeters: session.distanceMeters,
             estimatedFare: session.estimatedFare,
+            requestedVehicleType: session.rideType.value,
             additionalPassengers: session.additionalPassengers,
             baggageCount: session.baggageCount,
             isOutsideToda: session.isOutsideToda,
@@ -177,6 +179,7 @@ class BookingController extends StateNotifier<AsyncValue<void>> {
       additionalDestination: session.additionalDestination,
       additionalPassengers: session.additionalPassengers,
       baggageCount: session.baggageCount,
+      rideType: session.rideType,
     );
     if (refreshed == null || refreshed.quoteToken.trim().isEmpty) {
       throw StateError('The route quote could not be refreshed. Try again.');

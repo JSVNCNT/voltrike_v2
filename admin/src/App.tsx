@@ -59,7 +59,7 @@ function adminRoute(): { page: Page; violationId: string | null } {
       : 'overview';
   return { page, violationId };
 }
-const initialFare: FareConfig = { baseFare: 20, includedMeters: 1000, distanceStepMeters: 500, distanceStepPrice: 5, additionalPassengerFee: 40, baggageFee: 20, outsideTodaSurcharge: 20, additionalDropoffFee: 10 };
+const initialFare: FareConfig = { baseFare: 20, includedMeters: 1000, distanceStepMeters: 500, distanceStepPrice: 5, additionalPassengerFee: 40, baggageFee: 20, outsideTodaSurcharge: 20, additionalDropoffFee: 10, eTrikeSurcharge: 0, eTuktukSurcharge: 10, eTrikeEnabled: true, eTuktukEnabled: true };
 const registrationFields: Array<[keyof TodaRegistration, string]> = [
   ['secCertificateNumber', 'SEC registration certificate number'], ['spResolutionNumber', 'SP resolution number'], ['mayorsPermitNumber', "Bacolod Mayor's permit / BPLO license number"], ['barangayClearanceNumber', 'Barangay clearance and endorsement number'], ['presidentName', "TODA President's full name"], ['presidentLicenseNumber', "President's professional driver license number"], ['presidentTin', "President's TIN"],
 ];
@@ -646,7 +646,7 @@ function Todas({ onMessage }: { onMessage: (value: string) => void }) {
 function Fares({ onMessage }: { onMessage: (value: string) => void }) {
   const [fare, setFare] = useState<FareConfig>(initialFare); useEffect(() => { adminApi.fare().then(setFare); }, []);
   async function submit(event: FormEvent) { event.preventDefault(); try { await adminApi.updateFare(fare); onMessage('City fare configuration saved in Philippine pesos. New passenger estimates will use it.'); } catch (error) { onMessage(error instanceof Error ? error.message : 'Unable to update fares.'); } }
-  const fields: Array<[keyof FareConfig, string, string]> = [
+  const fields: Array<[keyof Pick<FareConfig, 'baseFare' | 'includedMeters' | 'distanceStepMeters' | 'distanceStepPrice' | 'additionalPassengerFee' | 'baggageFee' | 'outsideTodaSurcharge' | 'additionalDropoffFee' | 'eTrikeSurcharge' | 'eTuktukSurcharge'>, string, string]> = [
     ['baseFare', 'Base fare', 'PHP'],
     ['includedMeters', 'Base fare distance', 'metres'],
     ['distanceStepPrice', 'Distance surcharge', 'PHP'],
@@ -655,8 +655,10 @@ function Fares({ onMessage }: { onMessage: (value: string) => void }) {
     ['baggageFee', 'One-time baggage fee', 'PHP'],
     ['outsideTodaSurcharge', 'Outside TODA surcharge', 'PHP'],
     ['additionalDropoffFee', 'Additional drop-off fee', 'PHP'],
+    ['eTrikeSurcharge', 'E-Trike ride adjustment', 'PHP'],
+    ['eTuktukSurcharge', 'E-Tuktuk ride adjustment', 'PHP'],
   ];
-  return <section className="panel wide"><h2>City-controlled passenger fares</h2><p className="muted">Amounts are stored in PHP. Update metadata is recorded by the backend automatically and is not editable.</p><form className="form-grid fare-grid" onSubmit={submit}>{fields.map(([key, title, unit]) => <label key={key}>{title}<span className="input-with-unit"><input type="number" min={key === 'baseFare' || key.includes('Meters') ? 1 : 0} max="9999" step="0.01" value={fare[key]} onChange={(e) => setFare({ ...fare, [key]: Number(e.target.value) })} required /><small>{unit}</small></span></label>)}<button className="primary">Save city fare</button></form><div className="fare-summary">Fare = {peso(fare.baseFare)} for the first {fare.includedMeters} m, plus {peso(fare.distanceStepPrice)} per started {fare.distanceStepMeters} m after that. A second drop-off adds {peso(fare.additionalDropoffFee)}; passenger, baggage, and boundary charges remain separate.</div></section>;
+  return <section className="panel wide"><h2>City-controlled passenger fares</h2><p className="muted">Amounts are stored in PHP. Ride availability and pricing are enforced by quotes and driver matching.</p><form className="form-grid fare-grid" onSubmit={submit}>{fields.map(([key, title, unit]) => <label key={key}>{title}<span className="input-with-unit"><input type="number" min={key === 'baseFare' || key.includes('Meters') ? 1 : 0} max="9999" step="0.01" value={fare[key]} onChange={(e) => setFare({ ...fare, [key]: Number(e.target.value) })} required /><small>{unit}</small></span></label>)}<label><span>E-Trike booking</span><span className="fare-availability"><input type="checkbox" checked={fare.eTrikeEnabled} onChange={(e) => setFare({ ...fare, eTrikeEnabled: e.target.checked })} /> Available to passengers</span></label><label><span>E-Tuktuk booking</span><span className="fare-availability"><input type="checkbox" checked={fare.eTuktukEnabled} onChange={(e) => setFare({ ...fare, eTuktukEnabled: e.target.checked })} /> Available to passengers</span></label><button className="primary">Save city fare</button></form><div className="fare-summary">Fare = {peso(fare.baseFare)} for the first {fare.includedMeters} m, plus the selected ride adjustment ({peso(fare.eTrikeSurcharge)} E-Trike / {peso(fare.eTuktukSurcharge)} E-Tuktuk), then distance and optional charges. E-Trike carries up to 2 riders; E-Tuktuk carries up to 4.</div></section>;
 }
 
 function DriversPage({ todaId, onMessage }: { todaId?: string; onMessage: (value: string) => void }) {

@@ -4,6 +4,8 @@ import '../../../ride/tracking/widgets/trip_sheet_handle.dart';
 import 'fare_card.dart';
 import 'location_search_bar.dart';
 import 'trip_options_card.dart';
+import 'ride_type_selector.dart';
+import '../../../../data/models/ride_type.dart';
 
 /// ===========================================================================
 /// Home Bottom Sheet
@@ -37,6 +39,7 @@ class HomeBottomSheet extends StatelessWidget {
     this.onDecreasePassengers,
     this.onIncreaseBaggage,
     this.onDecreaseBaggage,
+    this.onRideTypeSelected,
 
     this.estimatedFare = '₱0.00',
     this.baseFare = '₱0.00',
@@ -46,6 +49,11 @@ class HomeBottomSheet extends StatelessWidget {
 
     this.additionalPassengers = 0,
     this.baggageCount = 0,
+    this.selectedRideType = RideType.eTrike,
+    this.eTrikeFare = '₱0.00',
+    this.eTuktukFare = '₱0.00',
+    this.eTrikeEnabled = true,
+    this.eTuktukEnabled = true,
 
     this.baggageFee = '₱0.00',
     this.additionalPassengerFee = '₱0.00',
@@ -54,6 +62,7 @@ class HomeBottomSheet extends StatelessWidget {
     this.dropoffCount = 1,
     this.isOutsideToda = false,
     this.routeAdvisory = '',
+    this.rideTypeFare = '₱0.00',
 
     this.hasRoute = false,
   });
@@ -74,6 +83,7 @@ class HomeBottomSheet extends StatelessWidget {
   final VoidCallback? onDecreasePassengers;
   final VoidCallback? onIncreaseBaggage;
   final VoidCallback? onDecreaseBaggage;
+  final ValueChanged<RideType>? onRideTypeSelected;
 
   final String pickup;
   final String destination;
@@ -88,6 +98,11 @@ class HomeBottomSheet extends StatelessWidget {
 
   final int additionalPassengers;
   final int baggageCount;
+  final RideType selectedRideType;
+  final String eTrikeFare;
+  final String eTuktukFare;
+  final bool eTrikeEnabled;
+  final bool eTuktukEnabled;
 
   final String baggageFee;
   final String additionalPassengerFee;
@@ -96,6 +111,7 @@ class HomeBottomSheet extends StatelessWidget {
   final int dropoffCount;
   final bool isOutsideToda;
   final String routeAdvisory;
+  final String rideTypeFare;
 
   final bool hasRoute;
 
@@ -232,6 +248,20 @@ class HomeBottomSheet extends StatelessWidget {
                         additionalDropoffFare: additionalDropoffFare,
                         dropoffCount: dropoffCount,
                         isOutsideToda: isOutsideToda,
+                        rideType: selectedRideType.label,
+                        rideTypeFare: rideTypeFare,
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      RideTypeSelector(
+                        selectedType: selectedRideType,
+                        passengerCount: additionalPassengers + 1,
+                        eTrikeFare: eTrikeFare,
+                        eTuktukFare: eTuktukFare,
+                        eTrikeEnabled: eTrikeEnabled,
+                        eTuktukEnabled: eTuktukEnabled,
+                        onSelected: onRideTypeSelected,
                       ),
 
                       const SizedBox(height: 16),

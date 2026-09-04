@@ -65,6 +65,10 @@ type FareConfig struct {
 	BaggageFee             float64 `json:"baggageFee"`
 	OutsideTodaSurcharge   float64 `json:"outsideTodaSurcharge"`
 	AdditionalDropoffFee   float64 `json:"additionalDropoffFee"`
+	ETrikeSurcharge        float64 `json:"eTrikeSurcharge"`
+	ETuktukSurcharge       float64 `json:"eTuktukSurcharge"`
+	ETrikeEnabled          bool    `json:"eTrikeEnabled"`
+	ETuktukEnabled         bool    `json:"eTuktukEnabled"`
 	Currency               string  `json:"currency"`
 }
 
@@ -72,6 +76,7 @@ var DefaultFare = FareConfig{
 	Version: 1, BaseFare: 20, IncludedMeters: 1000, DistanceStepMeters: 500,
 	DistanceStepPrice: 5, AdditionalPassengerFee: 40, BaggageFee: 20,
 	OutsideTodaSurcharge: 20, AdditionalDropoffFee: 10, Currency: "PHP",
+	ETrikeSurcharge: 0, ETuktukSurcharge: 10, ETrikeEnabled: true, ETuktukEnabled: true,
 }
 
 type FareBreakdown struct {
@@ -91,6 +96,8 @@ type FareBreakdown struct {
 	DropoffCount            int     `json:"dropoffCount"`
 	AdditionalDropoffs      int     `json:"additionalDropoffs"`
 	AdditionalDropoffFare   float64 `json:"additionalDropoffFare"`
+	RequestedVehicleType    string  `json:"requestedVehicleType,omitempty"`
+	RideTypeFare            float64 `json:"rideTypeFare,omitempty"`
 	Currency                string  `json:"currency"`
 	Total                   float64 `json:"total"`
 }
@@ -127,6 +134,14 @@ func SnapshotFare(raw FareConfig) FareConfig {
 	if raw.AdditionalDropoffFee >= 0 {
 		result.AdditionalDropoffFee = currency(raw.AdditionalDropoffFee)
 	}
+	if raw.ETrikeSurcharge >= 0 {
+		result.ETrikeSurcharge = currency(raw.ETrikeSurcharge)
+	}
+	if raw.ETuktukSurcharge >= 0 {
+		result.ETuktukSurcharge = currency(raw.ETuktukSurcharge)
+	}
+	result.ETrikeEnabled = raw.ETrikeEnabled
+	result.ETuktukEnabled = raw.ETuktukEnabled
 	if raw.Currency == "PHP" {
 		result.Currency = raw.Currency
 	}
@@ -138,7 +153,15 @@ func CalculateFare(raw FareConfig, distanceMeters, additionalPassengers, baggage
 }
 
 func CalculateFareForDropoffs(raw FareConfig, distanceMeters, additionalPassengers, baggageCount, dropoffCount int, outside bool) FareBreakdown {
+	return CalculateFareForRideType(raw, distanceMeters, additionalPassengers, baggageCount, dropoffCount, outside, "e_trike")
+}
+
+func CalculateFareForRideType(raw FareConfig, distanceMeters, additionalPassengers, baggageCount, dropoffCount int, outside bool, requestedVehicleType string) FareBreakdown {
 	cfg := SnapshotFare(raw)
+	rideType := NormalizeRideType(requestedVehicleType)
+	if rideType == "" {
+		rideType = "e_trike"
+	}
 	if distanceMeters < 0 {
 		distanceMeters = 0
 	}
@@ -162,7 +185,11 @@ func CalculateFareForDropoffs(raw FareConfig, distanceMeters, additionalPassenge
 		boundaryCents = cents(cfg.OutsideTodaSurcharge)
 	}
 	additionalDropoffCents := additionalDropoffs * cents(cfg.AdditionalDropoffFee)
-	totalCents := cents(cfg.BaseFare) + distanceFareCents + passengerCents + baggageCents + boundaryCents + additionalDropoffCents
+	rideTypeCents := cents(cfg.ETrikeSurcharge)
+	if rideType == "electric_tuktuk" {
+		rideTypeCents = cents(cfg.ETuktukSurcharge)
+	}
+	totalCents := cents(cfg.BaseFare) + distanceFareCents + passengerCents + baggageCents + boundaryCents + additionalDropoffCents + rideTypeCents
 	return FareBreakdown{
 		BaseFare: cfg.BaseFare, IncludedMeters: cfg.IncludedMeters, ChargeableMeters: chargeable,
 		DistanceSteps: steps, DistanceStepMeters: cfg.DistanceStepMeters, DistanceStepPrice: cfg.DistanceStepPrice,
@@ -171,7 +198,50 @@ func CalculateFareForDropoffs(raw FareConfig, distanceMeters, additionalPassenge
 		BaggageFare: pesos(baggageCents), IsOutsideToda: outside,
 		BoundarySurcharge: pesos(boundaryCents), DropoffCount: dropoffCount,
 		AdditionalDropoffs: additionalDropoffs, AdditionalDropoffFare: pesos(additionalDropoffCents),
+		RequestedVehicleType: rideType, RideTypeFare: pesos(rideTypeCents),
 		Currency: cfg.Currency, Total: pesos(totalCents),
+	}
+}
+
+func NormalizeRideType(value string) string {
+	normalized := strings.Map(func(character rune) rune {
+		if character >= 'A' && character <= 'Z' {
+			return character + ('a' - 'A')
+		}
+		if character >= 'a' && character <= 'z' {
+			return character
+		}
+		return -1
+	}, strings.TrimSpace(value))
+	switch normalized {
+	case "etrike":
+		return "e_trike"
+	case "electrictuktuk", "etuktuk", "electrictricycle":
+		return "electric_tuktuk"
+	default:
+		return ""
+	}
+}
+
+func RideTypeCanCarry(rideType string, passengerCount int) bool {
+	switch NormalizeRideType(rideType) {
+	case "e_trike":
+		return passengerCount >= 1 && passengerCount <= 2
+	case "electric_tuktuk":
+		return passengerCount >= 1 && passengerCount <= 4
+	default:
+		return false
+	}
+}
+
+func RideTypeEnabled(config FareConfig, rideType string) bool {
+	switch NormalizeRideType(rideType) {
+	case "e_trike":
+		return config.ETrikeEnabled
+	case "electric_tuktuk":
+		return config.ETuktukEnabled
+	default:
+		return false
 	}
 }
 

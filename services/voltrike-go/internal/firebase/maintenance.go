@@ -30,14 +30,15 @@ func (store *Store) ListMaintenanceBookings(ctx context.Context, _ time.Time) ([
 			continue
 		}
 		result = append(result, app.MaintenanceBooking{
-			BookingID:          document.Ref.ID,
-			Pickup:             pickup,
-			PrimaryTodaIDs:     stringSlice(data["primaryTodaIds"]),
-			SecondaryTodaIDs:   stringSlice(data["secondaryTodaIds"]),
-			AllowAnyActiveToda: booleanDefault(data, false, "allowAnyActiveToda"),
-			RequiredSeats:      integer(data, "additionalPassengers") + 1,
-			SearchExpiresAt:    storedTime(data["searchExpiresAt"]),
-			OfferExpiresAt:     storedTime(data["nextDispatchAt"]),
+			BookingID:            document.Ref.ID,
+			Pickup:               pickup,
+			PrimaryTodaIDs:       stringSlice(data["primaryTodaIds"]),
+			SecondaryTodaIDs:     stringSlice(data["secondaryTodaIds"]),
+			AllowAnyActiveToda:   booleanDefault(data, false, "allowAnyActiveToda"),
+			RequiredSeats:        integer(data, "additionalPassengers") + 1,
+			RequestedVehicleType: text(data, "requestedVehicleType"),
+			SearchExpiresAt:      storedTime(data["searchExpiresAt"]),
+			OfferExpiresAt:       storedTime(data["nextDispatchAt"]),
 		})
 	}
 	return result, nil

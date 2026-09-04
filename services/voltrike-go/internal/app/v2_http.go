@@ -16,6 +16,7 @@ type v2QuoteRequest struct {
 	RouteStops           []RouteStop     `json:"routeStops,omitempty"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
+	RequestedVehicleType string          `json:"requestedVehicleType"`
 }
 
 func (server *HTTPServer) v2Principal(request *http.Request) (Principal, bool) {
@@ -72,6 +73,7 @@ func (server *HTTPServer) handleV2Quote(writer http.ResponseWriter, request *htt
 		RouteStops:           input.RouteStops,
 		AdditionalPassengers: input.AdditionalPassengers,
 		BaggageCount:         input.BaggageCount,
+		RequestedVehicleType: input.RequestedVehicleType,
 		IssueToken:           true,
 	})
 	if err != nil {

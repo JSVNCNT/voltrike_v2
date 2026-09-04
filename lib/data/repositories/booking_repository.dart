@@ -197,6 +197,7 @@ class BookingRepository {
           .toList(),
       'passengerNote': booking.passengerNote,
       'additionalPassengers': booking.additionalPassengers,
+      'requestedVehicleType': booking.requestedVehicleType,
       'baggageCount': booking.baggageCount,
       'quoteToken': goQuoteToken,
     };

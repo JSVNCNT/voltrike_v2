@@ -54,6 +54,22 @@ class FareRepository {
             data['additionalDropoffFee'],
             devFareConfiguration.additionalDropoffFee,
           ),
+          eTrikeSurcharge: _nonNegativeCurrency(
+            data['eTrikeSurcharge'],
+            devFareConfiguration.eTrikeSurcharge,
+          ),
+          eTuktukSurcharge: _nonNegativeCurrency(
+            data['eTuktukSurcharge'],
+            devFareConfiguration.eTuktukSurcharge,
+          ),
+          eTrikeEnabled: _boolean(
+            data['eTrikeEnabled'],
+            devFareConfiguration.eTrikeEnabled,
+          ),
+          eTuktukEnabled: _boolean(
+            data['eTuktukEnabled'],
+            devFareConfiguration.eTuktukEnabled,
+          ),
         );
       },
     );
@@ -70,4 +86,7 @@ class FareRepository {
         ? FareService.roundCurrency(value.toDouble())
         : fallback;
   }
+
+  static bool _boolean(Object? value, bool fallback) =>
+      value is bool ? value : fallback;
 }

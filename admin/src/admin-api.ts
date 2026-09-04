@@ -995,6 +995,10 @@ export const adminApi = {
       baggageFee: Number(source.baggageFee ?? 20),
       outsideTodaSurcharge: Number(source.outsideTodaSurcharge ?? 20),
       additionalDropoffFee: Number(source.additionalDropoffFee ?? 10),
+      eTrikeSurcharge: Number(source.eTrikeSurcharge ?? 0),
+      eTuktukSurcharge: Number(source.eTuktukSurcharge ?? 10),
+      eTrikeEnabled: source.eTrikeEnabled !== false,
+      eTuktukEnabled: source.eTuktukEnabled !== false,
     };
   },
   async uploadTodaRegistrationDocuments(todaId: string, files: Record<string, File>): Promise<void> {

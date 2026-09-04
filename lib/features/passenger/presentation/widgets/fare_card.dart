@@ -27,6 +27,8 @@ class FareCard extends StatelessWidget {
     this.additionalDropoffFare = '₱0.00',
     this.dropoffCount = 1,
     this.isOutsideToda = false,
+    this.rideType = 'E-Trike',
+    this.rideTypeFare = '₱0.00',
   });
 
   final String estimatedFare;
@@ -46,6 +48,8 @@ class FareCard extends StatelessWidget {
   final bool isOutsideToda;
   final String additionalDropoffFare;
   final int dropoffCount;
+  final String rideType;
+  final String rideTypeFare;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +76,10 @@ class FareCard extends StatelessWidget {
 
             _FareRow(title: 'Estimated Time', value: eta),
 
+            _FareRow(title: 'Ride type', value: rideType),
+
+            _FareRow(title: 'Ride type adjustment', value: rideTypeFare),
+
             _FareRow(
               title: 'Additional riders',
               value: additionalPassengers.toString(),
@@ -97,7 +105,7 @@ class FareCard extends StatelessWidget {
 
             const SizedBox(height: 8),
             Text(
-              'Fare = base fare + distance surcharge + selected passenger, '
+              'Fare = base fare + ride type + distance surcharge + selected passenger, '
               'baggage${dropoffCount > 1 ? ', additional drop-off' : ''}'
               '${isOutsideToda ? ', and Outside TODA' : ''} charges.',
               style: Theme.of(context).textTheme.bodySmall,

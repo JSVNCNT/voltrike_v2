@@ -10,6 +10,10 @@ const DEFAULT_FARE = Object.freeze({
   baggageFee: 20,
   outsideTodaSurcharge: 20,
   additionalDropoffFee: 10,
+  eTrikeSurcharge: 0,
+  eTuktukSurcharge: 10,
+  eTrikeEnabled: true,
+  eTuktukEnabled: true,
   currency: 'PHP',
 });
 
@@ -90,6 +94,20 @@ function fareSnapshot(data) {
       source.additionalDropoffFee,
       DEFAULT_FARE.additionalDropoffFee,
     ),
+    eTrikeSurcharge: nonNegativeCurrency(
+      source.eTrikeSurcharge,
+      DEFAULT_FARE.eTrikeSurcharge,
+    ),
+    eTuktukSurcharge: nonNegativeCurrency(
+      source.eTuktukSurcharge,
+      DEFAULT_FARE.eTuktukSurcharge,
+    ),
+    eTrikeEnabled: typeof source.eTrikeEnabled === 'boolean'
+      ? source.eTrikeEnabled
+      : DEFAULT_FARE.eTrikeEnabled,
+    eTuktukEnabled: typeof source.eTuktukEnabled === 'boolean'
+      ? source.eTuktukEnabled
+      : DEFAULT_FARE.eTuktukEnabled,
     currency: source.currency === 'PHP' ? source.currency : DEFAULT_FARE.currency,
   };
 }
@@ -101,6 +119,7 @@ function calculateFareBreakdown({
   baggageCount = 0,
   isOutsideToda = false,
   dropoffCount = 1,
+  requestedVehicleType,
 }) {
   const snapshot = fareSnapshot(config);
   const normalizedIsOutsideToda = isOutsideToda === true;
@@ -130,13 +149,20 @@ function calculateFareBreakdown({
       : 0;
   const additionalDropoffFareCentavos =
     additionalDropoffs * toCentavos(snapshot.additionalDropoffFee);
+  const rideType = normalizeRideType(requestedVehicleType) || 'e_trike';
+  const rideTypeFareCentavos = toCentavos(
+    rideType === 'electric_tuktuk'
+      ? snapshot.eTuktukSurcharge
+      : snapshot.eTrikeSurcharge,
+  );
   const totalCentavos =
     toCentavos(snapshot.baseFare) +
     distanceFareCentavos +
     additionalPassengerFareCentavos +
     baggageFareCentavos +
     boundarySurchargeCentavos +
-    additionalDropoffFareCentavos;
+    additionalDropoffFareCentavos +
+    rideTypeFareCentavos;
   return {
     baseFare: snapshot.baseFare,
     includedMeters: snapshot.includedMeters,
@@ -156,9 +182,23 @@ function calculateFareBreakdown({
     additionalDropoffFare: fromCentavos(additionalDropoffFareCentavos),
     isOutsideToda: normalizedIsOutsideToda,
     boundarySurcharge: fromCentavos(boundarySurchargeCentavos),
+    ...(requestedVehicleType === undefined ? {} : {
+      requestedVehicleType: rideType,
+      rideTypeFare: fromCentavos(rideTypeFareCentavos),
+    }),
     currency: snapshot.currency,
     total: fromCentavos(totalCentavos),
   };
+}
+
+function normalizeRideType(value) {
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim().toLowerCase().replace(/[^a-z]/g, '');
+  if (normalized === 'etrike') return 'e_trike';
+  if (['electrictuktuk', 'etuktuk', 'electrictricycle'].includes(normalized)) {
+    return 'electric_tuktuk';
+  }
+  return '';
 }
 
 function calculateFare(options) {
@@ -172,5 +212,6 @@ module.exports = {
   fareSnapshot,
   fromCentavos,
   roundCurrency,
+  normalizeRideType,
   toCentavos,
 };

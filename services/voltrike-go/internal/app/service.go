@@ -82,6 +82,7 @@ type QuoteRequest struct {
 	RouteStops           []RouteStop     `json:"routeStops,omitempty"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
+	RequestedVehicleType string          `json:"requestedVehicleType"`
 	IssueToken           bool            `json:"issueToken"`
 }
 
@@ -112,6 +113,7 @@ type Quote struct {
 	HighwayRouteAdvisory         HighwayRouteAdvisory `json:"highwayRouteAdvisory"`
 	PolicyRevision               string               `json:"policyRevision"`
 	ExpiresAt                    time.Time            `json:"expiresAt"`
+	RequestedVehicleType         string               `json:"requestedVehicleType"`
 }
 
 type QuoteResponse struct {
@@ -126,6 +128,7 @@ type QuoteTokenRequest struct {
 	RouteStops           []RouteStop     `json:"routeStops,omitempty"`
 	AdditionalPassengers int             `json:"additionalPassengers"`
 	BaggageCount         int             `json:"baggageCount"`
+	RequestedVehicleType string          `json:"requestedVehicleType"`
 	QuoteToken           string          `json:"quoteToken"`
 }
 
@@ -146,12 +149,13 @@ type DispatchPresence struct {
 }
 
 type DispatchRequest struct {
-	Pickup             core.Coordinate `json:"pickup"`
-	PrimaryTodaIDs     []string        `json:"primaryTodaIds"`
-	SecondaryTodaIDs   []string        `json:"secondaryTodaIds"`
-	AllowAnyActiveToda bool            `json:"allowAnyActiveToda"`
-	MaximumResults     int             `json:"maximumResults"`
-	RequiredSeats      int             `json:"requiredSeats"`
+	Pickup               core.Coordinate `json:"pickup"`
+	PrimaryTodaIDs       []string        `json:"primaryTodaIds"`
+	SecondaryTodaIDs     []string        `json:"secondaryTodaIds"`
+	AllowAnyActiveToda   bool            `json:"allowAnyActiveToda"`
+	MaximumResults       int             `json:"maximumResults"`
+	RequiredSeats        int             `json:"requiredSeats"`
+	RequestedVehicleType string          `json:"requestedVehicleType"`
 }
 
 type DispatchCandidate struct {
@@ -213,6 +217,13 @@ func (service *Service) Quote(ctx context.Context, request QuoteRequest) (QuoteR
 	if err != nil {
 		return QuoteResponse{}, err
 	}
+	request.RequestedVehicleType = resolvedRideType(request.RequestedVehicleType, request.AdditionalPassengers+1)
+	if request.RequestedVehicleType == "" || !core.RideTypeCanCarry(request.RequestedVehicleType, request.AdditionalPassengers+1) {
+		return QuoteResponse{}, fmt.Errorf("%w: selected ride type cannot carry this passenger count", ErrInvalidArgument)
+	}
+	if !core.RideTypeEnabled(policy.Fare, request.RequestedVehicleType) {
+		return QuoteResponse{}, fmt.Errorf("%w: selected ride type is currently unavailable", ErrPrecondition)
+	}
 	coordinates := make([]core.Coordinate, 0, len(stops))
 	destinations := make([]core.Coordinate, 0, len(stops)-1)
 	for index, stop := range stops {
@@ -262,9 +273,10 @@ func (service *Service) Quote(ctx context.Context, request QuoteRequest) (QuoteR
 		IsOutsideToda: coverage.IsOutsideToda, Coverage: coverage, CoveragePolicyVersion: 4, RoutePolicyVersion: 5,
 		AuthoritativeRoutePolyline: combinedPolyline, RouteLegs: legs, AvoidedRouteRestrictionIDs: sorted(avoidedIDs), AvoidedRouteRestrictionNames: sorted(avoidedNames),
 		RouteRestrictionIDsChecked: activeRestrictionIDs(policy.Restrictions), HighwayRouteAdvisory: advisory, PolicyRevision: policy.Revision,
-		ExpiresAt: time.Now().UTC().Add(75 * time.Second),
+		ExpiresAt:            time.Now().UTC().Add(75 * time.Second),
+		RequestedVehicleType: request.RequestedVehicleType,
 	}
-	quote.FareBreakdown = core.CalculateFareForDropoffs(quote.FareSnapshot, quote.DistanceMeters, request.AdditionalPassengers, request.BaggageCount, len(stops)-1, quote.IsOutsideToda)
+	quote.FareBreakdown = core.CalculateFareForRideType(quote.FareSnapshot, quote.DistanceMeters, request.AdditionalPassengers, request.BaggageCount, len(stops)-1, quote.IsOutsideToda, request.RequestedVehicleType)
 	quote.EstimatedFare = quote.FareBreakdown.Total
 	return service.issueQuote(request, quote)
 }
@@ -324,11 +336,12 @@ func (service *Service) ConsumeQuote(ctx context.Context, request QuoteTokenRequ
 		return Quote{}, fmt.Errorf("%w: %v", ErrInvalidArgument, err)
 	}
 	request.Pickup, request.Destination, request.RouteStops = stops[0].Location, stops[len(stops)-1].Location, stops
+	request.RequestedVehicleType = resolvedRideType(request.RequestedVehicleType, request.AdditionalPassengers+1)
 	payload, err := service.openToken(request.QuoteToken)
 	if err != nil {
 		return Quote{}, fmt.Errorf("%w: quote token is invalid", ErrPrecondition)
 	}
-	if payload.ActorID != request.ActorID || payload.InputHash != quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.RouteStops, request.AdditionalPassengers, request.BaggageCount) {
+	if payload.ActorID != request.ActorID || payload.InputHash != quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.RouteStops, request.AdditionalPassengers, request.BaggageCount, request.RequestedVehicleType) {
 		return Quote{}, fmt.Errorf("%w: quote token does not match this booking", ErrPrecondition)
 	}
 	if time.Now().UTC().After(payload.Quote.ExpiresAt) {
@@ -452,7 +465,7 @@ func (service *Service) issueQuote(request QuoteRequest, quote Quote) (QuoteResp
 	if service.aead == nil {
 		return QuoteResponse{}, fmt.Errorf("%w: quote tokens are not configured", ErrUnavailable)
 	}
-	payload := quoteTokenPayload{ActorID: request.ActorID, InputHash: quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.RouteStops, request.AdditionalPassengers, request.BaggageCount), Quote: quote}
+	payload := quoteTokenPayload{ActorID: request.ActorID, InputHash: quoteInputHash(request.ActorID, request.Pickup, request.Destination, request.RouteStops, request.AdditionalPassengers, request.BaggageCount, request.RequestedVehicleType), Quote: quote}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return QuoteResponse{}, fmt.Errorf("marshal quote token: %w", err)
@@ -481,7 +494,7 @@ func (service *Service) openToken(token string) (quoteTokenPayload, error) {
 	return payload, nil
 }
 
-func quoteInputHash(actor string, pickup, destination core.Coordinate, stops []RouteStop, passengers, baggage int) string {
+func quoteInputHash(actor string, pickup, destination core.Coordinate, stops []RouteStop, passengers, baggage int, requestedVehicleType string) string {
 	normalized, err := normalizeRouteStops(pickup, destination, stops)
 	if err != nil {
 		return ""
@@ -490,9 +503,22 @@ func quoteInputHash(actor string, pickup, destination core.Coordinate, stops []R
 	for _, stop := range normalized {
 		parts = append(parts, fmt.Sprintf("%d:%s:%.6f:%.6f", stop.Sequence, stop.Type, stop.Location.Latitude, stop.Location.Longitude))
 	}
-	parts = append(parts, fmt.Sprintf("%d", passengers), fmt.Sprintf("%d", baggage))
+	parts = append(parts, fmt.Sprintf("%d", passengers), fmt.Sprintf("%d", baggage), core.NormalizeRideType(requestedVehicleType))
 	data := strings.Join(parts, "|")
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(data)))
+}
+
+func resolvedRideType(value string, passengerCount int) string {
+	if normalized := core.NormalizeRideType(value); normalized != "" {
+		return normalized
+	}
+	if strings.TrimSpace(value) != "" {
+		return ""
+	}
+	if passengerCount >= 3 {
+		return "electric_tuktuk"
+	}
+	return "e_trike"
 }
 
 func normalizeRouteStops(pickup, destination core.Coordinate, raw []RouteStop) ([]RouteStop, error) {

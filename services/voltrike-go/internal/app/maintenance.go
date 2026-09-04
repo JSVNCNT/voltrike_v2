@@ -10,14 +10,15 @@ import (
 )
 
 type MaintenanceBooking struct {
-	BookingID          string
-	Pickup             core.Coordinate
-	PrimaryTodaIDs     []string
-	SecondaryTodaIDs   []string
-	AllowAnyActiveToda bool
-	RequiredSeats      int
-	SearchExpiresAt    time.Time
-	OfferExpiresAt     time.Time
+	BookingID            string
+	Pickup               core.Coordinate
+	PrimaryTodaIDs       []string
+	SecondaryTodaIDs     []string
+	AllowAnyActiveToda   bool
+	RequiredSeats        int
+	RequestedVehicleType string
+	SearchExpiresAt      time.Time
+	OfferExpiresAt       time.Time
 }
 
 type MaintenanceStore interface {
@@ -60,12 +61,13 @@ func (service *Service) RunMaintenance(ctx context.Context) (map[string]any, err
 			continue
 		}
 		candidates, dispatchErr := service.DispatchCandidates(ctx, DispatchRequest{
-			Pickup:             booking.Pickup,
-			PrimaryTodaIDs:     booking.PrimaryTodaIDs,
-			SecondaryTodaIDs:   booking.SecondaryTodaIDs,
-			AllowAnyActiveToda: booking.AllowAnyActiveToda,
-			MaximumResults:     5,
-			RequiredSeats:      booking.RequiredSeats,
+			Pickup:               booking.Pickup,
+			PrimaryTodaIDs:       booking.PrimaryTodaIDs,
+			SecondaryTodaIDs:     booking.SecondaryTodaIDs,
+			AllowAnyActiveToda:   booking.AllowAnyActiveToda,
+			MaximumResults:       5,
+			RequiredSeats:        booking.RequiredSeats,
+			RequestedVehicleType: booking.RequestedVehicleType,
 		})
 		if dispatchErr != nil {
 			dispatchFailures++

@@ -220,6 +220,14 @@ func parseFare(data map[string]any) core.FareConfig {
 	applyFloat(data, &result.DistanceStepPrice, "distanceStepPrice")
 	applyFloat(data, &result.AdditionalPassengerFee, "additionalPassengerFee")
 	applyFloat(data, &result.BaggageFee, "baggageFee")
+	applyFloat(data, &result.ETrikeSurcharge, "eTrikeSurcharge")
+	applyFloat(data, &result.ETuktukSurcharge, "eTuktukSurcharge")
+	if value, ok := data["eTrikeEnabled"].(bool); ok {
+		result.ETrikeEnabled = value
+	}
+	if value, ok := data["eTuktukEnabled"].(bool); ok {
+		result.ETuktukEnabled = value
+	}
 	applyFloat(data, &result.OutsideTodaSurcharge, "outsideTodaSurcharge")
 	applyFloat(data, &result.AdditionalDropoffFee, "additionalDropoffFee")
 	if value := text(data, "currency"); value == "PHP" {

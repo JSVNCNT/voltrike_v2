@@ -22,6 +22,16 @@ func TestDefaultFareAndCentavoRounding(t *testing.T) {
 	}
 }
 
+func TestRideTypeFareAndCapacity(t *testing.T) {
+	result := CalculateFareForRideType(DefaultFare, 1000, 0, 0, 1, false, "electric_tuktuk")
+	if result.RideTypeFare != 10 || result.Total != 30 || result.RequestedVehicleType != "electric_tuktuk" {
+		t.Fatalf("unexpected E-Tuktuk fare: %#v", result)
+	}
+	if RideTypeCanCarry("e_trike", 3) || !RideTypeCanCarry("electric_tuktuk", 4) {
+		t.Fatal("ride capacity policy is incorrect")
+	}
+}
+
 func TestSharedFareParityFixtures(t *testing.T) {
 	path := filepath.Join("..", "..", "..", "..", "test", "fixtures", "fare_parity_v1.json")
 	raw, err := os.ReadFile(path)

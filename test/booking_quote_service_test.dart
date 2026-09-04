@@ -53,6 +53,7 @@ void main() {
     expect(quote?.quoteToken, 'token');
     expect(captured['additionalPassengers'], 2);
     expect(captured['baggageCount'], 1);
+    expect(captured['requestedVehicleType'], 'electric_tuktuk');
   });
 
   test('rejects incomplete quote responses', () {

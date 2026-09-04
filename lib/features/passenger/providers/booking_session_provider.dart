@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:voltrike_v2/core/maps/voltrike_map.dart';
 
 import '../../../data/models/route_policy_advisory.dart';
+import '../../../data/models/ride_type.dart';
 
 /// ===========================================================================
 /// Booking Session
@@ -42,9 +43,11 @@ class BookingSession {
     this.boundarySurcharge = 0,
     this.additionalDropoffFare = 0,
     this.estimatedFare = 0,
+    this.rideTypeFare = 0,
 
     // Booking options
     this.additionalPassengers = 0,
+    this.rideType = RideType.eTrike,
     this.baggageCount = 0,
     this.isOutsideToda = false,
 
@@ -118,9 +121,11 @@ class BookingSession {
 
   /// Estimated total fare.
   final double estimatedFare;
+  final double rideTypeFare;
 
   /// Additional passengers.
   final int additionalPassengers;
+  final RideType rideType;
 
   /// Number of baggage items.
   final int baggageCount;
@@ -161,8 +166,10 @@ class BookingSession {
     double? boundarySurcharge,
     double? additionalDropoffFare,
     double? estimatedFare,
+    double? rideTypeFare,
 
     int? additionalPassengers,
+    RideType? rideType,
     int? baggageCount,
     bool? isOutsideToda,
     String? goQuoteToken,
@@ -204,8 +211,10 @@ class BookingSession {
       additionalDropoffFare:
           additionalDropoffFare ?? this.additionalDropoffFare,
       estimatedFare: estimatedFare ?? this.estimatedFare,
+      rideTypeFare: rideTypeFare ?? this.rideTypeFare,
 
       additionalPassengers: additionalPassengers ?? this.additionalPassengers,
+      rideType: rideType ?? this.rideType,
       baggageCount: baggageCount ?? this.baggageCount,
       isOutsideToda: isOutsideToda ?? this.isOutsideToda,
       goQuoteToken: goQuoteToken ?? this.goQuoteToken,
@@ -252,6 +261,7 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       boundarySurcharge: 0,
       additionalDropoffFare: 0,
       estimatedFare: 0,
+      rideTypeFare: 0,
       isOutsideToda: false,
       goQuoteToken: '',
       clearGoQuoteExpiry: true,
@@ -323,6 +333,7 @@ class BookingSessionNotifier extends StateNotifier<BookingSession> {
       baggageFee: 0,
       boundarySurcharge: 0,
       estimatedFare: 0,
+      rideTypeFare: 0,
       isOutsideToda: false,
       goQuoteToken: '',
       clearGoQuoteExpiry: true,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -374,9 +375,35 @@ func (store *Store) updateFare(ctx context.Context, actor adminIdentity, payload
 	if !ok {
 		return nil, fmt.Errorf("%w: fare payload is required", app.ErrInvalidArgument)
 	}
-	fare = copyMap(fare)
-	fare["version"], fare["updatedBy"], fare["updatedAt"] = integer(fare, "version")+1, actor.UID, time.Now().UTC()
-	_, err := store.firestore.Collection("settings").Doc("fare_config").Set(ctx, fare, firestore.MergeAll)
+	normalized := map[string]any{"currency": "PHP"}
+	for _, field := range []string{"baseFare", "distanceStepPrice", "additionalPassengerFee", "baggageFee", "outsideTodaSurcharge", "additionalDropoffFee", "eTrikeSurcharge", "eTuktukSurcharge"} {
+		value, ok := fare[field].(float64)
+		if !ok {
+			if integerValue, integerOK := fare[field].(int); integerOK {
+				value, ok = float64(integerValue), true
+			}
+		}
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 9999 {
+			return nil, fmt.Errorf("%w: %s must be between 0 and 9999", app.ErrInvalidArgument, field)
+		}
+		normalized[field] = math.Round(value*100) / 100
+	}
+	for _, field := range []string{"includedMeters", "distanceStepMeters"} {
+		value := integer(fare, field)
+		if value < 1 || value > 9999 || number(fare, field) != float64(value) {
+			return nil, fmt.Errorf("%w: %s must be a whole number between 1 and 9999", app.ErrInvalidArgument, field)
+		}
+		normalized[field] = value
+	}
+	for _, field := range []string{"eTrikeEnabled", "eTuktukEnabled"} {
+		value, ok := fare[field].(bool)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s must be true or false", app.ErrInvalidArgument, field)
+		}
+		normalized[field] = value
+	}
+	normalized["version"], normalized["updatedBy"], normalized["updatedAt"] = integer(fare, "version")+1, actor.UID, time.Now().UTC()
+	_, err := store.firestore.Collection("settings").Doc("fare_config").Set(ctx, normalized, firestore.MergeAll)
 	return map[string]any{"updated": err == nil}, err
 }
 

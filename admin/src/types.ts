@@ -124,6 +124,10 @@ export interface FareConfig {
   baggageFee: number;
   outsideTodaSurcharge: number;
   additionalDropoffFee: number;
+  eTrikeSurcharge: number;
+  eTuktukSurcharge: number;
+  eTrikeEnabled: boolean;
+  eTuktukEnabled: boolean;
 }
 
 export interface LiveDriver {

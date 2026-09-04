@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voltrike_v2/core/maps/restricted_area_legend.dart';
 import 'package:voltrike_v2/features/passenger/presentation/widgets/fare_card.dart';
 import 'package:voltrike_v2/features/passenger/presentation/widgets/home_bottom_sheet.dart';
+import 'package:voltrike_v2/features/passenger/presentation/widgets/ride_type_selector.dart';
+import 'package:voltrike_v2/data/models/ride_type.dart';
 
 void main() {
   Widget app(Widget child) {
@@ -102,5 +104,34 @@ void main() {
 
     expect(find.text('Restricted area'), findsOneWidget);
     expect(find.byType(Material), findsWidgets);
+  });
+
+  testWidgets('ride selector shows both assets and locks E-Trike at 3 riders', (
+    tester,
+  ) async {
+    RideType? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: RideTypeSelector(
+            selectedType: RideType.eTuktuk,
+            passengerCount: 3,
+            eTrikeFare: '₱45.00',
+            eTuktukFare: '₱55.00',
+            eTrikeEnabled: true,
+            eTuktukEnabled: true,
+            onSelected: (value) => selected = value,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('E-Trike'), findsOneWidget);
+    expect(find.text('E-Tuktuk'), findsOneWidget);
+    expect(find.byType(Image), findsNWidgets(2));
+    expect(find.textContaining('maximum capacity of 2'), findsOneWidget);
+    await tester.tap(find.text('E-Trike'));
+    expect(selected, isNull);
   });
 }

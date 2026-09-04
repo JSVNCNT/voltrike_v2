@@ -81,7 +81,7 @@ func (store *Store) FilterEligibleDispatch(ctx context.Context, candidates []app
 		user := userByID[id]
 		vehicle, toda := vehicleByID[text(data, "vehicleId")], todaByID[text(data, "todaId")]
 		if text(user, "role") != "driver" || !booleanDefault(user, true, "isActive") ||
-			!booleanDefault(vehicle, false, "isVerified") || !vehicleCanServe(vehicle, requiredSeats) ||
+			!booleanDefault(vehicle, false, "isVerified") || !vehicleCanServe(vehicle, requiredSeats, request.RequestedVehicleType) ||
 			!booleanDefault(toda, false, "isActive") || text(data, "licenseNumber") == "" || !futureTime(data["licenseExpiry"], now) {
 			continue
 		}
@@ -214,7 +214,7 @@ func bookingOfferSnapshot(booking map[string]any) map[string]any {
 		"schemaVersion", "passengerId", "passengerName", "passengerPhotoUrl",
 		"pickup", "destination", "pickupName", "destinationName", "pickupAddress", "destinationAddress",
 		"routeStops", "routeLegs", "dropoffCount", "activeStopIndex", "passengerNote",
-		"estimatedFare", "amountDue", "distanceMeters", "additionalPassengers", "baggageCount",
+		"estimatedFare", "amountDue", "distanceMeters", "additionalPassengers", "baggageCount", "requestedVehicleType",
 		"isOutsideToda", "routePolicy", "highwayRouteAdvisory", "createdAt", "updatedAt",
 	} {
 		if value, ok := booking[field]; ok {
