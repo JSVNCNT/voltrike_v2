@@ -316,11 +316,12 @@ func (store *Store) updateMySafetyIncident(ctx context.Context, principal app.Pr
 	incidentID := fmt.Sprintf("sos_%x", sha256.Sum256([]byte(bookingID+":"+principal.UID)))[:44]
 	ref, now := store.firestore.Collection("safetyIncidents").Doc(incidentID), time.Now().UTC()
 	updates := map[string]any{"updatedAt": now}
-	if action == "safe" {
+	switch action {
+	case "safe":
 		updates["status"], updates["responseStatus"], updates["reporterMarkedSafeAt"], updates["resolvedAt"] = "reporter_safe", "resolved", now, now
-	} else if action == "still_need_help" {
+	case "still_need_help":
 		updates["status"], updates["responseStatus"], updates["acknowledgement"], updates["escalationLevel"] = "open", "reported", "needs_review", 2
-	} else {
+	default:
 		updates["emergencyCallAttemptedAt"], updates["emergencyCallAttemptedBy"] = now, principal.UID
 	}
 	err := store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {

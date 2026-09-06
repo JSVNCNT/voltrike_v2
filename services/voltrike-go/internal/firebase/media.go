@@ -79,11 +79,12 @@ func (store *Store) finalizeMedia(ctx context.Context, principal app.Principal, 
 	}
 	extension := safeExtension(path.Ext(stagingPath))
 	finalRoot := "final/todas"
-	if targetType == "profile_image" {
+	switch targetType {
+	case "profile_image":
 		finalRoot = "final/profiles"
-	} else if targetType == "driver_document" {
+	case "driver_document":
 		finalRoot = "final/drivers"
-	} else if targetType == "chat_image" {
+	case "chat_image":
 		finalRoot = "final/chat"
 	}
 	finalPath := fmt.Sprintf("%s/%s/%s/%s%s", finalRoot, safeObjectSegment(targetID), field, uuid.NewString(), extension)
@@ -191,11 +192,6 @@ func (store *Store) updateMyProfileImage(ctx context.Context, principal app.Prin
 		return nil, err
 	}
 	return map[string]any{"updated": true, "photoUrl": photoURL}, nil
-}
-
-func (store *Store) isFinalizedAccountMediaURL(rawURL, uid, root string) bool {
-	_, _, ok := store.finalizedAccountMediaReference(rawURL, uid, root)
-	return ok
 }
 
 func (store *Store) validateFinalizedAccountMedia(ctx context.Context, rawURL, uid, root string) error {
