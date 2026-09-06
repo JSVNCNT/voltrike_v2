@@ -1,21 +1,23 @@
 # VolTrike
 
-**VolTrike** is a clean community-mobility and e-tricycle booking system built
-for passengers, drivers, Transport Network Vehicle Service (TNVS) operations,
-and TODA administrators. It promotes electric tricycles (E-Trikes) as a more
-sustainable, lower-emission community transport option through a single Flutter
-mobile application, a web-based operations console, and a cloud-hosted,
-server-authoritative backend.
+**VolTrike** is a Bacolod-focused community-mobility and electric-tricycle
+booking system for passengers, drivers, System Administrators, and Tricycle
+Operators and Drivers Association (TODA) Administrators. It supports E-Trike
+and E-Tuktuk ride selection through one Flutter passenger/driver application,
+a React administration portal, and a server-authoritative Go backend.
 
-The project is designed around a practical capstone goal: deliver a credible
-end-to-end ride lifecycle—registration, approval, fare quotation, booking,
+The implementation covers the end-to-end ride lifecycle—registration, approval,
+fare quotation, booking,
 dispatch, live tracking, chat, voice calling, cash settlement, ratings,
 reports, SOS, restrictions, and TODA operations—without requiring a separate
 passenger and driver application package. By supporting the practical use and
-coordination of E-Trikes, VolTrike also aims to contribute to **United Nations
-Sustainable Development Goal 13: Climate Action**. It is also designed to
-support alignment with applicable local E-Trike, TODA, and transport operating
-requirements as those regulations and local policies evolve.
+coordination of electric tricycles, VolTrike uses **United Nations Sustainable
+Development Goal 13: Climate Action** as project context, not as evidence of
+measured emissions savings. Configured route restrictions assist transport
+operations; the application does not issue licences, franchises, government
+approval, or Transport Network Vehicle Service (TNVS) accreditation. Land
+Transportation Office (LTO) and local-government requirements remain external
+to application authorization.
 
 ## Capstone information
 
@@ -25,8 +27,8 @@ requirements as those regulations and local policies evolve.
 | Type | Capstone Project |
 | Institution | University of Negros Occidental – Recoletos |
 | Team | Tracelogy |
-| Team member | Jose Vincent III Bayoguing |
-| Team member | Denro Maban |
+| Team member | Jose Vincent Bayoguing III |
+| Team member | Denro S. Maban |
 
 ## What the system does
 
@@ -37,16 +39,59 @@ requirements as those regulations and local policies evolve.
   go online, receive and accept offers, navigate to pickup and destination,
   update trip stages, confirm cash receipt, view completed ride fares, and communicate with
   the passenger.
-- Lets system and TODA administrators manage drivers, ride operations, TODA
-  coverage and zones, fares, route restrictions, safety incidents, reports,
-  chat-safety incidents, settlements, and count-only operational dashboards.
+- Provides separate System Administrator and TODA Administrator permissions
+  within one portal for driver review, ride operations, coverage, safety,
+  reports, and count-only dashboards. City fare policy, route restrictions,
+  and platform moderation rules remain System Administrator responsibilities.
 - Keeps sensitive business decisions on the server while using realtime Firebase
   data for responsive tracking and operational views.
+
+### Ride types and cash settlement
+
+| Ride selection | API value | Passenger capacity |
+| --- | --- | --- |
+| E-Trike | `e_trike` | Up to 2 riders |
+| E-Tuktuk | `electric_tuktuk` | Up to 4 riders, subject to the approved vehicle capacity |
+
+The quote and booking include the selected ride type, total riders, and zero
+or one baggage unit. Dispatch requires an approved vehicle of the same ride
+type with sufficient capacity. E-Trike registration records two seats;
+E-Tuktuk registration accepts three or four. Administrator-controlled fare
+policy enables each ride type and configures its surcharge alongside distance,
+additional-passenger, baggage, coverage, and additional-drop-off charges.
+
+Payment is cash. The accepted quote supplies the fare snapshot, and final
+cash confirmation creates a receipt for the full ride price. Current settlement
+does not deduct TODA/platform commission or split driver net earnings. There
+is no passenger digital wallet, subscription billing, or payment-gateway
+checkout. Legacy commission fields in compatibility models are not active
+fare or settlement features; the portal has no dedicated commission-management
+page. Operational overview charts show counts, not revenue or payout totals.
+
+### Account and administrator scope
+
+| Role | Implemented scope |
+| --- | --- |
+| Passenger | Own profile, quote, booking, assigned-ride communication, cash confirmation, receipts, ratings, and reports. |
+| Driver | Registration evidence, approved vehicle and TODA membership, availability, eligible offers, assigned-trip progression, cash receipt, and own ride-fare summary. |
+| TODA Administrator | Permitted drivers, rides, ratings, reports, coverage requests, and driver-caused safety/moderation incidents within the assigned association. |
+| System Administrator | Platform-wide TODA review, city fare policy, coverage approval, route restrictions, moderation rules, permitted incidents, account actions, and audit review. |
+
+Public registration does not create a System Administrator. The code retains
+`developer_admin` as the internal identifier for that role. Protected portal
+operations compare authenticated claims, active profile, role, and TODA scope;
+showing or hiding a page is not the authorization boundary. Passenger-caused
+incidents and other associations remain outside TODA Administrator authority.
+
+Driver registration associates seven finalized evidence images with the
+authenticated applicant and creates pending records. TODA review controls
+approval; a submitted image is not automatic identity or licence verification.
+TODA registration is a separate reviewed portal workflow.
 
 ## Architecture at a glance
 
 ```text
-Flutter passenger/driver client ── Firebase Auth + App Check ──┐
+Flutter passenger/driver client ── Firebase Auth ──────────────┐
           │                                                     │
           │ REST commands / quotes / booking state              ▼
           └────────────────────────────────────────────── Go V2 API (Cloud Run)
@@ -58,7 +103,9 @@ Flutter passenger/driver client ── Firebase Auth + App Check ──┐
      Firebase: Firestore • Realtime Database • Storage • FCM • Functions
                                                               │
                        Node.js Functions ── notifications, email, schedules,
-                                             LiveKit token/integration work
+                                             Go outbox and maintenance
+
+Go V2 API ── booking-scoped call authorization/tokens ── LiveKit
 
 Flutter Android client ── Flutter Rust Bridge ── Rust local compute
 ```
@@ -76,16 +123,18 @@ Flutter Android client ── Flutter Rust Bridge ── Rust local compute
 
 This separation avoids an important ride-hailing failure mode: a phone cannot
 become the authority for a fare, booking, or payment simply because it is
-offline, stale, or modified. The Go API validates Firebase identity and App
-Check before performing protected V2 operations.
+offline, stale, or modified. The Go API validates Firebase identity before
+protected V2 operations. App Check attestation is an additional,
+deployment-controlled check; it is not enabled by default in the private mobile
+build. See the configuration notes below.
 
 ## Languages and why each one is used
 
 ### Dart and Flutter — passenger and driver experience
 
 Flutter is the main application layer in `lib/`. One codebase renders the
-passenger and driver experiences and can target Android, iOS, web, Windows,
-macOS, and Linux. Android is the primary tested and deployed mobile target.
+passenger and driver experiences. Android is the primary mobile target; other
+platform folders do not establish equivalent feature coverage or device testing.
 
 It is responsible for the screens users see and touch: authentication,
 registration, booking, driver availability, live ride tracking, receipts,
@@ -111,15 +160,16 @@ application. TSX combines React components with TypeScript types, which is why
 it is well suited to dense operations screens containing tables, forms, maps,
 filters, role-aware actions, and charts.
 
-The portal is hosted as a Render Static Site. It uses Firebase for session and
-realtime reads, calls the Go V2 API for authoritative commands, and uses Mapbox
-GL for interactive operations maps. Its overview charts use real Firestore
-booking and settlement records rather than placeholder datasets, with exact
-values available for pointer and touch users.
+The portal has Render Static Site deployment configuration. It uses Firebase
+for identity, polls Go read models for operational views, calls Go for
+authoritative commands, and uses Mapbox GL for interactive maps. Go returns
+role-scoped, count-only overview analytics across a 14-day window, including a
+truncation indicator when query limits apply. The browser does not download
+raw bookings and settlements to calculate financial charts.
 
 **Why it benefits VolTrike:** administrators need a desktop-friendly browser
 workspace rather than a second mobile app. TypeScript helps protect the many
-admin data shapes—drivers, TODAs, zones, restrictions, reports, settlements,
+admin data shapes—drivers, TODAs, zones, restrictions, reports,
 and booking operations—from common JavaScript runtime mistakes.
 
 ### Go — authoritative cloud backend
@@ -150,9 +200,12 @@ committed events and perform integration work such as:
 
 - Firebase Cloud Messaging and admin web-push token management;
 - branded verification and password-reset email through SMTP/Nodemailer;
-- LiveKit server-side token/integration support;
 - Firestore outbox processing; and
 - scheduled Go maintenance triggers.
+
+The active export manifest is `functions/index.js`. Go owns booking-call
+lifecycle and LiveKit token issuance. Retained helper modules or migration
+notes do not make Node.js the current booking, fare, or call authority.
 
 **Why it benefits VolTrike:** Node.js is a natural fit for Firebase Functions
 and third-party JavaScript SDKs. Keeping it behind the Go transaction boundary
@@ -162,8 +215,7 @@ fares or conflicting booking state.
 ### Rust — efficient device-local compute
 
 The `rust/` crate is bridged to Flutter through `flutter_rust_bridge`. It is
-used only where compact, predictable native computation materially helps the
-mobile client:
+available for bounded native computation in the mobile client:
 
 - cached polygon/geofence and route-restriction conflict analysis;
 - point-to-restriction proximity calculations;
@@ -175,10 +227,17 @@ The Rust crate rejects unsafe code and enables release optimizations including
 thin LTO and symbol stripping. Dart fallback paths remain available when a Rust
 feature is unavailable or fails.
 
+Geometry, PSGC, and navigation modes inherit `VOLTRIKE_RUST_MODE`, which
+defaults to `off`; proximity has its own default-off switch. These integrations
+support `off`, `shadow`, and `on` modes. Registration image preparation uses
+the separate `VOLTRIKE_IMAGE_ENGINE=auto` default: native-first on supported
+builds with a Dart fallback. Native integration in the repository does not mean
+every feature is enabled in a given APK.
+
 **Why it benefits VolTrike:** repeated geometry and route checks can be costly
-on lower-powered phones. Rust performs this bounded work efficiently with strong
-memory-safety guarantees, lowering Dart-side allocation and keeping the UI more
-responsive. It is intentionally *not* used to replace LiveKit/WebRTC audio or
+on lower-powered phones. Rust provides a memory-safe native path for this work;
+actual performance gains require device benchmarks. It is intentionally *not*
+used to replace LiveKit/WebRTC audio or
 the cloud business backend: those systems already depend on mature platform
 media and server infrastructure.
 
@@ -187,7 +246,7 @@ media and server infrastructure.
 | Service / SDK | Used for | Benefit to VolTrike |
 | --- | --- | --- |
 | Firebase Authentication | Email/password and Google sign-in identity | One trusted identity across mobile, admin, API, and rules. |
-| Firebase App Check | Attestation token sent with protected API requests | Reduces abuse from unauthorised app clients. |
+| Firebase App Check | Optional client attestation with deployment-controlled server enforcement | Adds an abuse-control layer when configured; does not replace identity and role checks. |
 | Cloud Firestore | Profiles, booking views, operational documents, reports, outbox | Realtime document data with rules and transactional support. |
 | Firebase Realtime Database | Low-latency driver/session/location presence | Responsive online-driver and trip-tracking updates. |
 | Firebase Storage | Registration documents and access-controlled ride-chat photos | Managed uploads, participant-only access, evidence preservation, and lifecycle expiry. |
@@ -199,7 +258,7 @@ media and server infrastructure.
 | Google Navigation for Flutter | Driver turn-by-turn map experience | Native navigation-oriented driver workflow. |
 | Geolocator / Geocoding | Device position and human-readable addresses | Pickup, destination, proximity, and live location features. |
 | Mapbox GL | Web-admin maps and operational map layers | Flexible visualization of drivers, zones, and restrictions. |
-| LiveKit Client + Server SDK | Secure in-ride voice rooms and tokens | Real-time passenger-driver calling without exposing provider credentials to clients. |
+| LiveKit / Go-issued tokens | Secure in-ride voice rooms authorized by Go | Real-time passenger-driver calling without exposing server credentials to clients. |
 | WebRTC through LiveKit | Native audio capture/playback, echo cancellation, noise suppression, gain control | Reliable cross-device voice transport and platform audio handling. |
 | Nodemailer / SMTP provider | Branded verification and password-reset email | Delivers app-branded account communications. |
 | Sentry | Separate Flutter, admin, Go, and Functions error/trace projects | Correlates production failures with the deployed code release without placing private auth secrets in source. |
@@ -213,11 +272,9 @@ VolTrike’s Android configuration uses:
 | Configuration | Value | Meaning |
 | --- | --- | --- |
 | Minimum/required phone SDK | **API 24 — Android 7.0 Nougat** | Android 7.0 and later can install the APK. Phones below API 24 are unsupported. |
-| Target SDK | **API 36 — Android 16** | The current Flutter Android toolchain applies Android 16 platform behavior and security expectations. |
+| Target SDK | `flutter.targetSdkVersion` | Inherited from the installed Flutter Android toolchain rather than hardcoded in the application Gradle file. |
 | Compile SDK | **API 37 — Android 17** | Allows dependencies to compile against current Android APIs; it does **not** require the phone to run Android 17. |
 | Java / Kotlin target | **Java 17** | Required by the current Android/Flutter dependency toolchain. |
-| Verified physical device | **Android 16 — API 36, arm64** | The login, map, Navigation, location, and LiveKit/WebRTC startup path is tested on the connected SM A566B. |
-| Additional test environment | **Android 17 — API 37 emulator** | Used for forward-platform compatibility checks; two real phones remain required for end-to-end ride and call testing. |
 
 In short, the APK requires **Android 7.0/API 24 or newer**. Target SDK and
 compile SDK describe how the app is built and governed by newer Android
@@ -250,7 +307,7 @@ geometry pre-check provide immediate guidance, but they are not the security
 boundary. The Go quote service repeats the checks using the current server
 policy before it issues a usable quote:
 
-1. Pickup and destination are rejected if either is inside an enforced
+1. Pickup and every ordered drop-off are rejected if any is inside an enforced
    restriction polygon.
 2. Google Routes is requested with highway avoidance and alternative routes.
 3. Every returned route polyline is decoded and rejected if it enters/crosses
@@ -264,7 +321,8 @@ policy before it issues a usable quote:
    blocked.
 
 The encrypted quote token is valid for 75 seconds and is bound to the
-authenticated user, exact ordered pickup/drop-off list, passenger count, baggage count,
+authenticated user, exact ordered pickup/drop-off list, selected ride type,
+passenger count, baggage count,
 authoritative route, fare, and policy revision. Booking creation rejects an
 expired/reused token, changed inputs, or a policy revision that changed after
 quotation. This prevents a modified phone from obtaining an allowed quote and
@@ -286,6 +344,9 @@ to the final stop, and the backend refuses payment progression until that first
 drop-off is recorded. Legacy bookings without `routeStops` remain readable as
 single-destination rides.
 
+The note is a booking-creation input, not part of the fare quote request. Go
+validates its length and applies moderation before accepting it.
+
 These controls are a strong technical aid to regulatory compliance, not a
 claim that software alone guarantees compliance with every road rule. System
 administrators must keep TODA polygons, no-service areas, restricted crossings,
@@ -301,8 +362,8 @@ A booking is created only when all of the following server-side checks pass:
 - the caller has an authenticated, active passenger profile;
 - coordinates are valid and a current matching quote token passes the route,
   fare, actor, input, expiry, and policy-revision checks;
-- the request carries one to four passenger seats in total and at most one
-  baggage unit; and
+- the selected ride type is enabled, the request fits its rider limit
+  (E-Trike: 1–2; E-Tuktuk: 1–4), and baggage is at most one unit; and
 - the passenger does not already hold an active-booking lock.
 
 A driver enters a dispatch candidate set only when all of these checks pass:
@@ -315,12 +376,17 @@ A driver enters a dispatch candidate set only when all of these checks pass:
   current booking;
 - the assigned TODA is active, the licence number is present and its expiry is
   still in the future; and
-- the assigned vehicle is verified and has enough capacity for the requested
-  passenger count.
+- the assigned vehicle is verified, matches the requested ride type, and has
+  enough capacity for the requested passenger count.
 
 The same eligibility, coverage, offer-round, expiry, and capacity conditions
 are checked again inside the Firestore acceptance transaction. A stale client
 therefore cannot accept merely because it received an earlier notification.
+
+The normal lifecycle is `pending` → `driverAssigned` → `driverArriving` →
+`passengerOnBoard` → `paymentConfirmation` → `completed`. Cancellation is
+restricted by role and current state; an intermediate stop is recorded before
+payment progression. Client state does not bypass Go command validation.
 
 ### Multiple bookings, matching, and priority
 
@@ -389,7 +455,7 @@ valid acceptance wins.
 Ride chat is available only to the passenger and driver assigned to the
 booking. The current client provides text messages, camera-only compressed
 photos, accessible quick replies, delivery context, and light/dark presentation.
-Normal chat photos are limited to 2 MB and automatically expire after two days
+Normal chat photos are limited to 2 MB and have a two-day lifecycle policy
 to control Storage cost and reduce unnecessary retention.
 
 Chat moderation is server-side and configurable by a system administrator. The
@@ -398,6 +464,9 @@ aliases for shortened spellings, repeated-character matching, masking, flagging,
 and blocking. The Flutter client never decides whether content is permitted.
 Original text is available only as protected moderation evidence and is not
 returned to the other ride participant.
+
+This is deterministic rule matching, not an artificial-intelligence or
+natural-language-understanding moderation service.
 
 Moderation incidents follow role scope:
 
@@ -428,6 +497,11 @@ The policy definitions and setup instructions are in
 [scripts/configure-chat-retention.ps1](scripts/configure-chat-retention.ps1),
 and [storage.lifecycle.json](storage.lifecycle.json).
 
+Expiry depends on deploying and enabling the corresponding Firestore
+time-to-live (TTL) and Storage lifecycle policies. Merely storing `purgeAt`
+does not enable automatic deletion, and scheduled cleanup is not an exact
+instant-deletion guarantee.
+
 ## Repository map
 
 | Path | Contents |
@@ -447,7 +521,8 @@ and [storage.lifecycle.json](storage.lifecycle.json).
 
 ## Deployment model
 
-The deployed system does **not** depend on a development computer remaining on:
+The configured hosting model does **not** require a development computer to
+remain on:
 
 - the Go API runs on Cloud Run;
 - Firebase provides managed authentication, databases, storage, messaging, and
@@ -457,10 +532,12 @@ The deployed system does **not** depend on a development computer remaining on:
 
 For capstone distribution, an Android debug APK can be built and shared directly
 to compatible Android phones. This supports supervised testing and defense use;
-it is not equivalent to a signed Play Store release. A production release would
-add a release signing key, formal privacy/compliance review, production App
-Check enforcement, monitored billing/quotas, incident processes, and full
-device/network test coverage.
+it is not equivalent to a production-signed Play Store release. The current
+Android release configuration also uses debug signing. Release readiness
+requires a dedicated signing key, privacy/compliance review, App Check policy,
+monitored billing/quotas, incident processes, and device/network test coverage.
+Repository configuration is not proof that a hosted release is healthy or that
+all infrastructure policies are deployed.
 
 The current private-testing workflow targets newly rebuilt APKs. Remove obsolete
 test APKs before installing a new build so every test phone uses the same
@@ -533,10 +610,73 @@ call in both directions, complete the cash ride, rate/report it, and confirm the
 expected TODA/system-admin visibility. Health endpoints and automated tests do
 not replace this two-device workflow check.
 
-For full infrastructure and environment setup, see
-[services/voltrike-go/DEPLOYMENT.md](services/voltrike-go/DEPLOYMENT.md),
-[docs/release_setup.md](docs/release_setup.md), and
-[transition.md](transition.md).
+For current Go infrastructure and environment setup, see
+[services/voltrike-go/DEPLOYMENT.md](services/voltrike-go/DEPLOYMENT.md).
+[transition.md](transition.md) and older release/roadmap documents retain
+migration context; compare historical instructions with active code and export
+manifests before using them.
+
+### Configuration boundaries
+
+| Setting | Current behavior |
+| --- | --- |
+| `VOLTRIKE_API_BASE_URL` | Flutter build-time override; the client also has a configured Cloud Run default. |
+| `VOLTRIKE_ENABLE_APP_CHECK` | Mobile default `false` for privately shared builds. |
+| `VOLTRIKE_REQUIRE_EMAIL_VERIFICATION` | Mobile default `false`; this does not disable account, role, ownership, or server-side workflow checks. |
+| `GO_REQUIRE_APP_CHECK` | Server enforcement is independent of the mobile switch. The loader defaults to enforcement outside the demo project; the private deployment instructions explicitly disable it. |
+| `VOLTRIKE_RUST_MODE` | Default `off` for inherited native migration modes; feature-specific overrides select rollout behavior. |
+| `VOLTRIKE_IMAGE_ENGINE` | Default `auto`, with supported native image preparation and Dart fallback. |
+
+Configure Firebase project resources, Android Maps credentials, Go credentials,
+allowed web origins, and provider integrations before running the relevant
+workflow. Quote encryption keys, LiveKit server credentials, internal maintenance
+keys, and email-provider secrets belong in server configuration—not Flutter
+defines or public Vite variables. Changing a Flutter define requires a rebuilt
+APK; enabling client attestation also requires compatible server configuration.
+
+## Code and verification guide
+
+Use active implementation and tests to resolve differences with older diagrams,
+roadmaps, compatibility fields, or deployment notes:
+
+| Area | Source |
+| --- | --- |
+| Ride types and client capacity | [ride_type.dart](lib/data/models/ride_type.dart) |
+| Authoritative fare and policy logic | [core.go](services/voltrike-go/internal/core/core.go) |
+| Booking commands and quote consumption | [domain.go](services/voltrike-go/internal/app/domain.go) |
+| Driver eligibility and dispatch | [dispatch.go](services/voltrike-go/internal/firebase/dispatch.go) |
+| Commission-free settlement regression | [settlement_test.go](services/voltrike-go/internal/firebase/settlement_test.go) |
+| Public and internal API routing | [http.go](services/voltrike-go/internal/app/http.go), [OpenAPI](contracts/openapi.yaml) |
+| Portal role routing and pages | [App.tsx](admin/src/App.tsx) |
+| Server-scoped count analytics | [admin_analytics.go](services/voltrike-go/internal/firebase/admin_analytics.go) |
+| Active Node integration exports | [index.js](functions/index.js) |
+| Private mobile security defaults | [mobile_security_config.dart](lib/core/config/mobile_security_config.dart) |
+| Native rollout modes | [rust_migration_mode.dart](lib/core/native/rust_migration_mode.dart) |
+
+The public API groups cover capabilities, the current profile, quotes,
+bookings and commands, driver sessions/heartbeats/location, and named
+`/api/v2/operations/{operation}` actions. Operations include registration,
+media finalization, chat/calls, ratings, reports, safety, and scoped
+administration. Internal `/v1/` maintenance and compatibility routes are not a
+mobile fallback around V2 authentication.
+
+Run checks from the indicated directories after installing the matching
+dependencies and toolchains:
+
+| Directory | Checks |
+| --- | --- |
+| Repository root | `flutter pub get`, `flutter analyze`, `flutter test` |
+| `services/voltrike-go/` | `go test ./...` |
+| `functions/` | `npm ci`, `npm test` |
+| `admin/` | `npm ci`, `npm run build` (TypeScript and production bundle) |
+| Repository root | `cargo test --manifest-path rust/Cargo.toml` |
+
+The repository declares Dart `^3.11.0`, Go `1.26.0`, Node.js `22` for Functions,
+and Rust `1.97.1` as the crate minimum. Check the manifests and lockfiles when
+updating dependencies. Native builds also need the Android and Rust tooling.
+Automated checks do not establish live deployment, legal approval, measured
+performance, or end-to-end device compatibility. For manual mobile coverage,
+see [docs/mobile_qa_checklist.md](docs/mobile_qa_checklist.md).
 
 ## Development notes
 
@@ -544,8 +684,8 @@ For full infrastructure and environment setup, see
   other secret values.
 - Render/Vite variables beginning with `VITE_` are public build-time values;
   never put server secrets in them.
-- The API base URL is supplied to Flutter as a build-time `dart-define` so APKs
-  can call Cloud Run after being shared to another phone.
+- Use the API base URL build-time override when targeting a different backend;
+  shared APKs otherwise retain the configured client default.
 - Test booking flows with separate passenger and driver accounts, including
   registration, status approval, availability, quote, offer, lifecycle,
   settlement, receipt, rating, chat, call, SOS, report, and cancellation paths.
