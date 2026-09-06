@@ -278,6 +278,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Profile Photo',
                   icon: Icons.person,
                   file: _profilePhoto,
+                  previewAspectRatio: 1,
+                  placeholderText: 'Your portrait here',
                   instruction: 'Camera or gallery • square portrait',
                   onTap: () => _pickImage(
                     setter: (file) => _profilePhoto = file,
@@ -302,6 +304,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Driver License (Front)',
                   icon: Icons.badge_outlined,
                   file: _licenseFront,
+                  sampleAsset: 'assets/images/Driver_License_Front_Sample.png',
+                  previewAspectRatio: 1.586,
                   instruction: 'Camera required • hold ID horizontally',
                   cameraOnly: true,
                   onTap: () => _pickImage(
@@ -327,6 +331,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Driver License (Back)',
                   icon: Icons.badge,
                   file: _licenseBack,
+                  sampleAsset: 'assets/images/Driver_License_Back_Sample.png',
+                  previewAspectRatio: 1.586,
                   instruction: 'Camera required • hold ID horizontally',
                   cameraOnly: true,
                   onTap: () => _pickImage(
@@ -352,6 +358,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Government ID',
                   icon: Icons.credit_card,
                   file: _governmentId,
+                  sampleAsset: 'assets/images/Government_ID_Sample.png',
+                  previewAspectRatio: 1.586,
                   instruction: 'Camera required • hold ID horizontally',
                   cameraOnly: true,
                   onTap: () => _pickImage(
@@ -377,6 +385,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Official Receipt (OR)',
                   icon: Icons.receipt_long,
                   file: _orDocument,
+                  sampleAsset: 'assets/images/LTO_OR_SAMPLE.png',
+                  previewAspectRatio: 1 / 1.414,
                   instruction: 'Camera required • fill the document frame',
                   cameraOnly: true,
                   onTap: () => _pickImage(
@@ -402,6 +412,8 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Certificate of Registration (CR)',
                   icon: Icons.description,
                   file: _crDocument,
+                  sampleAsset: 'assets/images/LTO_CR_SAMPLE.png',
+                  previewAspectRatio: 1 / 1.414,
                   instruction: 'Camera required • fill the document frame',
                   cameraOnly: true,
                   onTap: () => _pickImage(
@@ -427,6 +439,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Vehicle Photo',
                   icon: Icons.directions_car,
                   file: _vehiclePhoto,
+                  placeholderText: 'Your full vehicle here',
                   instruction: 'Camera or gallery • show the full vehicle',
                   onTap: () => _pickImage(
                     setter: (file) => _vehiclePhoto = file,
