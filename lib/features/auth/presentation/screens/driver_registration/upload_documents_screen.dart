@@ -412,7 +412,7 @@ class _UploadDocumentsScreenState extends ConsumerState<UploadDocumentsScreen> {
                   title: 'Certificate of Registration (CR)',
                   icon: Icons.description,
                   file: _crDocument,
-                  sampleAsset: 'assets/images/LTO_CR_SAMPLE.png',
+                  sampleAsset: 'assets/images/CR_Sample.png',
                   previewAspectRatio: 1 / 1.414,
                   instruction: 'Camera required • fill the document frame',
                   cameraOnly: true,
