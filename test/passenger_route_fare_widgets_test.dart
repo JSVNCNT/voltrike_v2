@@ -106,7 +106,7 @@ void main() {
     expect(find.byType(Material), findsWidgets);
   });
 
-  testWidgets('ride selector shows both assets and locks E-Trike at 3 riders', (
+  testWidgets('ride selector shows both assets and locks Regular at 3 riders', (
     tester,
   ) async {
     RideType? selected;
@@ -127,8 +127,8 @@ void main() {
       ),
     );
 
-    expect(find.text('E-Trike'), findsOneWidget);
-    expect(find.text('E-Tuktuk'), findsOneWidget);
+    expect(find.text('Regular'), findsOneWidget);
+    expect(find.text('XL'), findsOneWidget);
     expect(find.byType(Image), findsNWidgets(2));
     expect(
       find.image(const AssetImage('assets/images/etrike_white.png')),
@@ -139,7 +139,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('maximum capacity of 2'), findsOneWidget);
-    await tester.tap(find.text('E-Trike'));
+    await tester.tap(find.text('Regular'));
     expect(selected, isNull);
   });
 

@@ -3,14 +3,16 @@ import 'package:flutter/material.dart' show Brightness;
 enum RideType {
   eTrike(
     'e_trike',
-    'E-Trike',
+    'E-Trike Regular',
+    'Regular',
     'assets/images/etrike_black.png',
     'assets/images/etrike_white.png',
     2,
   ),
   eTuktuk(
     'electric_tuktuk',
-    'E-Tuktuk',
+    'E-Trike XL',
+    'XL',
     'assets/images/etuktuk_black.png',
     'assets/images/etuktuk_white.png',
     4,
@@ -19,6 +21,7 @@ enum RideType {
   const RideType(
     this.value,
     this.label,
+    this.selectorLabel,
     this.lightAssetPath,
     this.darkAssetPath,
     this.maximumPassengers,
@@ -26,6 +29,7 @@ enum RideType {
 
   final String value;
   final String label;
+  final String selectorLabel;
   final String lightAssetPath;
   final String darkAssetPath;
   final int maximumPassengers;
@@ -41,7 +45,10 @@ enum RideType {
       '',
     );
     return switch (normalized) {
-      'electrictuktuk' || 'etuktuk' || 'electrictricycle' => RideType.eTuktuk,
+      'electrictuktuk' ||
+      'etuktuk' ||
+      'electrictricycle' ||
+      'etrikexl' => RideType.eTuktuk,
       _ => RideType.eTrike,
     };
   }

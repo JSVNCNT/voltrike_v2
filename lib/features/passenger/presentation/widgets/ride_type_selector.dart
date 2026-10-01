@@ -42,7 +42,7 @@ class RideTypeSelector extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Your fare and matched driver follow this selection.',
+          'Select your E-Trike type. Your fare and matched driver follow this selection.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -88,8 +88,8 @@ class RideTypeSelector extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'E-Tuktuk is selected for $passengerCount riders. '
-                  'E-Trike has a maximum capacity of 2.',
+                  'E-Trike XL is selected for $passengerCount riders. '
+                  'E-Trike Regular has a maximum capacity of 2.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -157,7 +157,7 @@ class _RideTypeCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            type.label,
+                            type.selectorLabel,
                             maxLines: 1,
                             style: Theme.of(context).textTheme.labelLarge,
                           ),

@@ -59,12 +59,12 @@ void main() {
   });
 
   group('DriverSearchPresentation availability copy', () {
-    test('requests high-capacity tuktuks for three or more riders', () {
+    test('requests E-Trike XL for three or more riders', () {
       expect(DriverSearchPresentation.requiresHighCapacity(1), isFalse);
       expect(DriverSearchPresentation.requiresHighCapacity(2), isTrue);
       expect(
         DriverSearchPresentation.searchingMessage(additionalPassengers: 2),
-        contains('high-capacity electric tuktuk'),
+        contains('E-Trike XL'),
       );
     });
 
@@ -74,14 +74,14 @@ void main() {
           additionalPassengers: 2,
           isOutsideToda: false,
         ),
-        'No high-capacity electric tuktuks are available right now.',
+        'No E-Trike XL rides are available right now.',
       );
       expect(
         DriverSearchPresentation.unavailableMessage(
           additionalPassengers: 0,
           isOutsideToda: true,
         ),
-        'No tuktuks are serving this area right now.',
+        'No VolTrike drivers are serving this area right now.',
       );
       expect(
         DriverSearchPresentation.unavailableMessage(

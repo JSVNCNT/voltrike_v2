@@ -67,6 +67,7 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
 
   GoogleMapController? _mapController;
   BitmapDescriptor? _driverMarkerIcon;
+  Brightness? _driverMarkerBrightness;
 
   //==========================================================================
   // Route
@@ -145,12 +146,21 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
   void initState() {
     super.initState();
     _sheetController.addListener(_onSheetExtentChanged);
-    _loadDriverMarker();
     unawaited(_loadSafetyIncident());
     _bookingSubscription = ref.listenManual<AsyncValue<Booking?>>(
       bookingListenerProvider(widget.bookingId),
       (_, next) => next.whenData(_handleBookingRoute),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    if (_driverMarkerBrightness != brightness) {
+      _driverMarkerBrightness = brightness;
+      unawaited(_loadDriverMarker(brightness));
+    }
   }
 
   Future<void> _loadSafetyIncident() async {
@@ -180,10 +190,12 @@ class _BookingTrackingScreenState extends ConsumerState<BookingTrackingScreen> {
     });
   }
 
-  Future<void> _loadDriverMarker() async {
+  Future<void> _loadDriverMarker(Brightness brightness) async {
     try {
-      final icon = await RideMarkerFactory.driverMarker();
-      if (mounted) setState(() => _driverMarkerIcon = icon);
+      final icon = await RideMarkerFactory.driverMarker(brightness: brightness);
+      if (mounted && _driverMarkerBrightness == brightness) {
+        setState(() => _driverMarkerIcon = icon);
+      }
     } catch (_) {
       // The default teal marker remains available if an app asset is missing.
     }

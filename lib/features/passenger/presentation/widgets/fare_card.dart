@@ -27,7 +27,7 @@ class FareCard extends StatelessWidget {
     this.additionalDropoffFare = '₱0.00',
     this.dropoffCount = 1,
     this.isOutsideToda = false,
-    this.rideType = 'E-Trike',
+    this.rideType = 'E-Trike Regular',
     this.rideTypeFare = '₱0.00',
   });
 

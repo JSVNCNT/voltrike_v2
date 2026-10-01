@@ -50,7 +50,7 @@ class TripOptionsCard extends StatelessWidget {
               helper:
                   '${additionalPassengers + 1} total rider'
                   '${additionalPassengers == 0 ? '' : 's'} • '
-                  '${additionalPassengers + 1 <= 2 ? 'E-Trike or Electric Tuktuk' : 'Electric Tuktuk required'}',
+                  '${additionalPassengers + 1 <= 2 ? 'E-Trike Regular or E-Trike XL' : 'E-Trike XL required'}',
               value: additionalPassengers,
               maxValue: 3,
               onDecrease: onDecreasePassengers,

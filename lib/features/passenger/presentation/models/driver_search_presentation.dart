@@ -28,7 +28,7 @@ class DriverSearchPresentation {
 
   static String searchingMessage({required int additionalPassengers}) {
     if (requiresHighCapacity(additionalPassengers)) {
-      return 'Looking for a high-capacity electric tuktuk nearby.';
+      return 'Looking for an E-Trike XL nearby.';
     }
     return 'Notifying nearby VolTrike drivers.';
   }
@@ -38,10 +38,10 @@ class DriverSearchPresentation {
     required bool isOutsideToda,
   }) {
     if (requiresHighCapacity(additionalPassengers)) {
-      return 'No high-capacity electric tuktuks are available right now.';
+      return 'No E-Trike XL rides are available right now.';
     }
     if (isOutsideToda) {
-      return 'No tuktuks are serving this area right now.';
+      return 'No VolTrike drivers are serving this area right now.';
     }
     return 'No nearby drivers are available right now.';
   }
