@@ -745,7 +745,26 @@ function callableErrorMessage(name: string, error: unknown): string {
   return 'The server could not complete this administrator action. Refresh and try again.';
 }
 
+export interface PassengerCancellation {
+  bookingId: string;
+  passengerName: string;
+  status: string;
+  reasonCode: string;
+  blockedUntil?: string;
+  restrictionCount: number;
+  strikeCount: number;
+  arrivalVerified: boolean;
+  waitVerified: boolean;
+  manualAppealStatus?: string;
+}
+
 export const adminApi = {
+  revealPassengerDetails: (source: { bookingId: string; reason: string; reportId?: string; incidentId?: string; chatIncidentId?: string }) =>
+    call<{ details: Record<string, unknown> }>('adminRevealPassengerDetails', source),
+  passengerCancellations: (cursor?: string | null) =>
+    call<{ items: PassengerCancellation[]; nextCursor?: string }>('adminListPassengerCancellations', { cursor: cursor || '' }),
+  reviewPassengerCancellation: (bookingId: string, decision: string, reason: string, hours = 24) =>
+    call<{ updated: boolean }>('adminReviewPassengerCancellation', { bookingId, decision, reason, hours }),
   metrics: () => call<AdminMetrics>('adminGetMetrics', {}),
   overviewAnalytics: () => call<OverviewAnalytics>('adminGetOverviewAnalytics', {}),
   bootstrap: (code: string) => call<{ role: string }>('bootstrapDeveloperAdmin', { code }),
@@ -787,8 +806,8 @@ export const adminApi = {
     action: 'dismiss' | 'resolve' | 'hide',
     note = '',
   ) => call<{ updated: boolean }>('adminUpdateChatModerationIncident', { incidentId, action, note }),
-  chatModerationMediaUrl: (incidentId: string) =>
-    call<{ url: string; expiresAt: string }>('adminGetChatModerationMediaUrl', { incidentId }),
+  chatModerationMediaUrl: (incidentId: string, reason: string) =>
+    call<{ url: string; expiresAt: string }>('adminGetChatModerationMediaUrl', { incidentId, reason }),
   resolveReport: (reportId: string, status: string, action: string) => call<{ updated: boolean }>('adminResolveReport', { reportId, status, action }),
   resolveSettlementDispute: (bookingId: string, resolution: string) => call<{ updated: boolean }>('adminResolveSettlementDispute', { bookingId, resolution }),
   submitZone: (todaId: string, polygon: [number, number][], notes: string, areas?: [number, number][][]) => call<{ zoneRequestId: string }>('adminSubmitZoneRequest', { todaId, polygon, notes, areas }),

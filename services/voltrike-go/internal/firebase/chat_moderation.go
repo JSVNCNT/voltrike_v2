@@ -484,6 +484,10 @@ func (store *Store) adminUpdateChatModerationIncident(ctx context.Context, actor
 }
 
 func (store *Store) adminGetChatModerationMediaURL(ctx context.Context, actor adminIdentity, payload map[string]any) (map[string]any, error) {
+	reason := strings.TrimSpace(text(payload, "reason"))
+	if len(reason) < 10 || len(reason) > 500 {
+		return nil, fmt.Errorf("%w: an investigation reason of 10–500 characters is required", app.ErrInvalidArgument)
+	}
 	incident, err := store.firestore.Collection("chatModerationIncidents").Doc(text(payload, "incidentId")).Get(ctx)
 	if err != nil || !actorCanAccessChatIncident(actor, incident.Data()) {
 		return nil, fmt.Errorf("%w: chat incident media is outside administrator scope", app.ErrPrecondition)
@@ -499,6 +503,12 @@ func (store *Store) adminGetChatModerationMediaURL(ctx context.Context, actor ad
 	url, err := store.bucket.SignedURL(reference, &gcs.SignedURLOptions{Scheme: gcs.SigningSchemeV4, Method: "GET", Expires: expiresAt})
 	if err != nil {
 		return nil, fmt.Errorf("create short-lived chat evidence URL: %w", err)
+	}
+	if _, err := store.firestore.Collection("adminAuditLogs").Doc(uuid.NewString()).Create(ctx, map[string]any{
+		"operation": "adminGetChatModerationMediaUrl", "actorUid": actor.UID, "actorRole": actor.Role,
+		"incidentId": incident.Ref.ID, "reason": reason, "createdAt": time.Now().UTC(),
+	}); err != nil {
+		return nil, fmt.Errorf("record private evidence access: %w", err)
 	}
 	return map[string]any{"url": url, "expiresAt": expiresAt}, nil
 }

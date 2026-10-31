@@ -36,6 +36,10 @@ func (store *Store) adminList(ctx context.Context, actor adminIdentity, collecti
 		if !actor.canAccessToda(todaID) {
 			continue
 		}
+		if collectionName == "reports" && !actor.developer() && (text(data, "reportedRole") == "passenger" || len(stringSlice(data["reviewAudience"])) > 0 && !contains(stringSlice(data["reviewAudience"]), "toda_admin")) {
+			continue
+		}
+		data = maskAdminPassengerData(data)
 		if search != "" && !strings.Contains(strings.ToLower(document.Ref.ID+" "+text(data, "name", "driverName", "passengerName", "email", "status")), search) {
 			continue
 		}
@@ -93,6 +97,7 @@ func (store *Store) adminListBookings(ctx context.Context, actor adminIdentity, 
 		if !actor.canAccessToda(text(data, "todaId", "ownerTodaId", "driverTodaId")) {
 			continue
 		}
+		data = maskAdminPassengerData(data)
 		if !adminBookingMatchesSearch(document.Ref.ID, data, needle) {
 			continue
 		}

@@ -18,6 +18,8 @@ import '../../../../data/models/ride_type.dart';
 import '../../../common/presentation/widgets/app_app_bar.dart';
 import '../../providers/booking_controller_provider.dart';
 import '../../providers/booking_provider.dart';
+import '../../providers/passenger_booking_policy_provider.dart';
+import '../widgets/booking_policy_notice.dart';
 import '../../providers/booking_session_provider.dart';
 import '../../providers/fare_configuration_provider.dart';
 import '../widgets/home_bottom_sheet.dart';
@@ -770,6 +772,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
         fareConfiguration.isRideTypeEnabled(session.rideType);
 
     final bookingState = ref.watch(bookingProvider);
+    final policy = ref.watch(passengerBookingPolicyProvider).value;
     final routeSelectionLocked =
         _bookingCreationInProgress ||
         bookingState == PassengerBookingState.estimatingFare ||
@@ -797,6 +800,9 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
             maxChildSize: _expandedSheetExtent,
             builder: (context, scrollController) {
               return HomeBottomSheet(
+                bookingNotice: policy == null
+                    ? null
+                    : BookingPolicyNotice(policy: policy),
                 scrollController: scrollController,
                 isExpanded: _sheetExpanded,
                 onToggleExpanded: _toggleSheet,
@@ -881,6 +887,7 @@ class _PassengerHomeScreenState extends ConsumerState<PassengerHomeScreen> {
                 onBookRide:
                     session.hasRoute &&
                         selectedRideIsAvailable &&
+                        policy?.isBlocked != true &&
                         !_bookingCreationInProgress
                     ? _bookRide
                     : null,

@@ -94,6 +94,11 @@ func (store *Store) executeAdminOperation(ctx context.Context, principal app.Pri
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if operationErr == nil && result != nil && command.Name != "adminRevealPassengerDetails" {
+			result = maskAdminResult(result)
+		}
+	}()
 	if !strings.HasPrefix(command.Name, "adminList") && !strings.HasPrefix(command.Name, "adminGet") {
 		defer func() {
 			if operationErr == nil {
@@ -102,6 +107,12 @@ func (store *Store) executeAdminOperation(ctx context.Context, principal app.Pri
 		}()
 	}
 	switch command.Name {
+	case "adminRevealPassengerDetails":
+		return store.adminRevealPassengerDetails(ctx, actor, command.Payload)
+	case "adminListPassengerCancellations":
+		return store.adminListPassengerCancellations(ctx, actor, command.Payload)
+	case "adminReviewPassengerCancellation":
+		return store.adminReviewPassengerCancellation(ctx, actor, command.Payload)
 	case "adminCreateToda":
 		return store.registerToda(ctx, principal, command.Payload, true)
 	case "adminReviewTodaRegistration":

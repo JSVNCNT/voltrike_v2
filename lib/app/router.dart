@@ -6,6 +6,7 @@ import '../data/repositories/booking_voice_call_repository.dart';
 import '../features/auth/presentation/screens/email_verification/email_verification_screen.dart';
 import '../features/auth/presentation/screens/forgot_password/forgot_password_screen.dart';
 import '../features/auth/presentation/screens/intro/intro_screen.dart';
+import '../features/auth/presentation/screens/registration_preparation_screen.dart';
 import '../features/auth/presentation/screens/login/login_screen.dart';
 
 import '../features/auth/presentation/screens/passenger_registration/passenger_registration_screen.dart';
@@ -137,6 +138,12 @@ final GoRouter appRouter = GoRouter(
     ),
 
     GoRoute(
+      path: AppRoutes.passengerPrepare,
+      builder: (context, state) =>
+          _publicLight(const RegistrationPreparationScreen(isDriver: false)),
+    ),
+
+    GoRoute(
       path: AppRoutes.passengerRegisterSuccess,
       builder: (context, state) =>
           _publicLight(const PassengerRegistrationSuccessScreen()),
@@ -148,7 +155,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.driverRegister,
       builder: (context, state) =>
-          _publicLight(const DriverRegistrationStep1Screen()),
+          _publicLight(const RegistrationPreparationScreen(isDriver: true)),
     ),
 
     GoRoute(

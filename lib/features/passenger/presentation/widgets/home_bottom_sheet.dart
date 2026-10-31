@@ -34,6 +34,7 @@ class HomeBottomSheet extends StatelessWidget {
     this.onRemoveAdditionalDropoff,
     this.onEditNote,
     this.onBookRide,
+    this.bookingNotice,
 
     this.onIncreasePassengers,
     this.onDecreasePassengers,
@@ -78,6 +79,7 @@ class HomeBottomSheet extends StatelessWidget {
   final VoidCallback? onRemoveAdditionalDropoff;
   final VoidCallback? onEditNote;
   final VoidCallback? onBookRide;
+  final Widget? bookingNotice;
 
   final VoidCallback? onIncreasePassengers;
   final VoidCallback? onDecreasePassengers;
@@ -145,6 +147,8 @@ class HomeBottomSheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Book a Ride', style: theme.textTheme.titleLarge),
+
+                    ?bookingNotice,
 
                     const SizedBox(height: 6),
 

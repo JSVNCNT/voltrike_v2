@@ -185,7 +185,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 text: 'New passenger?',
                 actionText: 'Create passenger account',
                 onPressed: () {
-                  context.go(AppRoutes.passengerRegister);
+                  context.go(AppRoutes.passengerPrepare);
                 },
               ),
 

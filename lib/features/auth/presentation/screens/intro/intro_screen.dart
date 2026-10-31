@@ -45,7 +45,7 @@ class IntroScreen extends StatelessWidget {
             text: 'Continue as passenger',
             icon: Icons.person_outline_rounded,
             onPressed: () {
-              context.go(AppRoutes.passengerRegister);
+              context.go(AppRoutes.passengerPrepare);
             },
           ),
 

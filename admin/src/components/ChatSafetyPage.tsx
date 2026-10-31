@@ -1,3 +1,4 @@
+import { PassengerCaseDetails } from './PassengerCaseDetails';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { adminApi } from '../admin-api';
@@ -158,9 +159,15 @@ export function ChatSafetyPage({
   }
 
   async function viewEvidence(incident: ChatModerationIncident) {
+    const reason = window.prompt('Enter your investigation reason to view this private photo (10–500 characters). Access will be recorded.');
+    if (!reason) return;
+    if (reason.trim().length < 10 || reason.trim().length > 500) {
+      onMessage('Provide an investigation reason of 10–500 characters.');
+      return;
+    }
     setBusy(`${incident.incidentId}-media`);
     try {
-      const result = await adminApi.chatModerationMediaUrl(incident.incidentId);
+      const result = await adminApi.chatModerationMediaUrl(incident.incidentId, reason.trim());
       const viewer = window.open(result.url, '_blank');
       if (!viewer) onMessage('Allow pop-ups for this admin site to view the protected chat photo.');
     } catch (error) {
@@ -225,12 +232,12 @@ export function ChatSafetyPage({
 
     <section className="panel chat-incidents">
       <div className="chat-safety-heading"><div><p className="eyebrow">SAFETY EVIDENCE</p><h2>Chat incidents</h2></div><button onClick={() => void refresh()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button></div>
-      <p className="muted">Original unmasked text is visible only here for authorized review. Normal chat photos expire after 48 hours; a reported photo has a separate protected evidence hold until resolution, with a 180-day maximum.</p>
+      <p className="muted">Passenger identities and message content are masked. Open case details with an investigation reason for authorized review. Normal chat photos expire after 48 hours; a reported photo has a separate protected evidence hold until resolution, with a 180-day maximum.</p>
       <div className="chat-incident-list">
         {incidents.length === 0 && !loading && <p>No chat incidents recorded.</p>}
         {incidents.map((incident) => <article className={`chat-incident-card severity-${incident.severity}`} key={incident.incidentId}>
           <div className="chat-incident-title"><div><strong>{incident.senderName} · {incident.senderRole}</strong><small>{incident.senderId} · {when(incident.createdAt)} · ride {incident.bookingId}</small></div><span className="status-cell">{incident.status} · {incident.deliveryStatus}</span></div>
-          <dl><div><dt>Original</dt><dd>{incident.originalText || (incident.messageType === 'image' ? 'Ride photo' : 'No text')}</dd></div><div><dt>Delivered display</dt><dd>{incident.displayText || 'Not delivered'}</dd></div></dl>
+          <PassengerCaseDetails bookingId={incident.bookingId} chatIncidentId={incident.incidentId} /><dl><div><dt>Original</dt><dd>{incident.originalText || (incident.messageType === 'image' ? 'Ride photo' : 'No text')}</dd></div><div><dt>Delivered display</dt><dd>{incident.displayText || 'Not delivered'}</dd></div></dl>
           {incident.matches.length > 0 && <p className="chat-match-summary">Matched: {incident.matches.map((match) => match.phrase || 'participant report').join(', ')}</p>}
           <small className="technical-id">Incident {incident.incidentId} · message {incident.messageId} · TODA {incident.todaId || 'not recorded'}</small>
           <div className="actions">

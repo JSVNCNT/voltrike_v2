@@ -27,6 +27,8 @@ class AppRoutes {
 
   static const String passengerRegister = '/register/passenger';
 
+  static const String passengerPrepare = '/register/passenger/prepare';
+
   static const String passengerRegisterSuccess = '/register/passenger/success';
 
   //==========================================================================

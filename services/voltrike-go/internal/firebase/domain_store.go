@@ -63,6 +63,15 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 		if text(passenger, "role") != "passenger" || !booleanDefault(passenger, true, "isActive") {
 			return fmt.Errorf("%w: an active passenger account is required", app.ErrPrecondition)
 		}
+		policySnapshot, policyErr := tx.Get(store.firestore.Collection("passengerBookingPolicies").Doc(principal.UID))
+		if policyErr != nil && !isNotFound(policyErr) {
+			return fmt.Errorf("read passenger booking policy: %w", policyErr)
+		}
+		if policyErr == nil {
+			if until := bookingBlockedUntil(policySnapshot.Data()); until.After(time.Now().UTC()) {
+				return fmt.Errorf("%w: new bookings are restricted until %s. You can still view trips, report safety concerns, and appeal a cancellation", app.ErrPrecondition, until.Format(time.RFC3339))
+			}
+		}
 		activeLock, lockErr := tx.Get(lockRef)
 		if lockErr == nil && activeLock.Exists() && text(activeLock.Data(), "bookingId") != command.BookingID {
 			return fmt.Errorf("%w: passenger already has an active booking", app.ErrPrecondition)
@@ -232,6 +241,10 @@ func (store *Store) GetBooking(ctx context.Context, principal app.Principal, boo
 	if owner != principal.UID && driver != principal.UID && !store.canAdminAccessToda(ctx, principal, text(data, "todaId", "driverTodaId", "ownerTodaId")) {
 		return app.BookingRecord{}, fmt.Errorf("%w: booking is not visible to this user", app.ErrPrecondition)
 	}
+	if owner != principal.UID && driver != principal.UID {
+		data = maskAdminPassengerData(data)
+		redactAdminFinancialFields(data)
+	}
 	return app.BookingRecord{ID: bookingID, Data: data}, nil
 }
 
@@ -255,7 +268,8 @@ func (store *Store) ListAdminBookings(ctx context.Context, principal app.Princip
 	items := make([]map[string]any, 0, len(documents))
 	needle := strings.ToLower(strings.TrimSpace(search))
 	for _, document := range documents {
-		data := document.Data()
+		data := maskAdminPassengerData(document.Data())
+		redactAdminFinancialFields(data)
 		if needle != "" {
 			candidate := strings.ToLower(strings.Join([]string{
 				document.Ref.ID,
@@ -278,6 +292,11 @@ func (store *Store) ListAdminBookings(ctx context.Context, principal app.Princip
 }
 
 func (store *Store) TransitionBooking(ctx context.Context, principal app.Principal, command app.TransitionBookingCommand) (app.BookingRecord, error) {
+	var arrivalLocation map[string]any
+	if command.Action == "arrived" {
+		// Only a fresh, server-accepted GPS sample can support a later no-show.
+		_ = store.realtime.NewRef("driver_locations/"+principal.UID).Get(ctx, &arrivalLocation)
+	}
 	ref := store.firestore.Collection("bookings").Doc(command.BookingID)
 	payload, _ := json.Marshal(command)
 	payloadHash := fmt.Sprintf("%x", sha256.Sum256(payload))
@@ -465,7 +484,28 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 			}
 		}
 		now := time.Now().UTC()
+		assessment := "excluded"
+		var passengerPolicy map[string]any
+		var passengerPolicyRef *firestore.DocumentRef
+		if next == "cancelled" {
+			assessment = cancellationAssessment(data, principal.UID, command.Action, command.ReasonCode)
+			if assessment != "excluded" {
+				passengerPolicyRef = store.firestore.Collection("passengerBookingPolicies").Doc(owner)
+				policy, policyErr := tx.Get(passengerPolicyRef)
+				if policyErr != nil && !isNotFound(policyErr) {
+					return fmt.Errorf("read cancellation policy: %w", policyErr)
+				}
+				passengerPolicy = map[string]any{}
+				if policyErr == nil {
+					passengerPolicy = policy.Data()
+				}
+			}
+		}
 		updates := map[string]any{"status": next, "revision": revision + 1, "updatedAt": now}
+		if command.Action == "arrived" {
+			updates["arrivedAt"] = now
+			updates["arrivalLocationVerified"] = verifiedPickupArrival(data, arrivalLocation, now)
+		}
 		if command.Action == "accept" {
 			// Every driver in the current dispatch round watches only their own
 			// bookingOffers collection. Closing the non-winning offer documents in
@@ -552,6 +592,23 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 			updates["cancellationCode"] = cancellationCode
 			updates["cancellationDetail"] = strings.TrimSpace(command.ReasonDetail)
 			updates["cancelledBy"] = principal.UID
+			updates["passengerCancellationAssessment"] = assessment
+			if passengerPolicyRef != nil {
+				if assessment == "counted" {
+					passengerPolicy = addCancellationStrike(passengerPolicy, command.BookingID, now, now)
+				} else {
+					passengerPolicy["reviewRequired"] = true
+				}
+				passengerPolicy["passengerId"], passengerPolicy["updatedAt"] = owner, now
+				tx.Set(passengerPolicyRef, passengerPolicy)
+				tx.Create(store.firestore.Collection("passengerCancellationEvents").Doc(command.BookingID), map[string]any{
+					"bookingId": command.BookingID, "passengerId": owner, "passengerName": passengerReference(owner),
+					"reasonCode": cancellationCode, "reasonDetail": strings.TrimSpace(command.ReasonDetail),
+					"status": assessment, "createdAt": now, "updatedAt": now,
+					"arrivalVerified": booleanDefault(data, false, "arrivalLocationVerified"),
+					"waitVerified":    !storedTime(data["arrivedAt"]).IsZero() && now.Sub(storedTime(data["arrivedAt"])) >= 5*time.Minute,
+				})
+			}
 		}
 		if command.Action == "dispute" {
 			updates["settlementDispute"] = map[string]any{
@@ -658,6 +715,10 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		if err := store.realtime.NewRef("driver_tracking_access/" + passengerID + "/" + driverID).Delete(ctx); err != nil {
 			return app.BookingRecord{}, fmt.Errorf("remove tracking access projection: %w", err)
 		}
+	}
+	if passengerID != principal.UID && driverID != principal.UID {
+		result.Data = maskAdminPassengerData(result.Data)
+		redactAdminFinancialFields(result.Data)
 	}
 	return result, nil
 }

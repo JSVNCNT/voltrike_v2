@@ -1,38 +1,45 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../passenger/providers/passenger_booking_policy_provider.dart';
 
 class RideCancellationResult {
-  const RideCancellationResult({
-    required this.reason,
-    this.comment,
-  });
+  const RideCancellationResult({required this.reason, this.comment});
 
   final String reason;
   final String? comment;
 }
 
 /// Shared cancellation confirmation for either participant.
-class RideCancelDialog extends StatefulWidget {
-  const RideCancelDialog({
-    super.key,
-    required this.isDriver,
-  });
+class RideCancelDialog extends ConsumerStatefulWidget {
+  const RideCancelDialog({super.key, required this.isDriver});
 
   final bool isDriver;
 
   @override
-  State<RideCancelDialog> createState() => _RideCancelDialogState();
+  ConsumerState<RideCancelDialog> createState() => _RideCancelDialogState();
 }
 
-class _RideCancelDialogState extends State<RideCancelDialog> {
+class _RideCancelDialogState extends ConsumerState<RideCancelDialog> {
   final _commentController = TextEditingController();
   late String _reason = _reasons.first;
 
-  static const _reasons = <String>[
-    'Change of plans',
-    'Unable to reach the other rider',
-    'Safety concern',
-    'Other',
-  ];
+  List<String> get _reasons => widget.isDriver
+      ? const <String>[
+          'Change of plans',
+          'Unable to reach the other rider',
+          'Safety concern',
+          'Other',
+        ]
+      : const <String>[
+          'Change of plans',
+          'Booked by mistake',
+          'Driver asked me to cancel',
+          'Driver is taking too long',
+          'Driver is not moving',
+          'Safety concern',
+          'Other',
+        ];
 
   @override
   void dispose() {
@@ -43,6 +50,11 @@ class _RideCancelDialogState extends State<RideCancelDialog> {
   @override
   Widget build(BuildContext context) {
     final actor = widget.isDriver ? 'trip' : 'booking';
+    final policy = widget.isDriver
+        ? null
+        : ref.watch(passengerBookingPolicyProvider).value;
+    final qualifying =
+        _reason == 'Change of plans' || _reason == 'Booked by mistake';
     return AlertDialog(
       title: Text('Cancel $actor?'),
       content: SingleChildScrollView(
@@ -51,6 +63,17 @@ class _RideCancelDialogState extends State<RideCancelDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Tell us why you are cancelling.'),
+            if (!widget.isDriver) ...[
+              const SizedBox(height: 12),
+              Text(
+                qualifying
+                    ? policy == null
+                          ? 'After a driver accepts, this reason counts toward the limit of three qualifying cancellations within 24 hours. Reaching the limit restricts new bookings for 24 hours.'
+                          : 'This will be qualifying cancellation ${policy.strikes.length + 1} in 24 hours. '
+                                '${policy.strikes.length >= 2 ? 'New bookings will be restricted for 24 hours.' : 'Three qualifying cancellations restrict new bookings for 24 hours.'}'
+                    : 'Safety and driver-related reasons are reviewed and do not automatically add a cancellation strike.',
+              ),
+            ],
             const SizedBox(height: 12),
             RadioGroup<String>(
               groupValue: _reason,

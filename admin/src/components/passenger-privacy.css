@@ -1,0 +1,12 @@
+.passenger-case-dialog { width: min(680px, calc(100% - 32px)); max-height: 85dvh; overflow: auto; padding: 24px; border: 1px solid #93aeb0; border-radius: 16px; color: #123b3e; background: #fff; }
+.passenger-case-dialog::backdrop { background: rgb(0 30 32 / 55%); }
+.passenger-case-heading { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.passenger-case-dialog textarea { width: 100%; min-height: 100px; margin: 8px 0 16px; }
+.passenger-case-fields { display: grid; gap: 16px; }
+.passenger-case-fields dt { font-weight: 700; }
+.passenger-case-fields dd { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cancellation-review-list { display: grid; gap: 16px; }
+.cancellation-review-card { border: 1px solid #93aeb0; border-radius: 12px; padding: 18px; }
+.cancellation-review-card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.cancellation-review-card label { display: block; margin-top: 12px; }
+.cancellation-review-card textarea { display: block; width: 100%; min-height: 80px; }

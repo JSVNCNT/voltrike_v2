@@ -18,6 +18,10 @@ import (
 
 func (store *Store) ExecuteOperation(ctx context.Context, principal app.Principal, command app.OperationCommand) (map[string]any, error) {
 	switch command.Name {
+	case "appealPassengerCancellation":
+		return store.appealPassengerCancellation(ctx, principal, command.Payload)
+	case "appealPassengerBookingRestriction":
+		return store.appealPassengerBookingRestriction(ctx, principal, command.Payload)
 	case "listActiveRouteRestrictions":
 		return store.listActiveRouteRestrictions(ctx)
 	case "createRideReport":
@@ -107,7 +111,7 @@ func (store *Store) participantBooking(ctx context.Context, principal app.Princi
 		return nil, fmt.Errorf("%w: booking not found", app.ErrPrecondition)
 	}
 	data := snapshot.Data()
-	if text(data, "passengerId", "passengerID") != principal.UID && text(data, "driverId", "driverID") != principal.UID && !store.canAdminAccessToda(ctx, principal, text(data, "todaId", "driverTodaId", "ownerTodaId")) {
+	if text(data, "passengerId", "passengerID") != principal.UID && text(data, "driverId", "driverID") != principal.UID {
 		return nil, fmt.Errorf("%w: user is not a booking participant", app.ErrPrecondition)
 	}
 	return data, nil
