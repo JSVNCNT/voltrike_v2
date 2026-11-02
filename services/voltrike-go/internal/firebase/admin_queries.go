@@ -225,7 +225,7 @@ func (store *Store) adminMetrics(ctx context.Context, actor adminIdentity) (map[
 	collections := []string{"drivers", "bookings", "reports", "safetyIncidents", "zoneRequests"}
 	result := map[string]any{"drivers": 0, "bookings": 0, "reports": 0, "safetyIncidents": 0, "zones": 0, "trips": 0}
 	for _, name := range collections {
-		documents, err := store.firestore.Collection(name).Limit(2000).Documents(ctx).GetAll()
+		documents, err := store.firestore.Collection(name).Documents(ctx).GetAll()
 		if err != nil {
 			return nil, err
 		}

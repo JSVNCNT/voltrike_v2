@@ -72,7 +72,7 @@ page. Operational overview charts show counts, not revenue or payout totals.
 
 | Role | Implemented scope |
 | --- | --- |
-| Passenger | Own profile, quote, booking, assigned-ride communication, cash confirmation, receipts, ratings, and reports. |
+| Passenger | Own profile, quote, booking, assigned-ride communication, cash payment, receipt review, ratings, and reports. |
 | Driver | Registration evidence, approved vehicle and TODA membership, availability, eligible offers, assigned-trip progression, cash receipt, and own ride-fare summary. |
 | TODA Administrator | Permitted drivers, rides, ratings, reports, coverage requests, and driver-caused safety/moderation incidents within the assigned association. |
 | System Administrator | Platform-wide TODA review, city fare policy, coverage approval, route restrictions, moderation rules, permitted incidents, account actions, and audit review. |

@@ -35,6 +35,9 @@ migrate_working_dir/
 /build/
 /coverage/
 /output/docs/
+/output/seed/
+/functions/seed-admin-demo.js
+/functions/ADMIN-DEMO-SEED.md
 /rust/target/
 /services/voltrike-go/.gocache/
 /.gocache/
@@ -72,3 +75,5 @@ app.*.map.json
 
 android\.kotlin\sessions
 docs/
+/output/go-cache/
+/output/spreadsheets/
