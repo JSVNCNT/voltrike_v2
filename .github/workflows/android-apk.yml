@@ -73,6 +73,12 @@ jobs:
           rustup target add --toolchain 1.97.1 \
             aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
       - name: Install Android SDK and NDK
         run: |
           set -euo pipefail
