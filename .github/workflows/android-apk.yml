@@ -34,6 +34,7 @@ jobs:
     env:
       API_BASE_URL: https://voltrike-api-v2-327670792817.asia-southeast1.run.app
       SENTRY_DSN: https://39ba2251daffea156fb5d535af5e801c@o4511869752836096.ingest.us.sentry.io/4511869828202496
+      EXPECTED_SIGNING_CERT_SHA256: 02e7462817fc766fbd97e233462ebbdc8e45fcd423a342c2f0aaba369d586f23
       CARGO_BUILD_JOBS: '2'
       CARGO_INCREMENTAL: '0'
     steps:
@@ -105,6 +106,16 @@ jobs:
           printf '%s' "$VOLTRIKE_API_KEYS_DART_BASE64" | base64 --decode > lib/core/config/api_keys.dart
           keytool -list -keystore "$HOME/.android/debug.keystore" \
             -alias androiddebugkey -storepass android > /dev/null
+          keytool -exportcert -keystore "$HOME/.android/debug.keystore" \
+            -alias androiddebugkey -storepass android \
+            -file "$RUNNER_TEMP/android-debug-cert.der" > /dev/null
+          RESTORED_CERT=$(sha256sum "$RUNNER_TEMP/android-debug-cert.der" | cut -d ' ' -f 1)
+          if [[ "$RESTORED_CERT" != "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
+            printf 'Expected original certificate SHA-256: %s\nRestored certificate SHA-256: %s\n' \
+              "$EXPECTED_SIGNING_CERT_SHA256" "$RESTORED_CERT" >&2
+            echo 'The signing-key secret does not match the currently installed app.' >&2
+            exit 1
+          fi
           # Bound build memory on the free standard runner. These are temporary
           # runner-only settings and do not change application behavior.
           printf '\norg.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G -XX:ReservedCodeCacheSize=256m\norg.gradle.workers.max=2\n' \
@@ -134,21 +145,31 @@ jobs:
           BUILD_NUMBER: ${{ steps.version.outputs.number }}
         run: |
           set -euo pipefail
-          APK=build/app/outputs/flutter-apk/app-debug.apk
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          mkdir -p dist
+          # Sign the already aligned Gradle output explicitly. Runner-specific
+          # Gradle debug-key defaults must never change the shared app's signer.
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$HOME/.android/debug.keystore" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled false --v4-signing-enabled false \
+            --out dist/voltrike.apk \
+            build/app/outputs/flutter-apk/app-debug.apk
+          APK=dist/voltrike.apk
           "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
           BADGING=$("$BUILD_TOOLS/aapt" dump badging "$APK")
           grep -q "package: name='com.example.voltrike_v2' versionCode='$BUILD_NUMBER'" <<< "$BADGING"
-          EXPECTED_CERT=$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" \
-            -alias androiddebugkey -storepass android | sha256sum | cut -d ' ' -f 1)
           ACTUAL_CERT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
-          if [[ "$EXPECTED_CERT" != "$ACTUAL_CERT" ]]; then
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+            | tr -d '\r' | tr '[:upper:]' '[:lower:]')
+          if [[ ! "$ACTUAL_CERT" =~ ^[0-9a-f]{64}$ || "$EXPECTED_SIGNING_CERT_SHA256" != "$ACTUAL_CERT" ]]; then
+            printf 'Expected original certificate SHA-256: %s\nAPK certificate SHA-256: %s\n' \
+              "$EXPECTED_SIGNING_CERT_SHA256" "$ACTUAL_CERT" >&2
             echo 'APK signing certificate differs from the existing installation key.' >&2
             exit 1
           fi
-          mkdir -p dist
-          cp "$APK" dist/voltrike.apk
           cp assets/download/voltrike-qr.png assets/download/voltrike-qr.svg dist/
           (cd dist && sha256sum voltrike.apk > voltrike.apk.sha256)
 
