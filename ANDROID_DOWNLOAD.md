@@ -4,6 +4,8 @@ The APK and its QR images are hosted on **GitHub Releases**. The QR contains the
 permanent latest-APK link, so the same printed QR can download future versions.
 No paid QR service or separate QR hosting is needed.
 
+![Scan to download the latest VolTrike APK](assets/download/voltrike-qr.png)
+
 - [Download the latest APK](https://github.com/JSVNCNT/voltrike_v2/releases/latest/download/voltrike.apk)
 - [Download the QR image (PNG)](https://github.com/JSVNCNT/voltrike_v2/releases/latest/download/voltrike-qr.png)
 - [Download the QR image (SVG, suitable for printing)](https://github.com/JSVNCNT/voltrike_v2/releases/latest/download/voltrike-qr.svg)
