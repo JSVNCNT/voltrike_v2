@@ -12,8 +12,6 @@ services:
         sync: false
       - key: VITE_FIREBASE_VAPID_KEY
         sync: false
-      - key: VITE_FIREBASE_APP_CHECK_SITE_KEY
-        sync: false
       - key: VITE_SENTRY_DSN
         value: https://ab6a0d4fa7707d4d12a2775605c1d297@o4511869752836096.ingest.us.sentry.io/4511869831413761
       - key: VITE_SENTRY_ENVIRONMENT
