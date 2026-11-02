@@ -139,7 +139,7 @@ func (store *Store) ExpireCallsAndEscalateSafety(ctx context.Context, now time.T
 		batch.Set(eventRef, map[string]any{
 			"eventId": eventRef.ID, "type": "safety.escalated", "aggregateId": document.Ref.ID,
 			"payload":   map[string]any{"incidentId": document.Ref.ID, "bookingId": text(data, "bookingId"), "todaId": text(data, "todaId"), "escalationLevel": target},
-			"createdAt": now, "consumers": []string{"notifications"},
+			"createdAt": now, "notificationRetryAt": now, "consumers": []string{"notifications"},
 		})
 		if _, err := batch.Commit(ctx); err == nil {
 			safetyEscalated++

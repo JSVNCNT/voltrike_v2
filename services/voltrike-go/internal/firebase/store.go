@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
@@ -14,7 +15,9 @@ import (
 	"firebase.google.com/go/v4/appcheck"
 	"firebase.google.com/go/v4/auth"
 	"firebase.google.com/go/v4/db"
+	"firebase.google.com/go/v4/messaging"
 	"github.com/voltrike/voltrike-go/internal/app"
+	"github.com/voltrike/voltrike-go/internal/communications"
 	"github.com/voltrike/voltrike-go/internal/config"
 	"github.com/voltrike/voltrike-go/internal/core"
 	"google.golang.org/api/iterator"
@@ -27,6 +30,9 @@ type Store struct {
 	realtime   *db.Client
 	auth       *auth.Client
 	appCheck   *appcheck.Client
+	messaging  *messaging.Client
+	emailOnce  sync.Once
+	mailSender *communications.Sender
 	bucket     *storage.BucketHandle
 	bucketName string
 	cfg        config.Config
@@ -56,6 +62,11 @@ func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
 		_ = firestoreClient.Close()
 		return nil, nil, fmt.Errorf("initialize Firebase App Check: %w", err)
 	}
+	messagingClient, err := admin.Messaging(ctx)
+	if err != nil {
+		_ = firestoreClient.Close()
+		return nil, nil, fmt.Errorf("initialize Firebase Messaging: %w", err)
+	}
 	storageClient, err := admin.Storage(ctx)
 	if err != nil {
 		_ = firestoreClient.Close()
@@ -71,6 +82,7 @@ func Open(ctx context.Context, cfg config.Config) (*Store, func(), error) {
 		realtime:   realtimeClient,
 		auth:       authClient,
 		appCheck:   appCheckClient,
+		messaging:  messagingClient,
 		bucket:     bucket,
 		bucketName: cfg.StorageBucket,
 		cfg:        cfg,

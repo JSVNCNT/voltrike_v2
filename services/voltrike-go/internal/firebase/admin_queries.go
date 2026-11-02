@@ -651,6 +651,12 @@ func (store *Store) adminUpdateViolation(ctx context.Context, actor adminIdentit
 		return nil, fmt.Errorf("%w: invalid violation action", app.ErrInvalidArgument)
 	}
 	now := time.Now().UTC()
-	_, err = ref.Set(ctx, map[string]any{"status": next, "response": map[string]any{"status": next, "lastAction": action, "lastActionBy": actor.UID, "lastActionRole": actor.Role, "lastActionAt": now, "note": truncate(text(payload, "note"), 1000)}, "updatedAt": now}, firestore.MergeAll)
+	batch := store.firestore.Batch()
+	batch.Set(ref, map[string]any{"status": next, "response": map[string]any{"status": next, "lastAction": action, "lastActionBy": actor.UID, "lastActionRole": actor.Role, "lastActionAt": now, "note": truncate(text(payload, "note"), 1000)}, "updatedAt": now}, firestore.MergeAll)
+	event := store.firestore.Collection("outbox").NewDoc()
+	batch.Create(event, map[string]any{"eventId": event.ID, "type": "violation.updated", "aggregateId": ref.ID,
+		"payload":   map[string]any{"violationId": ref.ID, "driverId": text(doc.Data(), "driverId"), "status": next, "note": truncate(text(payload, "note"), 1000)},
+		"createdAt": now, "notificationRetryAt": now, "consumers": []string{"notifications"}})
+	_, err = batch.Commit(ctx)
 	return map[string]any{"violationId": ref.ID, "status": next}, err
 }

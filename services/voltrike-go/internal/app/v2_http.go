@@ -272,7 +272,11 @@ func (server *HTTPServer) handleV2Operation(writer http.ResponseWriter, request 
 	if !server.decode(writer, request, &input) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(request.Context(), server.cfg.RequestTimeout)
+	timeout := server.cfg.RequestTimeout
+	if operation := request.PathValue("operation"); operation == "requestBrandedVerificationEmail" || operation == "requestBrandedPasswordResetEmail" {
+		timeout = 25 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), timeout)
 	defer cancel()
 	result, err := server.service.ExecuteOperation(ctx, principal, OperationCommand{
 		Name: request.PathValue("operation"), CommandID: input.CommandID, Payload: input.Payload,

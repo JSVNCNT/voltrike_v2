@@ -18,6 +18,8 @@ import (
 
 func (store *Store) ExecuteOperation(ctx context.Context, principal app.Principal, command app.OperationCommand) (map[string]any, error) {
 	switch command.Name {
+	case "requestBrandedVerificationEmail", "requestBrandedPasswordResetEmail", "syncMyEmailVerification", "registerAdminWebPushToken", "unregisterAdminWebPushToken":
+		return store.executeAuthIntegration(ctx, principal, command)
 	case "appealPassengerCancellation":
 		return store.appealPassengerCancellation(ctx, principal, command.Payload)
 	case "appealPassengerBookingRestriction":
@@ -135,6 +137,23 @@ func (store *Store) createRideReport(ctx context.Context, principal app.Principa
 	if reportedID == "" {
 		return nil, fmt.Errorf("%w: booking has no other participant", app.ErrPrecondition)
 	}
+	// The retired report enricher supplied scope for legacy bookings that did
+	// not store their driver's TODA. Resolve it before committing the report and
+	// its notification event so delivery never races that enrichment.
+	todaID := text(booking, "todaId", "driverTodaId")
+	if todaID == "" && driverID != "" {
+		driver, err := store.firestore.Collection("drivers").Doc(driverID).Get(ctx)
+		if err != nil && !isNotFound(err) {
+			return nil, fmt.Errorf("read report driver scope: %w", err)
+		}
+		if err == nil {
+			todaID = text(driver.Data(), "todaId")
+		}
+	}
+	reviewAudience := []string{"developer_admin"}
+	if reportedRole == "driver" {
+		reviewAudience = append(reviewAudience, "toda_admin")
+	}
 	ref := store.firestore.Collection("reports").Doc(reportID)
 	created := false
 	err = store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
@@ -152,11 +171,11 @@ func (store *Store) createRideReport(ctx context.Context, principal app.Principa
 		now := time.Now().UTC()
 		tx.Create(ref, map[string]any{
 			"reportId": reportID, "bookingId": bookingID, "reporterId": principal.UID,
-			"reportedUserId": reportedID, "todaId": text(booking, "todaId", "driverTodaId"),
+			"reportedUserId": reportedID, "todaId": todaID, "reviewAudience": reviewAudience,
 			"reporterRole": reporterRole, "reportedRole": reportedRole, "category": category,
 			"details": truncate(details, 2000), "status": "open", "createdAt": now, "updatedAt": now,
 		})
-		writeOutbox(tx, store, "report.created", reportID, map[string]any{"reportId": reportID, "bookingId": bookingID})
+		writeOutbox(tx, store, "report.created", reportID, map[string]any{"reportId": reportID, "bookingId": bookingID, "todaId": todaID})
 		created = true
 		return nil
 	})
@@ -955,20 +974,33 @@ func valueOrNil(value string) any {
 
 func (store *Store) reportRestrictionPosition(ctx context.Context, principal app.Principal, payload map[string]any) (map[string]any, error) {
 	driverSnapshot, err := store.firestore.Collection("drivers").Doc(principal.UID).Get(ctx)
-	if err != nil || text(driverSnapshot.Data(), "driverStatus") != "approved" {
+	if isNotFound(err) {
+		return nil, fmt.Errorf("%w: approved driver profile is required", app.ErrPrecondition)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read restriction monitoring driver: %w", err)
+	}
+	if text(driverSnapshot.Data(), "driverStatus") != "approved" {
 		return nil, fmt.Errorf("%w: approved driver profile is required", app.ErrPrecondition)
 	}
 	profile, err := store.firestore.Collection("driver_profiles").Doc(principal.UID).Get(ctx)
-	if err != nil {
+	if isNotFound(err) {
 		return nil, fmt.Errorf("%w: active driver session is required", app.ErrPrecondition)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read restriction monitoring session: %w", err)
 	}
 	sessionID := text(profile.Data(), "activeSessionId")
 	location := map[string]any{}
-	if sessionID == "" || store.realtime.NewRef("driverLocations/"+principal.UID+"/"+sessionID).Get(ctx, &location) != nil {
+	if sessionID == "" {
 		return nil, fmt.Errorf("%w: fresh driver location is required", app.ErrPrecondition)
 	}
+	if err := store.realtime.NewRef("driverLocations/"+principal.UID+"/"+sessionID).Get(ctx, &location); err != nil {
+		return nil, fmt.Errorf("read restriction monitoring location: %w", err)
+	}
 	point := core.Coordinate{Latitude: number(location, "latitude"), Longitude: number(location, "longitude")}
-	if !point.Valid() || time.Now().UnixMilli()-int64(number(location, "timestamp")) > 120000 {
+	age := time.Now().UnixMilli() - int64(number(location, "observedAt"))
+	if !point.Valid() || age < -10000 || age > 35000 || number(location, "accuracy") > 100 {
 		return nil, fmt.Errorf("%w: driver location is stale", app.ErrPrecondition)
 	}
 	restrictions, _, err := store.readRestrictions(ctx)
@@ -999,31 +1031,41 @@ func (store *Store) reportRestrictionPosition(ctx context.Context, principal app
 }
 
 func (store *Store) observeRestriction(ctx context.Context, principal app.Principal, driver map[string]any, restriction core.Restriction, location map[string]any, inside bool, bookingID string) (string, string, error) {
-	stateRef := store.firestore.Collection("driverRestrictionStates").Doc(principal.UID + "_" + restriction.ID)
+	stateRef := store.firestore.Collection("driverRestrictionStates").Doc(principal.UID).Collection("restrictions").Doc(restriction.ID)
 	result, violationID := "", ""
 	err := store.firestore.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		result, violationID = "", ""
 		snapshot, readErr := tx.Get(stateRef)
 		state := map[string]any{}
 		if readErr == nil {
 			state = snapshot.Data()
 		} else if !isNotFound(readErr) {
 			return readErr
+		} else {
+			// Preserve cases written by the earlier Go backstop while adopting
+			// the authoritative legacy monitor's existing nested state layout.
+			legacy, err := tx.Get(store.firestore.Collection("driverRestrictionStates").Doc(principal.UID + "_" + restriction.ID))
+			if err == nil {
+				state = legacy.Data()
+			} else if !isNotFound(err) {
+				return err
+			}
 		}
-		if number(state, "lastSequence") >= number(location, "sampleSequence") {
+		sameSession := text(state, "sessionId") == text(location, "sessionId") && number(state, "leaseGeneration") == number(location, "leaseGeneration")
+		if sameSession && number(state, "lastSequence") >= number(location, "sampleSequence") {
 			return nil
 		}
-		previousInside := booleanDefault(state, false, "inside")
-		candidateInside := booleanDefault(state, false, "candidateInside")
-		candidateCount := integer(state, "candidateCount")
-		if candidateInside != inside {
-			candidateCount = 0
-		}
-		candidateCount++
 		now := time.Now().UTC()
-		updates := map[string]any{"driverId": principal.UID, "restrictionId": restriction.ID, "candidateInside": inside, "candidateCount": candidateCount, "lastSequence": location["sampleSequence"], "updatedAt": now}
-		if candidateCount >= 2 && previousInside != inside {
-			updates["inside"], updates["candidateCount"] = inside, 0
-			if inside {
+		transition, updates := nextRestrictionObservation(state, inside, int64(number(location, "observedAt")), now.UnixMilli())
+		if transition == "ignored" {
+			return nil
+		}
+		updates["driverId"], updates["restrictionId"] = principal.UID, restriction.ID
+		updates["lastSequence"], updates["sessionId"], updates["leaseGeneration"] = location["sampleSequence"], location["sessionId"], location["leaseGeneration"]
+		updates["updatedAt"] = now
+		switch transition {
+		case "enter", "exit":
+			if transition == "enter" {
 				violationID = "violation_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 				updates["activeViolationId"] = violationID
 				violationRef := store.firestore.Collection("driverViolations").Doc(violationID)
@@ -1044,7 +1086,7 @@ func (store *Store) observeRestriction(ctx context.Context, principal app.Princi
 				}
 				result = "exit"
 			}
-		} else if previousInside != inside {
+		case "candidate_entry", "candidate_exit", "reentry_cooldown":
 			result = "pending"
 		}
 		tx.Set(stateRef, updates, firestore.MergeAll)
@@ -1153,7 +1195,8 @@ func participantViolationRole(violation map[string]any, principal app.Principal)
 
 func writeOutbox(tx *firestore.Transaction, store *Store, eventType, aggregateID string, payload map[string]any) {
 	ref := store.firestore.Collection("outbox").Doc(uuid.NewString())
-	tx.Set(ref, map[string]any{"eventId": ref.ID, "type": eventType, "aggregateId": aggregateID, "payload": payload, "createdAt": time.Now().UTC(), "consumers": []string{"notifications"}})
+	now := time.Now().UTC()
+	tx.Set(ref, map[string]any{"eventId": ref.ID, "type": eventType, "aggregateId": aggregateID, "payload": payload, "createdAt": now, "notificationRetryAt": now, "consumers": []string{"notifications"}})
 }
 
 func participantRole(booking map[string]any, uid string) string {

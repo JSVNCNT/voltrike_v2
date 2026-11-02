@@ -1,8 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getToken, initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
-import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 // Firebase web configuration is an application identifier, not a server secret.
@@ -29,40 +27,11 @@ export const app = initializeApp(isFirebaseEmulator ? {
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const functions = getFunctions(app, 'asia-southeast1');
 export const storage = getStorage(app);
 
-const appCheckSiteKey = String(
-  import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY || '',
-).trim();
-let appCheck: ReturnType<typeof initializeAppCheck> | null = null;
-if (appCheckSiteKey) {
-  try {
-    appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(appCheckSiteKey),
-      // Every Go operation asks for a current token. Avoiding an eager iframe
-      // refresh prevents privacy-focused browsers from attempting third-party
-      // storage access while the administrator is simply viewing the dashboard.
-      isTokenAutoRefreshEnabled: false,
-    });
-  } catch {
-    // App Check remains a request enhancement until enforcement is enabled.
-    // A failed provider must never prevent Firebase Auth or the admin shell
-    // from loading; protected V2 operations will return their normal error.
-    appCheck = null;
-  }
-}
-
 export async function firebaseAppCheckToken(): Promise<string | null> {
-  if (!appCheck) return null;
-  try {
-    const result = await getToken(appCheck, false);
-    return result.token || null;
-  } catch {
-    // Browser privacy controls can reject reCAPTCHA's iframe storage request.
-    // Do not turn that browser-level warning into an uncaught admin crash.
-    return null;
-  }
+  // App Check is disabled for this private deployment and Quick Share builds.
+  return null;
 }
 
 if (isFirebaseEmulator) {
@@ -70,6 +39,5 @@ if (isFirebaseEmulator) {
     disableWarnings: true,
   });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
-  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
   connectStorageEmulator(storage, '127.0.0.1', 9199);
 }

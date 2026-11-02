@@ -1,4 +1,3 @@
-import { httpsCallable } from 'firebase/functions';
 import {
   deleteToken,
   getMessaging,
@@ -7,7 +6,8 @@ import {
   onMessage,
   type MessagePayload,
 } from 'firebase/messaging';
-import { app, functions } from './firebase';
+import { app } from './firebase';
+import { goOperation } from './admin-api';
 
 const storedDeviceKey = 'voltrike_admin_web_push_device';
 
@@ -153,28 +153,21 @@ export async function enableAdminWebPush(
 
   const fallbackDocumentId = await tokenDocumentId(token);
   const previous = readStoredDevice();
-  const registrationResult = await httpsCallable<
-    {
-      token: string;
-      previousUid?: string;
-      previousDeviceId?: string;
-    },
-    RegisterWebPushResult
-  >(functions, 'registerAdminWebPushToken')({
+  const registrationResult = await goOperation<RegisterWebPushResult>('registerAdminWebPushToken', {
     token,
     ...(previous?.uid ? { previousUid: previous.uid } : {}),
     ...(previous?.documentId
       ? { previousDeviceId: previous.documentId }
       : {}),
   });
-  if (registrationResult.data.registered !== true) {
+  if (registrationResult.registered !== true) {
     throw new Error(
       'The server did not confirm violation-case web push registration.',
     );
   }
-  const documentId = typeof registrationResult.data.deviceId === 'string' &&
-      registrationResult.data.deviceId
-    ? registrationResult.data.deviceId
+  const documentId = typeof registrationResult.deviceId === 'string' &&
+      registrationResult.deviceId
+    ? registrationResult.deviceId
     : fallbackDocumentId;
   window.localStorage.setItem(storedDeviceKey, JSON.stringify({
     uid,
@@ -203,10 +196,7 @@ export async function syncAdminWebPush(uid: string): Promise<WebPushResult> {
 export async function removeAdminWebPush(uid: string): Promise<void> {
   const stored = readStoredDevice();
   if (stored?.uid === uid) {
-    await httpsCallable<
-      { token: string; deviceId?: string },
-      UnregisterWebPushResult
-    >(functions, 'unregisterAdminWebPushToken')({
+    await goOperation<UnregisterWebPushResult>('unregisterAdminWebPushToken', {
       token: stored.token,
       ...(stored.documentId ? { deviceId: stored.documentId } : {}),
     }).catch(() => undefined);

@@ -10,31 +10,39 @@ import (
 )
 
 type Config struct {
-	Port                      string
-	ProjectID                 string
-	DatabaseURL               string
-	StorageBucket             string
-	GoogleRoutesAPIKey        string
-	QuoteEncryptionKey        []byte
-	PolicyCacheTTL            time.Duration
-	RequestTimeout            time.Duration
-	MaximumRequestBody        int64
-	LocalInternalKey          string
-	AllowedOrigins            string
-	RequireAppCheck           bool
-	AllowUnauthenticatedLocal bool
-	DispatchCellDegrees       float64
-	DispatchRadiusMeters      float64
-	MaximumDispatchResults    int
-	RateLimitPerMinute        int
-	LiveKitServerURL          string
-	LiveKitAPIKey             string
-	LiveKitAPISecret          string
-	DeveloperBootstrapCode    string
-	SentryDSN                 string
-	SentryEnvironment         string
-	SentryRelease             string
-	SentryTracesSampleRate    float64
+	Port                           string
+	ProjectID                      string
+	DatabaseURL                    string
+	StorageBucket                  string
+	GoogleRoutesAPIKey             string
+	QuoteEncryptionKey             []byte
+	PolicyCacheTTL                 time.Duration
+	RequestTimeout                 time.Duration
+	MaximumRequestBody             int64
+	LocalInternalKey               string
+	AllowedOrigins                 string
+	RequireAppCheck                bool
+	AllowUnauthenticatedLocal      bool
+	DispatchCellDegrees            float64
+	DispatchRadiusMeters           float64
+	MaximumDispatchResults         int
+	RateLimitPerMinute             int
+	LiveKitServerURL               string
+	LiveKitAPIKey                  string
+	LiveKitAPISecret               string
+	DeveloperBootstrapCode         string
+	SentryDSN                      string
+	SentryEnvironment              string
+	SentryRelease                  string
+	SentryTracesSampleRate         float64
+	BrevoSMTPLogin                 string
+	BrevoSMTPKey                   string
+	BrevoSenderEmail               string
+	AdminPortalURL                 string
+	EmailLogoURL                   string
+	IntegrationWorker              bool
+	NotificationsEnabled           bool
+	AutomaticRestrictionMonitoring bool
 }
 
 func Load() (Config, error) {
@@ -50,21 +58,29 @@ func Load() (Config, error) {
 		MaximumRequestBody:        int64(number("MAX_REQUEST_BYTES", 128*1024)),
 		LocalInternalKey:          value("GO_LOCAL_INTERNAL_KEY", ""),
 		AllowedOrigins:            value("GO_ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173"),
-		RequireAppCheck:           boolValue("GO_REQUIRE_APP_CHECK", projectID != "demo-voltrike"),
+		RequireAppCheck:           boolValue("GO_REQUIRE_APP_CHECK", false),
 		AllowUnauthenticatedLocal: boolValue("GO_ALLOW_UNAUTHENTICATED_LOCAL", false),
 		// Must match functions/dispatch-spatial-index.js.
-		DispatchCellDegrees:    0.05,
-		DispatchRadiusMeters:   decimal("DISPATCH_RADIUS_METERS", 5000),
-		MaximumDispatchResults: number("MAX_DISPATCH_RESULTS", 40),
-		RateLimitPerMinute:     number("RATE_LIMIT_PER_MINUTE", 240),
-		LiveKitServerURL:       value("LIVEKIT_SERVER_URL", ""),
-		LiveKitAPIKey:          value("LIVEKIT_API_KEY", ""),
-		LiveKitAPISecret:       value("LIVEKIT_API_SECRET", ""),
-		DeveloperBootstrapCode: value("DEVELOPER_BOOTSTRAP_CODE", ""),
-		SentryDSN:              value("SENTRY_DSN", ""),
-		SentryEnvironment:      value("SENTRY_ENVIRONMENT", "development"),
-		SentryRelease:          value("SENTRY_RELEASE", ""),
-		SentryTracesSampleRate: decimal("SENTRY_TRACES_SAMPLE_RATE", 0.05),
+		DispatchCellDegrees:            0.05,
+		DispatchRadiusMeters:           decimal("DISPATCH_RADIUS_METERS", 5000),
+		MaximumDispatchResults:         number("MAX_DISPATCH_RESULTS", 40),
+		RateLimitPerMinute:             number("RATE_LIMIT_PER_MINUTE", 240),
+		LiveKitServerURL:               value("LIVEKIT_SERVER_URL", ""),
+		LiveKitAPIKey:                  value("LIVEKIT_API_KEY", ""),
+		LiveKitAPISecret:               value("LIVEKIT_API_SECRET", ""),
+		DeveloperBootstrapCode:         value("DEVELOPER_BOOTSTRAP_CODE", ""),
+		SentryDSN:                      value("SENTRY_DSN", ""),
+		SentryEnvironment:              value("SENTRY_ENVIRONMENT", "development"),
+		SentryRelease:                  value("SENTRY_RELEASE", ""),
+		SentryTracesSampleRate:         decimal("SENTRY_TRACES_SAMPLE_RATE", 0.05),
+		BrevoSMTPLogin:                 value("BREVO_SMTP_LOGIN", ""),
+		BrevoSMTPKey:                   value("BREVO_SMTP_KEY", ""),
+		BrevoSenderEmail:               value("BREVO_SENDER_EMAIL", ""),
+		AdminPortalURL:                 value("ADMIN_PORTAL_URL", "https://voltrike-admin.onrender.com"),
+		EmailLogoURL:                   value("EMAIL_LOGO_URL", ""),
+		IntegrationWorker:              boolValue("GO_INTEGRATION_WORKER", false),
+		NotificationsEnabled:           boolValue("GO_NOTIFICATIONS_ENABLED", true),
+		AutomaticRestrictionMonitoring: boolValue("GO_AUTOMATIC_RESTRICTION_MONITORING", true),
 	}
 	if cfg.ProjectID == "" {
 		return Config{}, fmt.Errorf("GOOGLE_CLOUD_PROJECT is required")

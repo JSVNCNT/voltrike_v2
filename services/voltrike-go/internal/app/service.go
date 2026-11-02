@@ -26,6 +26,7 @@ var (
 	ErrInvalidArgument = errors.New("invalid argument")
 	ErrUnavailable     = errors.New("unavailable")
 	ErrPrecondition    = errors.New("failed precondition")
+	ErrRateLimited     = errors.New("resource exhausted")
 )
 
 type Policy struct {

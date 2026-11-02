@@ -73,7 +73,8 @@ func TestAdminChatAndRatingsMaskAllFreeText(t *testing.T) {
 }
 
 func TestPassengerReferenceIsStableDistinctAndIndependentOfNames(t *testing.T) {
-	if passengerReference("p") != passengerReference("p") || passengerReference("p") == passengerReference("q") || !strings.HasPrefix(passengerReference("p"), "Passenger P-") {
+	reference := passengerReference("p")
+	if reference != passengerReference("p") || reference == passengerReference("q") || !strings.HasPrefix(reference, "Passenger P-") {
 		t.Fatal("invalid passenger references")
 	}
 	if strings.Contains(passengerReference(""), "P-") {

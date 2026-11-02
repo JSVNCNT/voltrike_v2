@@ -262,7 +262,12 @@ func (store *Store) registerToda(ctx context.Context, principal app.Principal, p
 		if err := tx.Create(store.firestore.Collection("todaApplications").Doc(id), applicationData); err != nil {
 			return err
 		}
-		tx.Set(store.firestore.Collection("users").Doc(principal.UID), userData, firestore.MergeAll)
+		if err := tx.Set(store.firestore.Collection("users").Doc(principal.UID), userData, firestore.MergeAll); err != nil {
+			return err
+		}
+		if !approved {
+			writeOutbox(tx, store, "toda.registration.submitted", id, map[string]any{"todaId": id, "adminUid": principal.UID, "todaName": name})
+		}
 		return nil
 	})
 	if err != nil {
@@ -334,6 +339,12 @@ func (store *Store) reviewToda(ctx context.Context, actor adminIdentity, payload
 		profile["role"] = "toda_admin_pending"
 	}
 	batch.Set(store.firestore.Collection("users").Doc(adminUID), profile, firestore.MergeAll)
+	if text(application.Data(), "status") != status {
+		event := store.firestore.Collection("outbox").NewDoc()
+		batch.Create(event, map[string]any{"eventId": event.ID, "type": "toda.registration." + status, "aggregateId": id,
+			"payload":   map[string]any{"todaId": id, "adminUid": adminUID, "todaName": text(application.Data(), "name")},
+			"createdAt": now, "notificationRetryAt": now, "consumers": []string{"notifications"}})
+	}
 	_, err = batch.Commit(ctx)
 	return map[string]any{"updated": err == nil}, err
 }

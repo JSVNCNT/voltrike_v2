@@ -27,60 +27,160 @@ jobs:
       DATABASE_URL: ${{ vars.FIREBASE_DATABASE_URL }}
       STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
       ADMIN_ORIGIN: ${{ vars.ADMIN_ORIGIN }}
+      EMAIL_ADMIN_PORTAL_URL: ${{ vars.EMAIL_ADMIN_PORTAL_URL || 'https://voltrike-v2.web.app' }}
+      EMAIL_LOGO_URL: ${{ vars.EMAIL_LOGO_URL || 'https://voltrike-v2.web.app/images/appLogo.png' }}
       LIVEKIT_URL: ${{ vars.LIVEKIT_SERVER_URL }}
       RUNTIME_SERVICE_ACCOUNT: ${{ vars.RUNTIME_SERVICE_ACCOUNT }}
       SENTRY_GO_DSN: ${{ vars.SENTRY_GO_DSN }}
-      SENTRY_FUNCTIONS_DSN: ${{ vars.SENTRY_FUNCTIONS_DSN }}
+      SENTRY_WORKER_DSN: ${{ vars.SENTRY_WORKER_DSN || vars.SENTRY_FUNCTIONS_DSN || vars.SENTRY_GO_DSN }}
       SENTRY_ENVIRONMENT: ${{ inputs.environment }}
+      NOTIFICATIONS_ENABLED: ${{ vars.GO_NOTIFICATIONS_ENABLED || 'true' }}
+      AUTOMATIC_RESTRICTION_MONITORING: ${{ vars.GO_AUTOMATIC_RESTRICTION_MONITORING || 'true' }}
+      FIRESTORE_EVENT_LOCATION: ${{ vars.FIRESTORE_EVENT_LOCATION }}
+      BREVO_SMTP_LOGIN_VERSION: ${{ vars.BREVO_SMTP_LOGIN_VERSION }}
+      BREVO_SMTP_KEY_VERSION: ${{ vars.BREVO_SMTP_KEY_VERSION }}
+      BREVO_SENDER_EMAIL_VERSION: ${{ vars.BREVO_SENDER_EMAIL_VERSION }}
     steps:
       - uses: actions/checkout@v4
       - name: Validate environment configuration
         shell: bash
         run: |
-          test -n "$PROJECT_ID"
-          test -n "$REGION"
-          test -n "$DATABASE_URL"
-          test -n "$STORAGE_BUCKET"
-          test -n "$ADMIN_ORIGIN"
-          test -n "$RUNTIME_SERVICE_ACCOUNT"
-          test -n "$SENTRY_GO_DSN"
-          test -n "$SENTRY_FUNCTIONS_DSN"
+          set -euo pipefail
+          for value in PROJECT_ID REGION DATABASE_URL STORAGE_BUCKET ADMIN_ORIGIN RUNTIME_SERVICE_ACCOUNT SENTRY_GO_DSN; do
+            test -n "${!value}"
+          done
+          [[ "$NOTIFICATIONS_ENABLED" == true || "$NOTIFICATIONS_ENABLED" == false ]]
+          [[ "$AUTOMATIC_RESTRICTION_MONITORING" == true || "$AUTOMATIC_RESTRICTION_MONITORING" == false ]]
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Deploy Cloud Run authority
+      - name: Resolve existing secret versions without reading payloads
+        id: secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolve_version() {
+            local secret="$1" version="${2:-}"
+            if [[ -z "$version" ]]; then
+              version="$(gcloud secrets versions list "$secret" --project "$PROJECT_ID" --filter='state=ENABLED' --sort-by='~createTime' --limit=1 --format='value(name)')"
+              version="${version##*/}"
+            fi
+            [[ "$version" =~ ^[0-9]+$ ]]
+            test "$(gcloud secrets versions describe "$version" --secret "$secret" --project "$PROJECT_ID" --format='value(state)')" = ENABLED
+            printf '%s' "$version"
+          }
+          bindings=()
+          for secret in GOOGLE_ROUTES_API_KEY GO_QUOTE_ENCRYPTION_KEY GO_LOCAL_INTERNAL_KEY LIVEKIT_API_KEY LIVEKIT_API_SECRET ADMIN_BOOTSTRAP_CODE BREVO_SMTP_LOGIN BREVO_SMTP_KEY BREVO_SENDER_EMAIL; do
+            override_name="${secret}_VERSION"
+            version="$(resolve_version "$secret" "${!override_name:-}")"
+            target="$secret"
+            if [[ "$secret" == ADMIN_BOOTSTRAP_CODE ]]; then target=DEVELOPER_BOOTSTRAP_CODE; fi
+            bindings+=("$target=$secret:$version")
+            gcloud secrets add-iam-policy-binding "$secret" --project "$PROJECT_ID" --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" --role=roles/secretmanager.secretAccessor --condition=None --quiet >/dev/null
+          done
+          (IFS=,; printf 'bindings=%s\n' "${bindings[*]}") >> "$GITHUB_OUTPUT"
+      - name: Prepare dedicated integration invocation identities
+        id: identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          eventarc_account="voltrike-eventarc-invoker@$PROJECT_ID.iam.gserviceaccount.com"
+          scheduler_account="voltrike-scheduler-invoker@$PROJECT_ID.iam.gserviceaccount.com"
+          for account in voltrike-eventarc-invoker voltrike-scheduler-invoker; do
+            if ! gcloud iam service-accounts describe "$account@$PROJECT_ID.iam.gserviceaccount.com" --project "$PROJECT_ID" >/dev/null 2>&1; then
+              gcloud iam service-accounts create "$account" --project "$PROJECT_ID" --display-name="$account"
+            fi
+          done
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$eventarc_account" --role=roles/eventarc.eventReceiver --condition=None --quiet >/dev/null
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" --role=roles/firebasecloudmessaging.admin --condition=None --quiet >/dev/null
+          event_location="$FIRESTORE_EVENT_LOCATION"
+          if [[ -z "$event_location" ]]; then
+            event_location="$(gcloud firestore databases describe --database='(default)' --project "$PROJECT_ID" --format='value(locationId)')"
+          fi
+          test -n "$event_location"
+          printf 'eventarc=%s\nscheduler=%s\nevent_location=%s\n' "$eventarc_account" "$scheduler_account" "$event_location" >> "$GITHUB_OUTPUT"
+      - name: Deploy public Firebase-authenticated API
+        env:
+          SECRET_BINDINGS: ${{ steps.secrets.outputs.bindings }}
         shell: bash
         run: >-
           gcloud run deploy voltrike-api-v2
           --source services/voltrike-go
-          --region "$REGION"
-          --project "$PROJECT_ID"
+          --set-build-env-vars GOOGLE_BUILDABLE=.
+          --region "$REGION" --project "$PROJECT_ID"
           --service-account "$RUNTIME_SERVICE_ACCOUNT"
           --allow-unauthenticated
-          --min-instances 0
-          --max-instances 3
-          --cpu 1
-          --memory 512Mi
-          --concurrency 40
-          --timeout 30s
-          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIREBASE_DATABASE_URL=$DATABASE_URL,FIREBASE_STORAGE_BUCKET=$STORAGE_BUCKET,GO_ALLOWED_ORIGINS=$ADMIN_ORIGIN,GO_REQUIRE_APP_CHECK=true,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,RATE_LIMIT_PER_MINUTE=240,LIVEKIT_SERVER_URL=$LIVEKIT_URL,SENTRY_DSN=$SENTRY_GO_DSN,SENTRY_ENVIRONMENT=$SENTRY_ENVIRONMENT,SENTRY_RELEASE=$GITHUB_SHA,SENTRY_TRACES_SAMPLE_RATE=0.05"
-          --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
+          --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi
+          --concurrency 40 --timeout 30s
+          --update-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIREBASE_DATABASE_URL=$DATABASE_URL,FIREBASE_STORAGE_BUCKET=$STORAGE_BUCKET,GO_ALLOWED_ORIGINS=$ADMIN_ORIGIN,GO_REQUIRE_APP_CHECK=false,GO_INTEGRATION_WORKER=false,GO_AUTOMATIC_RESTRICTION_MONITORING=$AUTOMATIC_RESTRICTION_MONITORING,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,RATE_LIMIT_PER_MINUTE=240,LIVEKIT_SERVER_URL=$LIVEKIT_URL,ADMIN_PORTAL_URL=$EMAIL_ADMIN_PORTAL_URL,EMAIL_LOGO_URL=$EMAIL_LOGO_URL,SENTRY_DSN=$SENTRY_GO_DSN,SENTRY_ENVIRONMENT=$SENTRY_ENVIRONMENT,SENTRY_RELEASE=$GITHUB_SHA,SENTRY_TRACES_SAMPLE_RATE=0.05"
+          --update-secrets "$SECRET_BINDINGS" --quiet
+      - name: Deploy private Go integration worker
+        env:
+          SECRET_BINDINGS: ${{ steps.secrets.outputs.bindings }}
+        shell: bash
+        run: >-
+          gcloud run deploy voltrike-integrations
+          --source services/voltrike-go
+          --set-build-env-vars GOOGLE_BUILDABLE=.
+          --region "$REGION" --project "$PROJECT_ID"
+          --service-account "$RUNTIME_SERVICE_ACCOUNT"
+          --no-allow-unauthenticated
+          --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi
+          --concurrency 10 --timeout 120s
+          --update-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIREBASE_DATABASE_URL=$DATABASE_URL,FIREBASE_STORAGE_BUCKET=$STORAGE_BUCKET,GO_INTEGRATION_WORKER=true,GO_NOTIFICATIONS_ENABLED=$NOTIFICATIONS_ENABLED,GO_REQUIRE_APP_CHECK=false,GO_AUTOMATIC_RESTRICTION_MONITORING=false,REQUEST_TIMEOUT_SECONDS=10,LIVEKIT_SERVER_URL=$LIVEKIT_URL,ADMIN_PORTAL_URL=$EMAIL_ADMIN_PORTAL_URL,EMAIL_LOGO_URL=$EMAIL_LOGO_URL,SENTRY_DSN=$SENTRY_WORKER_DSN,SENTRY_ENVIRONMENT=$SENTRY_ENVIRONMENT,SENTRY_RELEASE=$GITHUB_SHA,SENTRY_TRACES_SAMPLE_RATE=0.05"
+          --update-secrets "$SECRET_BINDINGS" --quiet
+      - name: Configure private event delivery and maintenance schedule
+        env:
+          EVENTARC_ACCOUNT: ${{ steps.identities.outputs.eventarc }}
+          SCHEDULER_ACCOUNT: ${{ steps.identities.outputs.scheduler }}
+          EVENT_LOCATION: ${{ steps.identities.outputs.event_location }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker_url="$(gcloud run services describe voltrike-integrations --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')"
+          for account in "$EVENTARC_ACCOUNT" "$SCHEDULER_ACCOUNT"; do
+            gcloud run services add-iam-policy-binding voltrike-integrations --region "$REGION" --project "$PROJECT_ID" --member="serviceAccount:$account" --role=roles/run.invoker --condition=None --quiet >/dev/null
+          done
+          trigger_action=create
+          if gcloud eventarc triggers describe voltrike-outbox-created --location "$EVENT_LOCATION" --project "$PROJECT_ID" >/dev/null 2>&1; then trigger_action=update; fi
+          gcloud eventarc triggers "$trigger_action" voltrike-outbox-created \
+            --location "$EVENT_LOCATION" --project "$PROJECT_ID" \
+            --event-filters='type=google.cloud.firestore.document.v1.created' \
+            --event-filters='database=(default)' --event-filters='namespace=(default)' \
+            --event-filters-path-pattern='document=outbox/{eventId}' \
+            --event-data-content-type=application/protobuf \
+            --destination-run-service=voltrike-integrations --destination-run-region="$REGION" \
+            --destination-run-path=/events/outbox --service-account="$EVENTARC_ACCOUNT" --quiet
+          job_action=create
+          if gcloud scheduler jobs describe voltrike-go-maintenance --location "$REGION" --project "$PROJECT_ID" >/dev/null 2>&1; then job_action=update; fi
+          gcloud scheduler jobs "$job_action" http voltrike-go-maintenance \
+            --location "$REGION" --project "$PROJECT_ID" --schedule='* * * * *' --time-zone=Etc/UTC \
+            --uri="$worker_url/tasks/maintenance" --http-method=POST --message-body='{}' \
+            --oidc-service-account-email="$SCHEDULER_ACCOUNT" --oidc-token-audience="$worker_url" \
+            --attempt-deadline=120s --quiet
+          job_state="$(gcloud scheduler jobs describe voltrike-go-maintenance --location "$REGION" --project "$PROJECT_ID" --format='value(state)')"
+          if [[ "$NOTIFICATIONS_ENABLED" == false && "$job_state" != PAUSED ]]; then
+            gcloud scheduler jobs pause voltrike-go-maintenance --location "$REGION" --project "$PROJECT_ID" --quiet
+          elif [[ "$NOTIFICATIONS_ENABLED" == true && "$job_state" == PAUSED ]]; then
+            gcloud scheduler jobs resume voltrike-go-maintenance --location "$REGION" --project "$PROJECT_ID" --quiet
+          fi
       - name: Verify hosted API
         shell: bash
         run: |
-          API_URL="$(gcloud run services describe voltrike-api-v2 --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')"
-          curl --fail --retry 5 --retry-all-errors "$API_URL/health"
-          curl --fail --retry 5 --retry-all-errors "$API_URL/ready"
-      - name: Deploy Firebase rules, indexes, and integration workers
+          set -euo pipefail
+          api_url="$(gcloud run services describe voltrike-api-v2 --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')"
+          curl --fail --retry 5 --retry-all-errors "$api_url/health"
+          curl --fail --retry 5 --retry-all-errors "$api_url/ready"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy Firebase rules and indexes
         shell: bash
         run: |
+          set -euo pipefail
           npm install --global firebase-tools@15.24.0
-          API_URL="$(gcloud run services describe voltrike-api-v2 --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')"
-          printf 'VOLTRIKE_API_BASE_URL=%s\nSENTRY_DSN=%s\nSENTRY_ENVIRONMENT=%s\nSENTRY_RELEASE=%s\nSENTRY_TRACES_SAMPLE_RATE=0.05\n' "$API_URL" "$SENTRY_FUNCTIONS_DSN" "$SENTRY_ENVIRONMENT" "$GITHUB_SHA" > "functions/.env.$PROJECT_ID"
           firebase deploy --only firestore,database,storage --project "$PROJECT_ID" --non-interactive
-          firebase deploy --only functions:processGoOutbox,functions:requestBrandedPasswordResetEmail,functions:requestBrandedVerificationEmail,functions:syncMyEmailVerification,functions:registerAdminWebPushToken,functions:unregisterAdminWebPushToken,functions:runGoMaintenance --project "$PROJECT_ID" --non-interactive
+      # First production cutover and retirement of old Functions/jobs are manual.
+      # Follow services/voltrike-go/DEPLOYMENT.md; this workflow never deletes them.

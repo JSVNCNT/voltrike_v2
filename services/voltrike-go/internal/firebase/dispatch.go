@@ -191,7 +191,10 @@ func (store *Store) PublishBookingOffers(ctx context.Context, bookingID string, 
 			payload["distanceMeters"], payload["servicePriority"] = candidate.DistanceMeters, candidate.ServicePriority
 			payload["dispatchPolicyVersion"], payload["expiresAt"] = 3, expiresAt
 			payload["createdAt"], payload["updatedAt"] = now, now
-			tx.Set(offer, payload)
+			if err := tx.Set(offer, payload); err != nil {
+				return err
+			}
+			writeOutbox(tx, store, "booking.offer.created", bookingID, map[string]any{"bookingId": bookingID, "driverId": candidate.DriverID, "offerRound": nextRound})
 		}
 		for _, previousDriverID := range stringSlice(bookingData["currentOfferDriverIds"]) {
 			if previousDriverID == "" || contains(ids, previousDriverID) {

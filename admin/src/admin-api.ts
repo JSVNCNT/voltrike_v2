@@ -1,4 +1,3 @@
-import { httpsCallable } from 'firebase/functions';
 import {
   collection,
   limit,
@@ -7,7 +6,7 @@ import {
   query,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { auth, db, firebaseAppCheckToken, functions } from './firebase';
+import { auth, db, firebaseAppCheckToken } from './firebase';
 import { ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
 import type {
@@ -34,17 +33,10 @@ import type {
 } from './types';
 
 async function call<T>(name: string, data: Record<string, unknown>): Promise<T> {
-  if (name !== 'requestBrandedVerificationEmail') {
-    return goOperation<T>(name, data);
-  }
-  try {
-    return (await httpsCallable<Record<string, unknown>, T>(functions, name)(data)).data;
-  } catch (error) {
-    throw new Error(callableErrorMessage(name, error));
-  }
+  return goOperation<T>(name, data);
 }
 
-async function goOperation<T>(
+export async function goOperation<T>(
   name: string,
   payload: Record<string, unknown>,
 ): Promise<T> {

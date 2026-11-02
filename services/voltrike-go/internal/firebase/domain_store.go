@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -176,13 +177,14 @@ func (store *Store) CreateBooking(ctx context.Context, principal app.Principal, 
 		})
 		eventRef := store.firestore.Collection("outbox").Doc(uuid.NewString())
 		tx.Set(eventRef, map[string]any{
-			"eventId":           eventRef.ID,
-			"type":              "booking.created",
-			"aggregateId":       command.BookingID,
-			"aggregateRevision": 1,
-			"payload":           map[string]any{"bookingId": command.BookingID, "passengerId": principal.UID},
-			"createdAt":         now,
-			"consumers":         []string{"notifications", "dispatch"},
+			"eventId":             eventRef.ID,
+			"type":                "booking.created",
+			"aggregateId":         command.BookingID,
+			"aggregateRevision":   1,
+			"payload":             map[string]any{"bookingId": command.BookingID, "passengerId": principal.UID},
+			"createdAt":           now,
+			"notificationRetryAt": now,
+			"consumers":           []string{"notifications", "dispatch"},
 		})
 		if command.OperationID != "" {
 			receipt := store.firestore.Collection("command_receipts").Doc(command.OperationID)
@@ -678,13 +680,14 @@ func (store *Store) TransitionBooking(ctx context.Context, principal app.Princip
 		}
 		eventRef := store.firestore.Collection("outbox").Doc(uuid.NewString())
 		tx.Set(eventRef, map[string]any{
-			"eventId":           eventRef.ID,
-			"type":              eventType,
-			"aggregateId":       command.BookingID,
-			"aggregateRevision": revision + 1,
-			"payload":           map[string]any{"bookingId": command.BookingID, "status": next, "actorId": principal.UID},
-			"createdAt":         now,
-			"consumers":         []string{"notifications"},
+			"eventId":             eventRef.ID,
+			"type":                eventType,
+			"aggregateId":         command.BookingID,
+			"aggregateRevision":   revision + 1,
+			"payload":             map[string]any{"bookingId": command.BookingID, "status": next, "actorId": principal.UID},
+			"createdAt":           now,
+			"notificationRetryAt": now,
+			"consumers":           []string{"notifications"},
 		})
 		tx.Set(receiptRef, map[string]any{
 			"actorUid":    principal.UID,
@@ -967,6 +970,16 @@ func (store *Store) HeartbeatDriverSession(ctx context.Context, principal app.Pr
 }
 
 func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Principal, command app.DriverLocationCommand) error {
+	profile, err := store.firestore.Collection("driver_profiles").Doc(principal.UID).Get(ctx)
+	if isNotFound(err) {
+		return fmt.Errorf("%w: active driver session is required", app.ErrPrecondition)
+	}
+	if err != nil {
+		return fmt.Errorf("read active driver session: %w", err)
+	}
+	if text(profile.Data(), "activeSessionId") != command.SessionID {
+		return fmt.Errorf("%w: driver session has been replaced", app.ErrPrecondition)
+	}
 	ref := store.firestore.Collection("driver_sessions").Doc(command.SessionID)
 	snapshot, err := ref.Get(ctx)
 	if err != nil {
@@ -980,6 +993,7 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		return nil
 	}
 	now := time.Now().UTC()
+	observedAtProvided := !command.ObservedAt.IsZero()
 	if command.ObservedAt.IsZero() {
 		command.ObservedAt = now
 	}
@@ -1020,6 +1034,9 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 		"todaId":          todaID,
 		"receivedAt":      now.UnixMilli(),
 	}
+	if observedAtProvided {
+		updates["observedAt"] = command.ObservedAt.UnixMilli()
+	}
 	cell := dispatchCell(command.Latitude, command.Longitude)
 	var previousCell string
 	_ = store.realtime.NewRef("dispatchDriverCells/"+principal.UID).Get(ctx, &previousCell)
@@ -1043,6 +1060,15 @@ func (store *Store) UpdateDriverLocation(ctx context.Context, principal app.Prin
 	}
 	if err := store.realtime.NewRef("").Update(ctx, cellUpdates); err != nil {
 		return fmt.Errorf("write driver dispatch projection: %w", err)
+	}
+	// Observe every accepted location on the trusted server. The mobile detector
+	// is only an advisory backstop; monitoring must survive a backgrounded app.
+	// Do this before advancing the session sequence so failed observations can
+	// be retried safely using the same location sample.
+	if store.cfg.AutomaticRestrictionMonitoring && observedAtProvided && command.Online && text(driver, "driverStatus") == "approved" {
+		if _, err := store.reportRestrictionPosition(ctx, principal, map[string]any{"bookingId": text(driver, "currentBookingId")}); err != nil && !errors.Is(err, app.ErrPrecondition) {
+			return fmt.Errorf("observe driver route restrictions: %w", err)
+		}
 	}
 	_, err = ref.Update(ctx, []firestore.Update{
 		{Path: "sampleSequence", Value: int64(command.SampleSequence)},

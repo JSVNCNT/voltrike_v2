@@ -26,10 +26,14 @@ class VoltrikeApi {
     http.Client? client,
     FirebaseAuth? auth,
     String? baseUrl,
+    VoltrikeTokenProvider? authTokenProvider,
     VoltrikeTokenProvider? appCheckTokenProvider,
     Duration requestTimeout = const Duration(seconds: 20),
   }) : _client = client ?? http.Client(),
-       _auth = auth ?? FirebaseAuth.instance,
+       _authTokenProvider =
+           authTokenProvider ??
+           (() async =>
+               (auth ?? FirebaseAuth.instance).currentUser?.getIdToken()),
        _baseUrl = (baseUrl ?? _configuredBaseUrl()).replaceFirst(
          RegExp(r'/$'),
          '',
@@ -44,7 +48,7 @@ class VoltrikeApi {
   static final VoltrikeApi instance = VoltrikeApi();
 
   final http.Client _client;
-  final FirebaseAuth _auth;
+  final VoltrikeTokenProvider _authTokenProvider;
   final String _baseUrl;
   final VoltrikeTokenProvider? _appCheckTokenProvider;
   final Duration _requestTimeout;
@@ -149,6 +153,11 @@ class VoltrikeApi {
     return _request(
       'POST',
       '/api/v2/operations/${Uri.encodeComponent(name)}',
+      timeout:
+          name == 'requestBrandedVerificationEmail' ||
+              name == 'requestBrandedPasswordResetEmail'
+          ? const Duration(seconds: 30)
+          : null,
       body: <String, dynamic>{
         'commandId': commandId?.trim().isNotEmpty == true
             ? commandId!.trim()
@@ -158,24 +167,37 @@ class VoltrikeApi {
     ).then((response) => _record(response['data']));
   }
 
+  Future<Map<String, dynamic>> requestPasswordResetEmail(String email) {
+    return _request(
+      'POST',
+      '/auth/password-reset',
+      body: <String, dynamic>{'email': email.trim()},
+      authenticated: false,
+      timeout: const Duration(seconds: 30),
+    ).then((response) => _record(response['data']));
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
     Map<String, dynamic>? body,
+    bool authenticated = true,
+    Duration? timeout,
   }) async {
-    final user = _auth.currentUser;
-    final token = await user?.getIdToken();
-    if (token == null || token.isEmpty) {
-      throw const VoltrikeApiException(
-        'Sign in is required before using the VolTrike API.',
-        code: 'unauthenticated',
-      );
-    }
     final headers = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
     };
+    if (authenticated) {
+      final token = await _authTokenProvider();
+      if (token == null || token.isEmpty) {
+        throw const VoltrikeApiException(
+          'Sign in is required before using the VolTrike API.',
+          code: 'unauthenticated',
+        );
+      }
+      headers['Authorization'] = 'Bearer $token';
+    }
     // App Check is enforced by the deployed API, not by the transport client.
     // A private capstone build can therefore continue to an authenticated API
     // when its debug provider is unavailable on a newly shared device. In a
@@ -191,13 +213,14 @@ class VoltrikeApi {
       headers['X-Firebase-AppCheck'] = appCheckToken.trim();
     }
     final uri = Uri.parse('$_baseUrl$path');
+    final effectiveTimeout = timeout ?? _requestTimeout;
     late http.Response response;
     try {
       switch (method) {
         case 'GET':
           response = await _client
               .get(uri, headers: headers)
-              .timeout(_requestTimeout);
+              .timeout(effectiveTimeout);
           break;
         case 'POST':
           response = await _client
@@ -206,7 +229,7 @@ class VoltrikeApi {
                 headers: headers,
                 body: jsonEncode(body ?? const <String, dynamic>{}),
               )
-              .timeout(_requestTimeout);
+              .timeout(effectiveTimeout);
           break;
         case 'PUT':
           response = await _client
@@ -215,7 +238,7 @@ class VoltrikeApi {
                 headers: headers,
                 body: jsonEncode(body ?? const <String, dynamic>{}),
               )
-              .timeout(_requestTimeout);
+              .timeout(effectiveTimeout);
           break;
         default:
           throw const VoltrikeApiException('Unsupported API method.');
@@ -227,7 +250,10 @@ class VoltrikeApi {
       );
     } catch (error) {
       if (error is VoltrikeApiException) rethrow;
-      throw VoltrikeApiException('The VolTrike API is unavailable: $error');
+      throw VoltrikeApiException(
+        'The VolTrike API is unavailable: $error',
+        code: 'unavailable',
+      );
     }
     final decoded = _decode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {

@@ -2,13 +2,28 @@ openapi: 3.0.3
 info:
   title: VolTrike V2 API
   version: 2.0.0
-  description: Authenticated command and query API owned by the Go service.
+  description: >-
+    Firebase-authenticated application API owned by Go, with public account
+    recovery and separately hosted IAM-protected integration worker routes.
+    App Check is optional for the private APK deployment.
 servers:
   - url: https://voltrike-api-v2.example.invalid
 security:
   - firebaseAuth: []
 x-app-check-header: X-Firebase-AppCheck
 paths:
+  /health:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service health.
+  /ready:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service readiness.
   /healthz:
     get:
       security: []
@@ -21,6 +36,102 @@ paths:
       responses:
         "200":
           description: Service readiness.
+  /auth/password-reset:
+    post:
+      operationId: requestPasswordResetEmail
+      summary: Request a branded Firebase password-reset link before sign-in.
+      description: >-
+        Uses the existing Brevo sender and Firebase-generated action links.
+        Unknown accounts and requests within the resend cooldown receive the
+        same accepted response. Provider failures remain retryable; clients
+        can use Firebase Auth email as their established recovery fallback.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+      responses:
+        "200":
+          description: Recovery request accepted without revealing account existence.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetAccepted"
+        "429":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
+  /events/outbox:
+    post:
+      operationId: processOutboxEvent
+      summary: Receive a Firestore document-created binary CloudEvent.
+      description: >-
+        Registered only on the private GO_INTEGRATION_WORKER service. Cloud
+        Run IAM requires the dedicated Eventarc invoker's Google ID token.
+        The handler validates event source, type and outbox document subject
+        and reloads the durable document rather than trusting payload fields.
+        A disabled notification sender returns a retryable failure.
+      servers:
+        - url: https://voltrike-integrations.example.invalid
+      security:
+        - googleOidc: []
+      parameters:
+        - name: Ce-Id
+          in: header
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: Ce-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [google.cloud.firestore.document.v1.created]
+        - name: Ce-Source
+          in: header
+          required: true
+          description: Must identify this project's default Firestore database.
+          schema:
+            type: string
+            example: //firestore.googleapis.com/projects/voltrike-v2/databases/(default)
+        - name: Ce-Subject
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: '^documents/outbox/[^/]+$'
+        - name: Ce-Specversion
+          in: header
+          schema: {type: string, example: "1.0"}
+      requestBody:
+        content:
+          application/protobuf:
+            schema: {type: string, format: binary}
+      responses:
+        "200":
+          description: Durable event processing result, including already completed work.
+        default:
+          $ref: "#/components/responses/Error"
+  /tasks/maintenance:
+    post:
+      operationId: runWorkerMaintenance
+      summary: Run hosted maintenance and notification retry recovery.
+      description: >-
+        Registered only on the private GO_INTEGRATION_WORKER service. Cloud
+        Scheduler calls this route once per minute with an OIDC token whose
+        audience is the worker's base service URL. Cloud Run IAM enforces the
+        dedicated Scheduler invoker identity. Notification retries run only
+        when GO_NOTIFICATIONS_ENABLED=true.
+      servers:
+        - url: https://voltrike-integrations.example.invalid
+      security:
+        - googleOidc: []
+      responses:
+        "200":
+          description: Maintenance result and optional notification retry results.
+        default:
+          $ref: "#/components/responses/Error"
   /api/v2/capabilities:
     get:
       responses:
@@ -136,6 +247,12 @@ paths:
   /api/v2/operations/{operation}:
     post:
       summary: Execute an explicitly whitelisted authenticated domain operation.
+      description: >-
+        Includes requestBrandedVerificationEmail, syncMyEmailVerification,
+        registerAdminWebPushToken and unregisterAdminWebPushToken. Verification
+        returns data.sent and data.alreadyVerified. Push registration returns
+        data.registered and data.deviceId. These use the same Firebase identity,
+        authorization, command envelope and stable errors as other Go operations.
       parameters:
         - name: operation
           in: path
@@ -165,6 +282,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: FirebaseIDToken
+    googleOidc:
+      type: http
+      scheme: bearer
+      bearerFormat: GoogleIDToken
+      description: Cloud Run IAM validates the configured service-account invoker.
   parameters:
     BookingId:
       name: bookingId
@@ -179,6 +301,20 @@ components:
       schema:
         type: string
   schemas:
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+    PasswordResetAccepted:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [accepted]
+          properties:
+            accepted: {type: boolean, enum: [true]}
     ErrorEnvelope:
       type: object
       required: [error]
@@ -189,7 +325,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_argument, unauthenticated, permission_denied, not_found, conflict, failed_precondition, unavailable, internal]
+              enum: [invalid_argument, unauthenticated, permission_denied, not_found, conflict, failed_precondition, resource_exhausted, unavailable, deadline_exceeded, unimplemented, internal]
             message: {type: string}
             requestId: {type: string}
     OperationCommand:

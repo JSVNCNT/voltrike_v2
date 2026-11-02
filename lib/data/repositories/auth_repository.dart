@@ -1,18 +1,17 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/services/voltrike_api.dart';
 import '../services/auth_service.dart';
 
 enum VerificationEmailDelivery { branded, firebaseFallback, alreadyVerified }
 
 class AuthRepository {
-  AuthRepository({AuthService? authService, FirebaseFunctions? functions})
+  AuthRepository({AuthService? authService, VoltrikeApi? api})
     : _authService = authService ?? AuthService.instance,
-      _functions =
-          functions ?? FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+      _api = api ?? VoltrikeApi.instance;
 
   final AuthService _authService;
-  final FirebaseFunctions _functions;
+  final VoltrikeApi _api;
 
   User? get currentUser => _authService.currentUser;
 
@@ -49,22 +48,20 @@ class AuthRepository {
     if (isEmailVerified) return VerificationEmailDelivery.alreadyVerified;
 
     try {
-      final result = await _functions
-          .httpsCallable('requestBrandedVerificationEmail')
-          .call<Map<String, dynamic>>();
-      return result.data['alreadyVerified'] == true
+      final result = await _api.operation(
+        'requestBrandedVerificationEmail',
+        {},
+      );
+      return result['alreadyVerified'] == true
           ? VerificationEmailDelivery.alreadyVerified
           : VerificationEmailDelivery.branded;
-    } on FirebaseFunctionsException catch (error) {
+    } on VoltrikeApiException catch (error) {
       // A new account must never be blocked from verification just because
       // the optional branded provider is unavailable. Firebase Auth sends the
       // same signed verification link as a dependable fallback. A rate-limit
       // response deliberately does not fall back, as a branded message may
       // already have been accepted for delivery.
-      if (error.code == 'not-found' ||
-          error.code == 'unimplemented' ||
-          error.code == 'internal' ||
-          error.code == 'unavailable') {
+      if (_allowsFirebaseFallback(error)) {
         await _authService.sendEmailVerification();
         return VerificationEmailDelivery.firebaseFallback;
       }
@@ -75,32 +72,24 @@ class AuthRepository {
   Future<void> reloadUser() async {
     await _authService.reloadUser();
 
-    // The callable copies Firebase Auth's authoritative status into the user
+    // The API copies Firebase Auth's authoritative status into the user
     // profile for profile/admin displays. This denormalized display update must
-    // never prevent sign-in or app recovery when Functions is unavailable.
+    // never prevent sign-in or app recovery when the API is unavailable.
     try {
-      await _functions
-          .httpsCallable('syncMyEmailVerification')
-          .call<Map<String, dynamic>>();
-    } on FirebaseFunctionsException {
+      await _api.operation('syncMyEmailVerification', {});
+    } on VoltrikeApiException {
       // Best-effort synchronization; access checks use Firebase Auth directly.
     }
   }
 
   Future<void> sendPasswordResetEmail(String email) async {
     try {
-      await _functions
-          .httpsCallable('requestBrandedPasswordResetEmail')
-          .call<Map<String, dynamic>>({'email': email.trim()});
-    } on FirebaseFunctionsException catch (error) {
-      // Preserve password recovery while the branded function is being
+      await _api.requestPasswordResetEmail(email);
+    } on VoltrikeApiException catch (error) {
+      // Preserve password recovery while the branded service is being
       // deployed or its optional email provider is unavailable. Firebase's
       // built-in reset email is the dependable path for the private APK.
-      if (error.code == 'not-found' ||
-          error.code == 'unimplemented' ||
-          error.code == 'internal' ||
-          error.code == 'unavailable' ||
-          error.code == 'unauthenticated') {
+      if (_allowsFirebaseFallback(error) || error.code == 'unauthenticated') {
         await _authService.sendPasswordResetEmail(email);
         return;
       }
@@ -114,5 +103,14 @@ class AuthRepository {
 
   Future<void> deleteAccount() {
     return _authService.deleteAccount();
+  }
+
+  static bool _allowsFirebaseFallback(VoltrikeApiException error) {
+    return const {
+      'not-found',
+      'unimplemented',
+      'internal',
+      'unavailable',
+    }.contains(error.code?.replaceAll('_', '-'));
   }
 }

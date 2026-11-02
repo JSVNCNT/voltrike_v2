@@ -1,272 +1,269 @@
 # VolTrike hosted private deployment
 
-There is no Google Play release in this deployment model. Deploy only
-the shared services that must be reachable by multiple phones:
-
-- Go V2 API: Google Cloud Run.
-- Auth, Firestore, RTDB, Storage, rules, indexes, and integration Functions:
-  Firebase.
-- React/TypeScript Admin: the existing Render Static Site.
-- Voice infrastructure: LiveKit Cloud or an equivalent LiveKit server.
-
-Passenger and driver phones use a privately distributed APK. Each phone talks
-to the same Cloud Run and Firebase resources, so the system continues running
-when the development PC, Flutter, VS Code, or ADB is off. `flutter run` is only
-for development and is never part of the hosted runtime.
-
-This is a production-like private environment, not a public app-store release.
-It can incur cloud/provider usage even with scale-to-zero, so configure budgets
-and never commit secret values or App Check debug tokens.
+Passenger/driver Flutter APKs and the existing Render Static Site share Firebase
+Auth, Firestore, RTDB, Storage and FCM. Two services built from
+`services/voltrike-go` run on Cloud Run:
 
 ```text
-flutter run on passenger phone ─┐
-flutter run on driver phone ────┼─> Cloud Run Go API ─> Firebase
-Render Admin ───────────────────┘             └───────> LiveKit
-Firebase Functions <──────────── Go transactional outbox
+Flutter / Render Admin -> public Go API -> Firebase / LiveKit / Brevo
+                                      -> transactional outbox
+Firestore Eventarc -> private Go worker -> FCM / Brevo
+Cloud Scheduler -- OIDC every minute --> private Go worker
 ```
 
-The Firebase project must support second-generation Functions and Cloud Run-
-backed resources. Authenticate the `gcloud` and Firebase CLIs before starting.
+The public API requires Firebase ID tokens on protected routes. Cloud Run IAM
+protects worker routes. App Check is disabled for the private Quick Share
+APK (`GO_REQUIRE_APP_CHECK=false`); no per-phone debug-token registration is
+introduced. Firebase rules and all server authorization continue to apply.
+Neither local Flutter nor a development PC is needed to operate these services.
 
-## 1. Select the project and deployment values
+## Existing project, identities and secrets
 
-Run from the repository root. Replace each placeholder before execution.
+Run commands from the repository root with the existing authenticated `gcloud`
+and Firebase CLI sessions. Use the selected staging/production project values.
 
 ```powershell
-$projectId = "voltrike-v2"
-$region = "asia-southeast1"
-$service = "voltrike-api-v2"
-$databaseUrl = "https://voltrike-v2-default-rtdb.asia-southeast1.firebasedatabase.app"
-$storageBucket = "voltrike-v2.firebasestorage.app"
-$renderOrigin = "https://voltrike-admin.onrender.com"
-$liveKitServerUrl = "wss://voltrike-6c5lg2hv.livekit.cloud"
-$runtimeServiceAccount = "voltrike-go-runtime@$projectId.iam.gserviceaccount.com"
+$projectId = 'voltrike-v2'
+$region = 'asia-southeast1'
+$apiService = 'voltrike-api-v2'
+$workerService = 'voltrike-integrations'
+$databaseUrl = 'https://voltrike-v2-default-rtdb.asia-southeast1.firebasedatabase.app'
+$storageBucket = 'voltrike-v2.firebasestorage.app'
+$adminOrigin = 'https://voltrike-admin.onrender.com'
+$emailAdminPortalUrl = 'https://voltrike-v2.web.app'
+$emailLogoUrl = 'https://voltrike-v2.web.app/images/appLogo.png'
+$liveKitUrl = 'wss://voltrike-6c5lg2hv.livekit.cloud'
+$runtimeAccount = "voltrike-go-runtime@$projectId.iam.gserviceaccount.com"
+$eventarcAccount = "voltrike-eventarc-invoker@$projectId.iam.gserviceaccount.com"
+$schedulerAccount = "voltrike-scheduler-invoker@$projectId.iam.gserviceaccount.com"
+$eventLocation = gcloud firestore databases describe --database='(default)' --project $projectId --format='value(locationId)'
 
-gcloud auth login
-gcloud config set project $projectId
-firebase use $projectId
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com firestore.googleapis.com firebasedatabase.googleapis.com firebaseappcheck.googleapis.com routes.googleapis.com fcm.googleapis.com eventarc.googleapis.com pubsub.googleapis.com cloudscheduler.googleapis.com --project $projectId
 ```
 
-Enable the required Google APIs:
+Reuse all existing secrets. The working Brevo credentials already exist in
+Secret Manager as `BREVO_SMTP_LOGIN`, `BREVO_SMTP_KEY` and `BREVO_SENDER_EMAIL`.
+The confirmed enabled versions at migration preparation were 4, 3 and 2,
+respectively. Resolving metadata below selects the latest enabled version; an
+operator may instead pin those known numeric versions. No secret payload is
+read or printed and no `functions:secrets:set` or credential re-entry is needed.
 
 ```powershell
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com firestore.googleapis.com firebasedatabase.googleapis.com firebaseappcheck.googleapis.com routes.googleapis.com
+$secretNames = @('GOOGLE_ROUTES_API_KEY', 'GO_QUOTE_ENCRYPTION_KEY', 'GO_LOCAL_INTERNAL_KEY', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'ADMIN_BOOTSTRAP_CODE', 'BREVO_SMTP_LOGIN', 'BREVO_SMTP_KEY', 'BREVO_SENDER_EMAIL')
+$bindings = foreach ($secretName in $secretNames) {
+    $versionName = gcloud secrets versions list $secretName --project $projectId --filter='state=ENABLED' --sort-by='~createTime' --limit=1 --format='value(name)'
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($versionName)) { throw "No enabled version for $secretName" }
+    $version = ($versionName.Trim() -split '/')[-1]
+    if ($version -notmatch '^\d+$') { throw "Invalid secret version for $secretName" }
+    $target = if ($secretName -eq 'ADMIN_BOOTSTRAP_CODE') { 'DEVELOPER_BOOTSTRAP_CODE' } else { $secretName }
+    gcloud secrets add-iam-policy-binding $secretName --project $projectId --member="serviceAccount:$runtimeAccount" --role=roles/secretmanager.secretAccessor --condition=None --quiet | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Secret access binding failed for $secretName" }
+    "$target=$($secretName):$version"
+}
+$secretBindings = $bindings -join ','
 ```
 
-## 2. Configure the API runtime identity and secrets
-
-The project reuses its existing `voltrike-go-runtime` service account. Grant
-only the Firebase data permissions needed by the current V2 API. Review these
-bindings in Google Cloud Console before applying them.
+The existing runtime keeps its Firestore, RTDB, Auth, App Check and Storage
+permissions. Add `roles/firebasecloudmessaging.admin` for FCM sending. Secret
+access is scoped to each secret; no service-account key download is needed.
+Create the two invocation accounts if missing, give Eventarc's account project
+`roles/eventarc.eventReceiver`, and give both accounts `roles/run.invoker` on
+the private worker after it exists. They do not need Brevo secret access.
 
 ```powershell
-gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/datastore.user"
-gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebasedatabase.admin"
-gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebaseappcheck.tokenVerifier"
-gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeServiceAccount" --role="roles/firebaseauth.admin"
-gcloud storage buckets add-iam-policy-binding "gs://$storageBucket" --member="serviceAccount:$runtimeServiceAccount" --role="roles/storage.objectAdmin"
-gcloud iam service-accounts add-iam-policy-binding $runtimeServiceAccount --member="serviceAccount:$runtimeServiceAccount" --role="roles/iam.serviceAccountTokenCreator"
+gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$runtimeAccount" --role=roles/firebasecloudmessaging.admin --condition=None --quiet
+gcloud iam service-accounts create voltrike-eventarc-invoker --project $projectId
+gcloud iam service-accounts create voltrike-scheduler-invoker --project $projectId
+gcloud projects add-iam-policy-binding $projectId --member="serviceAccount:$eventarcAccount" --role=roles/eventarc.eventReceiver --condition=None --quiet
 ```
 
-The API requires Google Routes and LiveKit credentials, a stable 32-byte quote
-encryption key, a random internal scheduler key, and a one-time developer-admin
-bootstrap code. Store all private values in Secret Manager; never add them to
-Render, Flutter, or Git.
+Skip service-account creation when the accounts already exist. The deployment
+identity needs permission to deploy Cloud Run, configure Eventarc/Scheduler,
+attach these service accounts (`iam.serviceAccounts.actAs`), and manage the
+listed IAM bindings. Retain Google-managed Eventarc, Pub/Sub and Scheduler
+service-agent roles. These setup permissions belong to the deployment identity,
+not to callers of the application.
+
+## Initial deployment with the new sender disabled
+
+Record current API revisions, old integration exports, triggers, schedules and
+their numeric secret bindings before migration. Include auxiliary jobs such as
+the legacy Node demo-activation job in the retirement inventory. Do not run the
+steady-state workflow with notifications enabled before the coordinated
+one-sender cutover below.
+
+Deploy the worker first with sending disabled. Its Cloud Run timeout must be
+120 seconds; the binary configures a 110-second HTTP write timeout and
+100-second event/maintenance budgets. `REQUEST_TIMEOUT_SECONDS=10` bounds
+individual upstream operations, not the worker's entire request.
 
 ```powershell
-gcloud secrets describe GOOGLE_ROUTES_API_KEY
-gcloud secrets describe GO_QUOTE_ENCRYPTION_KEY
-gcloud secrets describe GO_LOCAL_INTERNAL_KEY
-gcloud secrets describe LIVEKIT_API_KEY
-gcloud secrets describe LIVEKIT_API_SECRET
-gcloud secrets describe ADMIN_BOOTSTRAP_CODE
+$sharedEnv = "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_REQUIRE_APP_CHECK=false,REQUEST_TIMEOUT_SECONDS=10,LIVEKIT_SERVER_URL=$liveKitUrl,ADMIN_PORTAL_URL=$emailAdminPortalUrl,EMAIL_LOGO_URL=$emailLogoUrl,SENTRY_ENVIRONMENT=production,SENTRY_TRACES_SAMPLE_RATE=0.05"
+gcloud run deploy $workerService --source services/voltrike-go --set-build-env-vars GOOGLE_BUILDABLE=. --region $region --project $projectId --service-account $runtimeAccount --no-allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 10 --timeout 120s --update-env-vars "$sharedEnv,GO_INTEGRATION_WORKER=true,GO_NOTIFICATIONS_ENABLED=false,GO_AUTOMATIC_RESTRICTION_MONITORING=false,SENTRY_DSN=$env:SENTRY_GO_DSN" --update-secrets $secretBindings
+$workerUrl = gcloud run services describe $workerService --region $region --project $projectId --format='value(status.url)'
+gcloud run services add-iam-policy-binding $workerService --region $region --project $projectId --member="serviceAccount:$eventarcAccount" --role=roles/run.invoker --condition=None
+gcloud run services add-iam-policy-binding $workerService --region $region --project $projectId --member="serviceAccount:$schedulerAccount" --role=roles/run.invoker --condition=None
 ```
 
-If the quote key does not exist, create it once:
+The worker must have neither `allUsers` nor `allAuthenticatedUsers` invoker
+bindings. Check its IAM policy and confirm an anonymous request returns HTTP
+403. Worker routes exist only when `GO_INTEGRATION_WORKER=true`; the public
+API must not expose them.
+
+Stage the API with the new automatic restriction-event producer disabled.
+Keep existing settings and secret bindings using update flags. Its protected
+`/api/v2/**` routes use Firebase identity, while `POST /auth/password-reset`
+is public so a signed-out user can recover an account.
 
 ```powershell
-$quoteKeyBytes = New-Object byte[] 32
-[Security.Cryptography.RandomNumberGenerator]::Fill($quoteKeyBytes)
-$quoteKey = [Convert]::ToBase64String($quoteKeyBytes)
-$quoteKey | gcloud secrets create GO_QUOTE_ENCRYPTION_KEY --replication-policy=automatic --data-file=-
+gcloud run deploy $apiService --source services/voltrike-go --set-build-env-vars GOOGLE_BUILDABLE=. --region $region --project $projectId --service-account $runtimeAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --update-env-vars "$sharedEnv,GO_ALLOWED_ORIGINS=$adminOrigin,GO_INTEGRATION_WORKER=false,GO_AUTOMATIC_RESTRICTION_MONITORING=false,POLICY_CACHE_TTL_SECONDS=60,MAX_DISPATCH_RESULTS=40,RATE_LIMIT_PER_MINUTE=240,SENTRY_DSN=$env:SENTRY_GO_DSN" --update-secrets $secretBindings
+$apiUrl = gcloud run services describe $apiService --region $region --project $projectId --format='value(status.url)'
+curl.exe --fail "$apiUrl/health"
+curl.exe --fail "$apiUrl/ready"
 ```
 
-Create each remaining missing secret interactively so its value is not written
-to shell history. Existing secrets should be updated with
-`gcloud secrets versions add SECRET_NAME --data-file=-` instead.
+Both API and worker reuse Brevo SMTP port 587 with required STARTTLS and
+TLS 1.2 or later. Preserve sender identity, Firebase-generated action links,
+templates, rate limits and delivery records. In particular, keep email links at
+`https://voltrike-v2.web.app` and the existing `/images/appLogo.png` logo URL;
+the API's allowed browser origin remains the Render Admin origin. SMTP acceptance is not proof of
+inbox placement; test actual receipt with an authorized test account.
+
+## Private Eventarc and Scheduler delivery
+
+Create an Eventarc trigger in the Firestore database location, targeting the
+private worker's `/events/outbox` route. Use creation events only and match
+`outbox/{eventId}`. Eventarc sends binary CloudEvents with `Ce-Id`, `Ce-Type`,
+`Ce-Source` and `Ce-Subject` headers and a protobuf document payload. The handler
+validates those headers and reloads the stored outbox document.
 
 ```powershell
-gcloud secrets create GOOGLE_ROUTES_API_KEY --replication-policy=automatic --data-file=-
-gcloud secrets create GO_LOCAL_INTERNAL_KEY --replication-policy=automatic --data-file=-
-gcloud secrets create LIVEKIT_API_KEY --replication-policy=automatic --data-file=-
-gcloud secrets create LIVEKIT_API_SECRET --replication-policy=automatic --data-file=-
-gcloud secrets create ADMIN_BOOTSTRAP_CODE --replication-policy=automatic --data-file=-
+gcloud eventarc triggers create voltrike-outbox-created --location $eventLocation --project $projectId --event-filters='type=google.cloud.firestore.document.v1.created' --event-filters='database=(default)' --event-filters='namespace=(default)' --event-filters-path-pattern='document=outbox/{eventId}' --event-data-content-type=application/protobuf --destination-run-service=$workerService --destination-run-region=$region --destination-run-path=/events/outbox --service-account=$eventarcAccount
+gcloud scheduler jobs create http voltrike-go-maintenance --location $region --project $projectId --schedule='* * * * *' --time-zone=Etc/UTC --uri="$workerUrl/tasks/maintenance" --http-method=POST --message-body='{}' --oidc-service-account-email=$schedulerAccount --oidc-token-audience=$workerUrl --attempt-deadline=120s
+gcloud scheduler jobs pause voltrike-go-maintenance --location $region --project $projectId
 ```
 
-Grant the runtime identity secret access:
+Use `triggers update` or `jobs update http` for existing resources. The OIDC
+audience is the worker's base service URL; the request URI includes the path.
+Disabled outbox handling returns a retryable failure without claiming/sending
+the event. Keep the new maintenance job paused while the legacy schedule runs.
+Firestore Eventarc delivery is at least once and can arrive out of order;
+the worker uses durable claims/receipts and scheduled retry recovery.
+See [Firestore Eventarc delivery](https://docs.cloud.google.com/firestore/native/docs/eventarc)
+and [Scheduler OIDC options](https://docs.cloud.google.com/sdk/gcloud/reference/scheduler/jobs/create/http).
+
+## Client compatibility and one-sender cutover
+
+1. Deploy and test the disabled worker and staged API, keeping the existing API
+   URL, Firebase project, collections, Auth users, push tokens and shared secrets.
+2. Rebuild Render Admin with its existing `VITE_VOLTRIKE_API_BASE_URL`, public
+   Mapbox/VAPID configuration, and the updated Go calls. Keep App Check disabled. Rebuild and
+   distribute the private Flutter APK with the same API URL. Test signed-out
+   reset, verification, already-verified refresh, browser push token transfer,
+   and existing booking/chat/call flows.
+3. Coordinate a short integration cutover. Stop the old outbox sender and old
+   maintenance schedules and retire the direct booking/chat/TODA/restriction
+   event handlers. Await deletion completion and let in-flight deliveries finish.
+   Before enabling the worker, inventory recent outbox records: set
+   `notificationRetryAt` on eligible failed/expired-processing legacy records,
+   preserving completed receipts. Reset only newly introduced TODA/offer types
+   that the old worker completed as unknown during the deployment window;
+   never replay completed booking notifications. Then enable
+   `GO_NOTIFICATIONS_ENABLED=true` on the worker and
+   `GO_AUTOMATIC_RESTRICTION_MONITORING=true` on the API. Resume only the new
+   maintenance job. Never leave two active senders or duplicate maintenance
+   schedules as the steady state.
+4. Confirm a controlled outbox event produces one push/email, completed records
+   are not replayed, failed deliveries recover, restriction alerts arrive, and
+   maintenance executes once per minute. Watch worker errors and delivery age.
+5. Keep legacy callable endpoints only for the verified client migration window.
+   Old APKs still call them; old cached Admin pages also need a reload. Confirm
+   invocation traffic has stopped before manual retirement. Remove the legacy
+   Functions and auxiliary Node jobs only in a separately coordinated operation.
+   Keep all shared Secret Manager resources and versions.
+
+The workflow does not delete old Functions, Eventarc triggers or auxiliary jobs.
+Retiring the old sender/trigger can be necessary to stop it; record an explicit
+restoration procedure before that manual action. Removing shared Brevo secrets
+would break the new Go services and is never part of retirement.
+
+Flutter's email flow keeps branded email primary and uses Firebase Auth email
+as a fallback for provider/service failures. A rate limit does not trigger a
+second send. New Admin verification uses the authenticated Go operation and
+does not depend on callable URLs. Rust stays in Flutter for local compute.
+
+## Steady-state deployment and private APK distribution
+
+The manual [hosted workflow](../../.github/workflows/deploy-hosted.yml) uses
+Workload Identity Federation and the existing GitHub environment values:
+`GCP_PROJECT_ID`, `GCP_REGION`, `FIREBASE_DATABASE_URL`,
+`FIREBASE_STORAGE_BUCKET`, `ADMIN_ORIGIN`, `LIVEKIT_SERVER_URL`,
+`RUNTIME_SERVICE_ACCOUNT`, `SENTRY_GO_DSN`,
+`GCP_WORKLOAD_IDENTITY_PROVIDER`, and `GCP_DEPLOY_SERVICE_ACCOUNT`.
+
+Optional variables are `GO_NOTIFICATIONS_ENABLED` and
+`GO_AUTOMATIC_RESTRICTION_MONITORING` (both default to `true`),
+`FIRESTORE_EVENT_LOCATION` (otherwise discovered), `SENTRY_WORKER_DSN`
+(falls back to the existing Functions DSN or Go DSN), and numeric
+`BREVO_SMTP_LOGIN_VERSION`, `BREVO_SMTP_KEY_VERSION`,
+`BREVO_SENDER_EMAIL_VERSION` pins. Without pins it resolves enabled version
+metadata and deploys numeric bindings, without reading secret payloads.
+`EMAIL_ADMIN_PORTAL_URL` and `EMAIL_LOGO_URL` default to the existing web.app
+email-link and image URLs above, independently of `ADMIN_ORIGIN`.
+For the first staging deployment, explicitly set both switches to `false`;
+the notification switch also pauses the new maintenance schedule. After the manual cutover,
+use `true` for normal deployments.
+
+The auxiliary hourly demo activation job also runs Go. Retain its existing
+schedule, service account and fixed synthetic-data scope. Build the job image
+from the same reviewed commit, pause its scheduler while replacing the Node
+entrypoint, and clear the obsolete encoded script:
 
 ```powershell
-gcloud secrets add-iam-policy-binding GOOGLE_ROUTES_API_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding GO_QUOTE_ENCRYPTION_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding GO_LOCAL_INTERNAL_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding LIVEKIT_API_KEY --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding LIVEKIT_API_SECRET --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
-gcloud secrets add-iam-policy-binding ADMIN_BOOTSTRAP_CODE --member="serviceAccount:$runtimeServiceAccount" --role="roles/secretmanager.secretAccessor"
+$jobImage = "${region}-docker.pkg.dev/$projectId/cloud-run-source-deploy/voltrike-demo-activation-go:$release"
+gcloud builds submit services/voltrike-go --config services/voltrike-go/cloudbuild.demo-activation.yaml --region $region --project $projectId --substitutions="_IMAGE=$jobImage"
+gcloud scheduler jobs pause voltrike-demo-activation-hourly --location $region --project $projectId
+gcloud run jobs update voltrike-demo-activation --image $jobImage --command /demo-activation --args='' --remove-env-vars=SEED_SCRIPT_BASE64 --region $region --project $projectId
+gcloud scheduler jobs resume voltrike-demo-activation-hourly --location $region --project $projectId
 ```
 
-## 3. Deploy the Go API
+Set `$release` to the deployed commit SHA. The Go job verifies project and
+demo tags, preserves existing documents, gates future bookings, recomputes
+synthetic driver summaries, and checks integrity. It needs only its existing
+Firestore access; Brevo credentials are not attached to this job.
 
-The service is intentionally public at the network layer. Every `/api/v2/**`
-request still requires a valid Firebase ID token, and every operation enforces
-its server-side account, role, TODA-scope, and state-transition rules. App Check
-is intentionally optional for this private Quick Share deployment because a
-debug attestation token is device-specific and cannot travel with the APK.
+The workflow updates both Go services, dedicated invocation IAM, Eventarc and
+Scheduler, then deploys only Firebase rules/indexes/storage configuration:
 
 ```powershell
-gcloud run deploy $service --source services/voltrike-go --region $region --project $projectId --service-account $runtimeServiceAccount --allow-unauthenticated --min-instances 0 --max-instances 3 --cpu 1 --memory 512Mi --concurrency 40 --timeout 30s --set-env-vars "GOOGLE_CLOUD_PROJECT=$projectId,FIREBASE_DATABASE_URL=$databaseUrl,FIREBASE_STORAGE_BUCKET=$storageBucket,GO_ALLOWED_ORIGINS=$renderOrigin,GO_REQUIRE_APP_CHECK=false,POLICY_CACHE_TTL_SECONDS=60,REQUEST_TIMEOUT_SECONDS=10,MAX_DISPATCH_RESULTS=40,LIVEKIT_SERVER_URL=$liveKitServerUrl,SENTRY_DSN=$env:SENTRY_GO_DSN,SENTRY_ENVIRONMENT=production,SENTRY_TRACES_SAMPLE_RATE=0.05" --set-secrets "GOOGLE_ROUTES_API_KEY=GOOGLE_ROUTES_API_KEY:latest,GO_QUOTE_ENCRYPTION_KEY=GO_QUOTE_ENCRYPTION_KEY:latest,GO_LOCAL_INTERNAL_KEY=GO_LOCAL_INTERNAL_KEY:latest,LIVEKIT_API_KEY=LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=LIVEKIT_API_SECRET:latest,DEVELOPER_BOOTSTRAP_CODE=ADMIN_BOOTSTRAP_CODE:latest"
-$apiUrl = gcloud run services describe $service --region $region --project $projectId --format="value(status.url)"
-$apiUrl
+firebase deploy --only firestore,database,storage --project $projectId
+flutter build apk --debug --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app --dart-define=VOLTRIKE_ENABLE_APP_CHECK=false
 ```
 
-Verify only the unauthenticated health endpoints from a terminal:
+Keep the existing Sentry Dart build defines when distributing the APK.
+Quick Share `build/app/outputs/flutter-apk/app-debug.apk` to test phones.
+Render remains the static Admin host (`npm ci && npm run build`, publish
+`admin/dist`, SPA rewrite `/* -> /index.html`). Node/npm and Firebase CLI
+remain build/development tools; this workflow never deploys Node Functions.
+It preserves existing unmentioned Cloud Run environment variables and secrets.
 
-```powershell
-curl.exe "$apiUrl/health"
-curl.exe "$apiUrl/ready"
-```
-
-## 4. App Check for the private APK and Admin web app
-
-Do not enable App Check enforcement for Firebase Authentication, Firestore,
-Realtime Database, Storage, or the Go API while this same debug APK is being
-Quick Shared. No phone-specific debug token is required. Firebase Auth,
-security rules, Go authorization, driver approval, TODA scope, and booking
-state validation remain enforced.
-
-The private mobile build also defaults email verification to optional so a
-temporary email-provider failure does not block a test account. Firebase
-password authentication remains required. To restore release-oriented gates,
-build with `VOLTRIKE_ENABLE_APP_CHECK=true` and
-`VOLTRIKE_REQUIRE_EMAIL_VERIFICATION=true`, then enable server enforcement
-only after the attestation rollout is verified.
-
-The Render Admin is different: register its web app with reCAPTCHA v3, allow
-the Render hostname, and save its public site key for the Render configuration
-below. Under **Authentication → Settings → Authorized domains**, also add the
-Render Admin hostname.
-
-If the mobile app is later publicly released, switch the Go API back to
-`GO_REQUIRE_APP_CHECK=true`, enable Firebase enforcement only after rollout,
-and use Play Integrity/App Attest instead of debug tokens.
-
-## 5. Configure the existing Render Admin
-
-The public Cloud Run URL is pinned in `render.yaml`. In Render, open the
-existing `voltrike-admin` Static Site and set the remaining build environment
-variables:
-
-```text
-VITE_FIREBASE_APP_CHECK_SITE_KEY=<public reCAPTCHA v3 site key>
-VITE_MAPBOX_ACCESS_TOKEN=<public URL-restricted Mapbox token>
-VITE_FIREBASE_VAPID_KEY=<public Firebase web-push key>
-```
-
-Push the checkpoint, then choose **Save, rebuild, and deploy** in Render:
-
-```powershell
-git push origin main
-```
-
-Render uses `render.yaml`: build command `npm ci && npm run build`, publish
-directory `admin/dist`, and SPA rewrite `/* -> /index.html`.
-
-## 6. Deploy Firebase integration infrastructure
-
-Deploy rules, indexes, and the integration-only Functions manifest. Configure
-the scheduled integration hook with the same internal key used by Cloud Run;
-the key is never shipped to Flutter or Admin.
-
-```powershell
-firebase functions:secrets:set GO_LOCAL_INTERNAL_KEY --project $projectId
-firebase functions:secrets:set BREVO_SMTP_LOGIN --project $projectId
-firebase functions:secrets:set BREVO_SMTP_KEY --project $projectId
-firebase functions:secrets:set BREVO_SENDER_EMAIL --project $projectId
-firebase deploy --only "firestore,database,storage" --project $projectId
-firebase deploy --only "functions:processGoOutbox,functions:requestBrandedPasswordResetEmail,functions:requestBrandedVerificationEmail,functions:registerAdminWebPushToken,functions:unregisterAdminWebPushToken,functions:runGoMaintenance" --project $projectId
-```
-
-The selective Functions deployment intentionally leaves older callable
-endpoints in place until their invocation logs have been observed for a full
-client migration window. Delete them only after confirming that no installed
-private APK or external integration still calls them.
-
-When Firebase prompts for the `VOLTRIKE_API_BASE_URL` parameter, enter the
-printed `$apiUrl`. Firebase Hosting is not deployed; Render remains the only
-Admin frontend host.
-
-## 7. Distribute the final capstone mobile clients
-
-Run the connected development phone with the hosted API:
-
-```powershell
-flutter -v run --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app
-```
-
-Build the one private APK that can be Quick Shared to each Android phone:
-
-```powershell
-flutter build apk --debug --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app --dart-define=SENTRY_DSN=https://39ba2251daffea156fb5d535af5e801c@o4511869752836096.ingest.us.sentry.io/4511869828202496 --dart-define=SENTRY_ENVIRONMENT=production --dart-define=SENTRY_RELEASE=voltrike_v2@1.0.0+1
-```
-
-Quick Share `build/app/outputs/flutter-apk/app-debug.apk` to each tester. No
-per-phone App Check registration is needed. Each internet-connected phone can
-register or sign in and use Cloud Run and Firebase without Flutter, ADB, or a
-connection to the development PC. Stopping a local Flutter session stops only
-that local client; Cloud Run, Firebase, Functions, and Render stay online.
-
-Use `flutter run` only for development or debugging. It is not required to
-operate the shared private deployment. A future public release can enforce
-Play Integrity and add store signing at that time.
-
-## 8. Retention, backups, and hosted automation
-
-Enable Firestore TTL for short-lived operational records. TTL deletion is
-asynchronous; the hosted maintenance worker also removes expired command
-receipts and Realtime Database dispatch/tracking projections every minute.
-
-```powershell
-gcloud firestore fields ttls update expiresAt --collection-group=command_receipts --enable-ttl --project=$projectId
-gcloud firestore fields ttls update expiresAt --collection-group=communicationDeliveries --enable-ttl --project=$projectId
-gcloud firestore fields ttls update expiresAt --collection-group=outbox --enable-ttl --project=$projectId
-```
-
-Create a scheduled Firestore export to a retention-locked Cloud Storage bucket
-before real passenger data is collected. Budget alerts should cover Cloud Run,
-Firebase/Firestore, Functions/Scheduler, Routes, Storage, Render, and LiveKit.
-
-The manual `deploy hosted services` GitHub workflow uses Workload Identity
-Federation (no JSON service-account key) and has separate `staging` and
-`production` environments. Configure each environment's variables listed in
-the workflow, require approval for `production`, and use it to deploy Cloud Run
-plus Firebase without relying on this PC. Render continues deploying the Admin
-site from the repository.
-
-## 9. What must be redeployed after a change
-
-- Flutter/Dart-only change: hot reload/restart, or run `flutter run` again.
-- Go change: repeat the Cloud Run deploy command in section 3.
-- Rules, indexes, or Node integration change: repeat section 6.
-- Admin change: push Git; Render auto-deploys, or use **Manual Deploy**.
-- Rust device-kernel change: rebuild through `flutter run`; it is part of the
-  local Flutter application, not a separately hosted server.
+Retain TTL on `command_receipts`, `communicationDeliveries` and `outbox`
+`expiresAt` fields, and existing retention/backups. Monitor Cloud Run,
+Eventarc/Pub/Sub, Scheduler, Firebase, Routes, Storage, Brevo and LiveKit usage.
 
 ## Rollback
 
-- Render: redeploy the previous successful Admin release and restore its V2 API
-  build variable.
-- Cloud Run: route traffic back to the prior verified revision with
-  `gcloud run services update-traffic`.
-- Firebase: redeploy the baseline Functions/rules only if the matching Flutter
-  and Admin releases are restored together.
-- Never rotate `GO_QUOTE_ENCRYPTION_KEY` as an outage workaround; it invalidates
-  still-live signed quotes.
+Pause the new Scheduler job and set worker notifications to `false` before
+reactivating any legacy sender. Disable the API's new automatic restriction
+producer during the handover. Account for in-flight events and preserve
+outbox/delivery receipts to avoid duplicate provider sends.
+
+Route API/worker traffic to recorded verified Cloud Run revisions with
+`gcloud run services update-traffic`. Restore the prior sender trigger and
+maintenance schedule only after the new sender is stopped. Redeploy the
+matching prior Render/Flutter clients if returning to callable endpoints;
+older API revisions may lack the new public password-reset route.
+
+Retain existing credentials and numeric bindings. Never rotate
+`GO_QUOTE_ENCRYPTION_KEY` as an outage workaround, delete shared Brevo secrets,
+or recreate Firebase users/collections to roll back application code.

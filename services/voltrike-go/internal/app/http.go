@@ -33,7 +33,7 @@ func NewHTTPServer(cfg config.Config, service *Service, verifiers ...IdentityVer
 	if len(verifiers) > 0 {
 		handler.verifier = verifiers[0]
 	}
-	return &http.Server{
+	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           handler.routes(),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -41,6 +41,13 @@ func NewHTTPServer(cfg config.Config, service *Service, verifiers ...IdentityVer
 		WriteTimeout:      cfg.RequestTimeout + 2*time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	if cfg.IntegrationWorker {
+		server.ReadTimeout = 15 * time.Second
+		server.WriteTimeout = 110 * time.Second
+	} else if server.WriteTimeout < 30*time.Second {
+		server.WriteTimeout = 30 * time.Second
+	}
+	return server
 }
 
 func (server *HTTPServer) routes() http.Handler {
@@ -63,6 +70,12 @@ func (server *HTTPServer) routes() http.Handler {
 	}
 	mux.HandleFunc("GET /ready", readyHandler)
 	mux.HandleFunc("GET /readyz", readyHandler)
+	if server.cfg.IntegrationWorker {
+		mux.HandleFunc("POST /events/outbox", server.handleOutboxEvent)
+		mux.HandleFunc("POST /tasks/maintenance", server.handleWorkerMaintenance)
+		return server.cors(server.recover(mux))
+	}
+	mux.HandleFunc("POST /auth/password-reset", server.handlePasswordReset)
 	mux.HandleFunc("POST /v1/quotes/compute", server.handleQuote)
 	mux.HandleFunc("POST /v1/quotes/consume", server.handleConsumeQuote)
 	mux.HandleFunc("POST /v1/policy/invalidate", server.handleInvalidatePolicy)
@@ -166,7 +179,7 @@ func (server *HTTPServer) decode(writer http.ResponseWriter, request *http.Reque
 
 func (server *HTTPServer) authorize(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if strings.HasPrefix(request.URL.Path, "/api/v2/") {
+		if strings.HasPrefix(request.URL.Path, "/api/v2/") || request.URL.Path == "/auth/password-reset" {
 			next.ServeHTTP(writer, request)
 			return
 		}
@@ -271,11 +284,14 @@ func writeServiceError(writer http.ResponseWriter, err error) {
 		status, code = http.StatusBadRequest, "invalid_argument"
 	case errors.Is(err, ErrPrecondition):
 		status, code = http.StatusPreconditionFailed, "failed_precondition"
+	case errors.Is(err, ErrRateLimited):
+		status, code = http.StatusTooManyRequests, "resource_exhausted"
+		writer.Header().Set("Retry-After", "60")
 	case errors.Is(err, ErrUnavailable), errors.Is(err, context.DeadlineExceeded):
 		status, code = http.StatusServiceUnavailable, "unavailable"
 	}
 	message := strings.TrimSpace(err.Error())
-	for _, prefix := range []string{"invalid argument: ", "failed precondition: ", "unavailable: "} {
+	for _, prefix := range []string{"invalid argument: ", "failed precondition: ", "unavailable: ", "resource exhausted: "} {
 		message = strings.TrimPrefix(message, prefix)
 	}
 	if status == http.StatusInternalServerError {
