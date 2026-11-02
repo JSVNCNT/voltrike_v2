@@ -43,7 +43,7 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 
 Reuse all existing secrets. The working Brevo credentials already exist in
 Secret Manager as `BREVO_SMTP_LOGIN`, `BREVO_SMTP_KEY` and `BREVO_SENDER_EMAIL`.
-The confirmed enabled versions at migration preparation were 4, 3 and 2,
+The confirmed enabled versions used by the existing email function were 4, 6 and 2,
 respectively. Resolving metadata below selects the latest enabled version; an
 operator may instead pin those known numeric versions. No secret payload is
 read or printed and no `functions:secrets:set` or credential re-entry is needed.
