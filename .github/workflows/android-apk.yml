@@ -1,0 +1,210 @@
+name: Build and publish Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: App version shown on the phone (for example 1.0.1)
+        required: true
+        default: '1.0.0'
+        type: string
+      publish:
+        description: Publish APK (turn off to validate build only)
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-publish
+  cancel-in-progress: false
+
+jobs:
+  android-apk:
+    # Standard GitHub-hosted runners are free for public repositories.
+    # Refuse to run if this repository is made private.
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      API_BASE_URL: https://voltrike-api-v2-327670792817.asia-southeast1.run.app
+      SENTRY_DSN: https://39ba2251daffea156fb5d535af5e801c@o4511869752836096.ingest.us.sentry.io/4511869828202496
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set app version
+        id: version
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo 'Use a version such as 1.0.0 or 1.0.1.' >&2
+            exit 1
+          fi
+          # The first shared APK has versionCode 1. Each new workflow run
+          # receives a larger code so Android can install it as an update.
+          BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))
+          printf 'name=%s\nnumber=%s\ntag=android-%s\n' \
+            "$VERSION_NAME" "$BUILD_NUMBER" "$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: false
+
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup target add --toolchain 1.97.1 \
+            aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
+      - name: Install Android SDK and NDK
+        run: |
+          set -euo pipefail
+          { yes || true; } | sdkmanager --licenses > /dev/null
+          sdkmanager 'platforms;android-37' 'platforms;android-36' \
+            'build-tools;36.0.0' 'ndk;28.2.13676358'
+
+      - name: Restore existing Android signing key and app configuration
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          VOLTRIKE_API_KEYS_DART_BASE64: ${{ secrets.VOLTRIKE_API_KEYS_DART_BASE64 }}
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          for variable in ANDROID_DEBUG_KEYSTORE_BASE64 VOLTRIKE_API_KEYS_DART_BASE64 MAPS_API_KEY; do
+            if [[ -z "${!variable}" ]]; then
+              printf 'Missing required repository secret: %s\n' "$variable" >&2
+              exit 1
+            fi
+          done
+          umask 077
+          mkdir -p "$HOME/.android" lib/core/config
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          printf '%s' "$VOLTRIKE_API_KEYS_DART_BASE64" | base64 --decode > lib/core/config/api_keys.dart
+          keytool -list -keystore "$HOME/.android/debug.keystore" \
+            -alias androiddebugkey -storepass android > /dev/null
+          # Bound build memory on the free standard runner. These are temporary
+          # runner-only settings and do not change application behavior.
+          printf '\norg.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G -XX:ReservedCodeCacheSize=256m\norg.gradle.workers.max=2\n' \
+            >> android/gradle.properties
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Build the same test app configuration
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.number }}
+        run: |
+          set -euo pipefail
+          flutter build apk --debug \
+            --build-name="$VERSION_NAME" \
+            --build-number="$BUILD_NUMBER" \
+            --dart-define="VOLTRIKE_API_BASE_URL=$API_BASE_URL" \
+            --dart-define=VOLTRIKE_ENABLE_APP_CHECK=false \
+            --dart-define="SENTRY_DSN=$SENTRY_DSN" \
+            --dart-define=SENTRY_ENVIRONMENT=production \
+            --dart-define="SENTRY_RELEASE=voltrike_v2@$VERSION_NAME+$BUILD_NUMBER"
+
+      - name: Verify APK identity, version, and signature
+        env:
+          BUILD_NUMBER: ${{ steps.version.outputs.number }}
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-debug.apk
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
+          BADGING=$("$BUILD_TOOLS/aapt" dump badging "$APK")
+          grep -q "package: name='com.example.voltrike_v2' versionCode='$BUILD_NUMBER'" <<< "$BADGING"
+          EXPECTED_CERT=$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" \
+            -alias androiddebugkey -storepass android | sha256sum | cut -d ' ' -f 1)
+          ACTUAL_CERT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          if [[ "$EXPECTED_CERT" != "$ACTUAL_CERT" ]]; then
+            echo 'APK signing certificate differs from the existing installation key.' >&2
+            exit 1
+          fi
+          mkdir -p dist
+          cp "$APK" dist/voltrike.apk
+          cp assets/download/voltrike-qr.png assets/download/voltrike-qr.svg dist/
+          (cd dist && sha256sum voltrike.apk > voltrike.apk.sha256)
+
+      - name: Report successful build validation
+        if: ${{ inputs.publish == false }}
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.number }}
+        run: |
+          printf '### Android build verified\n\nBuilt version %s (%s), verified app identity and existing signing certificate, and generated the APK checksum.\n\nPublishing was disabled for this run. The current download and QR code still point to the existing published APK.\n' \
+            "$VERSION_NAME" "$BUILD_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish APK and QR code to GitHub Releases
+        if: ${{ inputs.publish == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.number }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/android-release-notes.md" <<EOF
+          VolTrike Android test build **$VERSION_NAME ($BUILD_NUMBER)**.
+
+          This uses the existing Android app identity, test signing certificate,
+          hosted backend, Firebase configuration, and App Check setting.
+
+          Download **voltrike.apk** on your Android phone, open it, allow your
+          browser to install apps when prompted, and choose **Install** or **Update**.
+          Keep the installed app when updating so its local data is retained.
+
+          The same QR code always opens the latest APK:
+          https://github.com/$GH_REPO/releases/latest/download/voltrike.apk
+
+          Updates are manual: scan again and install the newer APK. Android 7.0
+          (API 24) or newer is required. This is the current debug/test build.
+
+          Source commit: $GITHUB_SHA
+          SHA-256 checksum: see **voltrike.apk.sha256**.
+          EOF
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/existing-release.json" 2>/dev/null; then
+            if [[ $(jq -r .isDraft "$RUNNER_TEMP/existing-release.json") != true ]]; then
+              echo 'This run already published a release. Start a new workflow run for a new update.' >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "VolTrike $VERSION_NAME (build $BUILD_NUMBER)" \
+              --notes-file "$RUNNER_TEMP/android-release-notes.md" \
+              --draft
+          fi
+          # Upload all assets before publishing, including when GitHub release
+          # immutability is enabled. A full release is needed for /latest links.
+          gh release edit "$RELEASE_TAG" --draft=false --latest \
+            --notes-file "$RUNNER_TEMP/android-release-notes.md"
+          printf '### APK ready\n\n[Download APK](https://github.com/%s/releases/latest/download/voltrike.apk)\n\n[QR code](https://github.com/%s/releases/latest/download/voltrike-qr.png)\n\nVersion: %s (%s)\n' \
+            "$GH_REPO" "$GH_REPO" "$VERSION_NAME" "$BUILD_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove restored signing and configuration files
+        if: ${{ always() }}
+        run: |
+          rm -f "$HOME/.android/debug.keystore" lib/core/config/api_keys.dart
