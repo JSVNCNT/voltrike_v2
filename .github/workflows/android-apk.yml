@@ -33,7 +33,6 @@ jobs:
         shell: bash
     env:
       API_BASE_URL: https://voltrike-api-v2-327670792817.asia-southeast1.run.app
-      SENTRY_DSN: https://39ba2251daffea156fb5d535af5e801c@o4511869752836096.ingest.us.sentry.io/4511869828202496
       EXPECTED_SIGNING_CERT_SHA256: 02e7462817fc766fbd97e233462ebbdc8e45fcd423a342c2f0aaba369d586f23
       CARGO_BUILD_JOBS: '2'
       CARGO_INCREMENTAL: '0'
@@ -135,10 +134,7 @@ jobs:
             --build-name="$VERSION_NAME" \
             --build-number="$BUILD_NUMBER" \
             --dart-define="VOLTRIKE_API_BASE_URL=$API_BASE_URL" \
-            --dart-define=VOLTRIKE_ENABLE_APP_CHECK=false \
-            --dart-define="SENTRY_DSN=$SENTRY_DSN" \
-            --dart-define=SENTRY_ENVIRONMENT=production \
-            --dart-define="SENTRY_RELEASE=voltrike_v2@$VERSION_NAME+$BUILD_NUMBER"
+            --dart-define=VOLTRIKE_ENABLE_APP_CHECK=false
 
       - name: Verify APK identity, version, and signature
         env:

@@ -33,6 +33,28 @@ Android accepts an update when the application ID and signing key match, and the
 new version has a higher build number. If installation reports a signature or
 version conflict, check those details before changing the installed app.
 
+## Build the APK from the working local command
+
+With an Android device selected, this command builds a debug APK, installs it,
+and launches the app on that device:
+
+```powershell
+flutter -v run --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app
+```
+
+The `-v` option only enables verbose logs. To create a shareable APK file without
+installing or launching the app, run this from the project folder:
+
+```powershell
+flutter build apk --debug --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app
+```
+
+The output is `build/app/outputs/flutter-apk/app-debug.apk`. This uses the same API
+URL and preserves the project's default App Check setting (`false`). Keep
+`--debug` explicit to match the current test app; `flutter build apk` without it
+defaults to a release build, which has different build behavior. See
+[Flutter's Android build guide](https://docs.flutter.dev/deployment/android).
+
 ## Publish the next version without local build commands
 
 The initial release distributes the existing local test APK unchanged. Future
