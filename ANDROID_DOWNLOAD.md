@@ -23,6 +23,24 @@ No paid QR service or separate QR hosting is needed.
 Android may show a warning because this APK is distributed outside Google Play.
 Check that the download link belongs to `github.com/JSVNCNT/voltrike_v2`.
 
+## Send the APK with Quick Share
+
+If your phone's Apps screen shares the installed APK directly, you can use it
+whether that app was installed through `flutter run` or downloaded from GitHub.
+You can also share the APK file:
+
+1. In **Files** or **My Files**, select `app-debug.apk` or the downloaded
+   `voltrike.apk`, then choose **Share > Quick Share**.
+2. Select the nearby recipient's device and have them accept the transfer.
+3. On their phone, open the received APK and choose **Install** or **Update**.
+   If prompted, allow **Install unknown apps** for the file manager opening it.
+
+See [Google's Quick Share instructions](https://support.google.com/files/answer/15685428)
+if the receiving device is not visible. Sharing the same APK by Quick Share or
+downloading it through the QR installs the same app with the same backend
+configuration. The installed app runs independently of `flutter run`; internet
+features connect to the hosted services and need an internet connection.
+
 ## Update an installed copy
 
 Scan the **same QR**, download the latest APK, open it, and choose **Update**.
