@@ -1,0 +1,3 @@
+# Preserve approved QR/video bytes across Windows and Linux checkouts.
+public/images/app-qr.svg -text
+public/videos/*.mp4 -text

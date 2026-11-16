@@ -34,8 +34,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
-/output/docs/
-/output/seed/
+/output/
 /functions/seed-admin-demo.js
 /functions/ADMIN-DEMO-SEED.md
 /rust/target/
@@ -75,5 +74,8 @@ app.*.map.json
 
 android\.kotlin\sessions
 docs/
-/output/go-cache/
-/output/spreadsheets/
+/voltrike-marketing/dist/
+/voltrike-marketing/.vercel/
+/voltrike-marketing/.env
+/voltrike-marketing/.env.*
+!/voltrike-marketing/.env.example
