@@ -1,5 +1,57 @@
 # VolTrike Full Rewrite Transition
 
+## Current implementation update — 2026-11-02
+
+This update reviews the repository through commit `52fc1913`. The original
+rewrite plan, checklists, decisions, and test counts below are retained as a
+historical record of the earlier cutover. For current architecture and
+deployment instructions, use [README.md](README.md),
+[services/voltrike-go/README.md](services/voltrike-go/README.md), and
+[services/voltrike-go/DEPLOYMENT.md](services/voltrike-go/DEPLOYMENT.md).
+Their current guidance supersedes the older Node-worker, App Check, and
+compatibility instructions in this historical plan.
+
+- `e3b6b7af` adds Go replacements for account email, verification-status sync,
+  browser push registration, FCM/Brevo outbox delivery, and scheduled integration
+  recovery. The configured hosted architecture now uses the public
+  `voltrike-api-v2` Go service and a separate private `voltrike-integrations`
+  worker. Eventarc sends `outbox/{eventId}` creation events to
+  `/events/outbox`; Cloud Scheduler invokes `/tasks/maintenance` every minute
+  through IAM/OIDC. Domain authority remains in Go.
+- Node/npm remain Admin build and Firebase CLI tools. The seven legacy exports
+  in `functions/index.js` and their helper/test source remain in the repository,
+  but `firebase.json` no longer declares a Functions deployment target and the
+  hosted workflow does not deploy Node Functions. These source changes do not
+  establish that previously deployed Functions, triggers, or auxiliary Node
+  jobs were deleted. Retirement and the one-sender cutover remain separately
+  verified operator actions.
+- Rebuild the private APK and Admin for the updated Go account/device calls.
+  Older APKs or cached Admin bundles may still use legacy callables, so retain
+  them only for the verified migration window described in the current guide.
+  Preserve existing Firebase users, tokens, collections, and shared secrets;
+  the historical no-users/reset premise below is not current reset authority.
+  Flutter keeps branded email primary and uses Firebase email for selected
+  service failures; a branded-send rate limit does not trigger a second send.
+- App Check is disabled for the private APK/Admin and current Go deployment;
+  `GO_REQUIRE_APP_CHECK` also defaults to `false`. Firebase authentication,
+  account activity, role, association, participant, and workflow checks still
+  apply. `d374dbd1` removes the private Admin Render App Check setup.
+- `b801108d` records Brevo secret versions 4, 6, and 2 used by the existing
+  email Function. Preserve those shared resources; that record alone does not
+  prove deployment of the replacement Go worker. `52fc1913` removes the
+  administrator metric-count query cap.
+- Current cash settlement records the full ride price without active commission
+  deduction or payout management. References to commission parity below belong
+  to the earlier plan. The accepted-call deadline in the current Go code is
+  30 minutes, following a 30-second invitation window.
+
+The recorded test outcomes and unchecked scenarios below retain their original
+scope and dates. This documentation update does not rerun those checks or
+convert them into evidence of the November integration deployment, delivery,
+legacy-resource deletion, or a new two-device validation session.
+
+## Historical transition record
+
 > Status: V2 implementation cutover complete; deployment and full two-device
 > scenario validation remain intentionally gated below.
 >

@@ -30,12 +30,18 @@ firebase deploy --only firestore,database,storage --project voltrike-v2
 ```
 
 Node/npm remain build tools for the static Admin site and Firebase CLI. Hosted
-backend execution uses Go on Cloud Run.
+backend execution is configured for Go on Cloud Run. The retained `functions/`
+source is legacy migration/test material, and removing its deployment target
+does not delete previously deployed Functions or schedules. Follow the guide's
+coordinated one-sender cutover, preserve shared secrets and data, and verify
+retirement separately before treating migration as complete.
 
 ## Private Quick Share APK
 
-Keep App Check disabled for the privately distributed APK and the Go API
-(`GO_REQUIRE_APP_CHECK=false`). Build from the repository root:
+Keep App Check disabled for the privately distributed APK, Admin, and Go API
+(`GO_REQUIRE_APP_CHECK=false`). The Go loader also defaults to `false`;
+attestation remains configurable independently of Firebase identity and role
+authorization. Build from the repository root:
 
 ```cmd
 flutter build apk --debug --dart-define=VOLTRIKE_API_BASE_URL=https://voltrike-api-v2-327670792817.asia-southeast1.run.app --dart-define=VOLTRIKE_ENABLE_APP_CHECK=false
@@ -57,8 +63,9 @@ also binds the existing `GOOGLE_ROUTES_API_KEY` for routing.
 The Go API coordinates the call lifecycle through
 `startBookingCall`, `respondBookingCall`, `createBookingCallToken`, and
 `endBookingCall`. A recipient has 30 seconds to accept, and only an accepted
-call receives a LiveKit token. The server limits the accepted call to two
-minutes. The private worker's scheduled maintenance closes stale invitations
-and rooms even if a client disconnects without cleanup. Firestore remains the
-shared source of truth for passenger and driver state. Never place the LiveKit
-secret or a long-lived token in Flutter source.
+call receives a LiveKit token. The server sets a 30-minute accepted-call
+deadline. The private worker's scheduled maintenance expires overdue ringing
+records and marks accepted calls ended after that deadline. Maintenance updates
+Firestore call state; it does not invoke a LiveKit room-deletion API. Firestore
+remains the shared source of truth for passenger and driver call state. Never
+place the LiveKit secret or a long-lived token in Flutter source.

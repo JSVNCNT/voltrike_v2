@@ -91,23 +91,24 @@ TODA registration is a separate reviewed portal workflow.
 ## Architecture at a glance
 
 ```text
-Flutter passenger/driver client ── Firebase Auth ──────────────┐
-          │                                                     │
-          │ REST commands / quotes / booking state              ▼
-          └────────────────────────────────────────────── Go V2 API (Cloud Run)
-                                                              │
-                                                   authoritative transactions
-                                                              │
-      React + TypeScript admin (Render) ──────────────────────┤
-                                                              ▼
-     Firebase: Firestore • Realtime Database • Storage • FCM • Functions
-                                                              │
-                       Node.js Functions ── notifications, email, schedules,
-                                             Go outbox and maintenance
+Flutter passenger/driver + React admin (Render)
+          │ Firebase Auth ID tokens + HTTPS commands
+          ▼
+Public Go V2 API: voltrike-api-v2 (Cloud Run)
+          ├── authoritative Firestore / Realtime Database transactions
+          ├── Firebase Storage staging and media finalization
+          ├── account email through Firebase action links + Brevo SMTP
+          └── booking-scoped call authorization/tokens ── LiveKit
 
-Go V2 API ── booking-scoped call authorization/tokens ── LiveKit
+Committed Firestore outbox ── Eventarc ──┐
+Cloud Scheduler ── IAM/OIDC ─────────────┤
+                                       ▼
+Private Go worker: voltrike-integrations (Cloud Run)
+          ├── FCM / browser push and Brevo email delivery
+          └── scheduled domain maintenance and outbox retry recovery
 
-Flutter Android client ── Flutter Rust Bridge ── Rust local compute
+Flutter Android ── Flutter Rust Bridge ── Rust local compute
+Node/npm ── Admin build, Firebase CLI, and retained legacy Functions tests
 ```
 
 ### Runtime ownership
@@ -115,9 +116,10 @@ Flutter Android client ── Flutter Rust Bridge ── Rust local compute
 | Layer | Authority and responsibility |
 | --- | --- |
 | Flutter/Dart | Client UI, accessibility, maps, permissions, local state, secure token attachment, device location, and realtime presentation. |
-| Go | Source of truth for quotes, bookings, lifecycle transitions, dispatch, eligibility, policy, settlement, safety, and administrator commands. |
-| Firebase | Managed identity, trusted client attestation, realtime stores, document storage, push delivery, serverless integration triggers, and security rules. |
-| Node.js Functions | Non-authoritative integrations after committed domain changes: notifications, scheduled maintenance, branded email, web push, and provider orchestration. |
+| Public Go API | Source of truth for quotes, bookings, lifecycle transitions, dispatch, eligibility, policy, settlement, safety, administrator commands, account email, and browser push registration. |
+| Private Go worker | IAM-protected Eventarc and Scheduler receiver; delivers committed notification/email work and runs maintenance and retry recovery. |
+| Firebase | Managed identity, realtime stores, document and object storage, FCM push delivery, configurable App Check, and security rules. |
+| JavaScript/Node.js | Admin build and Firebase CLI tooling; retained legacy Functions source and regression helpers remain in `functions/`. |
 | React/TypeScript | Browser-based system/TODA administration with typed data normalization and API calls. |
 | Rust | Fast, bounded, local computation only; it never decides authoritative fares, booking state, or permissions. |
 
@@ -125,8 +127,9 @@ This separation avoids an important ride-hailing failure mode: a phone cannot
 become the authority for a fare, booking, or payment simply because it is
 offline, stale, or modified. The Go API validates Firebase identity before
 protected V2 operations. App Check attestation is an additional,
-deployment-controlled check; it is not enabled by default in the private mobile
-build. See the configuration notes below.
+deployment-controlled check. It is disabled in the private mobile/Admin setup
+and the current Go deployment configuration; identity, account, role, TODA,
+participant, and workflow checks still apply. See the configuration notes below.
 
 ## Languages and why each one is used
 
@@ -174,17 +177,26 @@ and booking operations—from common JavaScript runtime mistakes.
 
 ### Go — authoritative cloud backend
 
-`services/voltrike-go/` is the public Go V2 API deployed to Google Cloud Run.
-It exposes health/readiness endpoints and authenticated `/api/v2/` endpoints
-for capabilities, profiles, quotes, bookings, lifecycle commands, driver
-sessions, heartbeats, locations, and operations.
+`services/voltrike-go/` builds the public `voltrike-api-v2` API and the private
+`voltrike-integrations` worker for Cloud Run. The API exposes health/readiness
+endpoints and authenticated `/api/v2/` endpoints for capabilities, profiles,
+quotes, bookings, lifecycle commands, driver sessions, heartbeats, locations,
+and operations. Signed-out recovery uses `POST /auth/password-reset`.
 
 Go owns the rules that must not be trusted to a client: quote-token integrity,
 fare calculation, booking revision checks, idempotency, driver eligibility,
 dispatch selection, TODA policy, settlement, safety workflows, and
 administrator mutations. It uses Firebase Admin/Google Cloud SDKs to transact
 against Firestore and Realtime Database, and records outbox work for reliable
-post-commit integrations.
+post-commit integrations. Go also creates Firebase account action links and
+sends branded account email through Brevo SMTP. Firebase Auth remains the
+authority for verification and password reset.
+
+The separate worker receives Firestore creation events for `outbox/{eventId}`
+at `/events/outbox` through Eventarc. Cloud Scheduler invokes
+`/tasks/maintenance` every minute with IAM/OIDC authentication. Durable event
+and recipient/channel leases, delivery receipts, and scheduled retry recovery
+support FCM, browser push, and Brevo email after a domain change commits.
 
 **Why it benefits VolTrike:** Go produces small, fast, statically linked
 services with predictable concurrency and low memory overhead—excellent for a
@@ -192,25 +204,24 @@ Cloud Run API handling many independent booking and location requests. Its
 strict types and transaction-oriented service layer are a strong fit for money,
 ride state, and multi-user consistency.
 
-### JavaScript and Node.js — Firebase integration workers
+### JavaScript and Node.js — build tools and legacy integrations
 
-The `functions/` directory uses Node.js 22 with Firebase Functions v2. These
-functions are deliberately not the business authority. They react to already
-committed events and perform integration work such as:
+Node/npm build the static React Admin and run Firebase CLI tooling. The
+`functions/` directory retains the earlier Node.js 22 Firebase Functions v2
+integrations, export manifest, policy helpers, and tests for migration context
+and regression work. Its account email, push registration, outbox delivery,
+and maintenance responsibilities have Go replacements in the current clients
+and hosted deployment configuration.
 
-- Firebase Cloud Messaging and admin web-push token management;
-- branded verification and password-reset email through SMTP/Nodemailer;
-- Firestore outbox processing; and
-- scheduled Go maintenance triggers.
+`firebase.json` no longer declares a Functions deployment target, and the
+hosted workflow does not deploy Node Functions. The retained exports are not
+evidence that legacy cloud resources were deleted: sender, trigger, schedule,
+and old-client retirement require the coordinated cutover in the deployment
+guide. Go remains the authority for bookings, fares, settlement, and calls.
 
-The active export manifest is `functions/index.js`. Go owns booking-call
-lifecycle and LiveKit token issuance. Retained helper modules or migration
-notes do not make Node.js the current booking, fare, or call authority.
-
-**Why it benefits VolTrike:** Node.js is a natural fit for Firebase Functions
-and third-party JavaScript SDKs. Keeping it behind the Go transaction boundary
-makes asynchronous notifications and emails retryable without risking duplicate
-fares or conflicting booking state.
+**Why it benefits VolTrike:** the JavaScript toolchain supports the browser
+portal and existing regression helpers while the API and hosted integration
+worker share the Go implementation and its transaction boundaries.
 
 ### Rust — efficient device-local compute
 
@@ -246,13 +257,14 @@ media and server infrastructure.
 | Service / SDK | Used for | Benefit to VolTrike |
 | --- | --- | --- |
 | Firebase Authentication | Email/password and Google sign-in identity | One trusted identity across mobile, admin, API, and rules. |
-| Firebase App Check | Optional client attestation with deployment-controlled server enforcement | Adds an abuse-control layer when configured; does not replace identity and role checks. |
+| Firebase App Check | Configurable client attestation; disabled for the private APK/Admin and current Go deployment | Can add an abuse-control layer when configured; identity and role checks remain required. |
 | Cloud Firestore | Profiles, booking views, operational documents, reports, outbox | Realtime document data with rules and transactional support. |
 | Firebase Realtime Database | Low-latency driver/session/location presence | Responsive online-driver and trip-tracking updates. |
 | Firebase Storage | Registration documents and access-controlled ride-chat photos | Managed uploads, participant-only access, evidence preservation, and lifecycle expiry. |
-| Firebase Cloud Messaging | Mobile push notifications | Wake and notify drivers/passengers about ride events. |
-| Firebase Functions v2 | Event-driven Node.js integrations and schedules | Serverless notifications, email, and maintenance processing. |
-| Google Cloud Run | Go V2 API hosting | Public, scalable backend independent of the developer PC. |
+| Firebase Cloud Messaging | Mobile and administrator browser push, sent by the Go worker | Notify participants and scoped administrators about committed events. |
+| Google Cloud Run | Public Go V2 API, private Go integration worker, and separate synthetic-data job | Hosted application and integration processing independent of the developer PC. |
+| Eventarc / Cloud Scheduler | Firestore outbox events and minute-by-minute IAM/OIDC maintenance calls | Invoke the private Go worker without a public worker endpoint. |
+| Firebase Functions v2 (legacy) | Retained Node integration source and tests | Migration reference; excluded from the current hosted deployment workflow. |
 | Google Secret Manager | Go runtime credentials and keys | Keeps server secrets outside source control. |
 | Google Routes API | Server-side route distance/duration and fare inputs | Consistent quote computation without trusting client distances. |
 | Google Navigation for Flutter | Driver turn-by-turn map experience | Native navigation-oriented driver workflow. |
@@ -260,8 +272,8 @@ media and server infrastructure.
 | Mapbox GL | Web-admin maps and operational map layers | Flexible visualization of drivers, zones, and restrictions. |
 | LiveKit / Go-issued tokens | Secure in-ride voice rooms authorized by Go | Real-time passenger-driver calling without exposing server credentials to clients. |
 | WebRTC through LiveKit | Native audio capture/playback, echo cancellation, noise suppression, gain control | Reliable cross-device voice transport and platform audio handling. |
-| Nodemailer / SMTP provider | Branded verification and password-reset email | Delivers app-branded account communications. |
-| Sentry | Separate Flutter, admin, Go, and Functions error/trace projects | Correlates production failures with the deployed code release without placing private auth secrets in source. |
+| Brevo SMTP through Go | Branded verification, password-reset, TODA-status, and safety email | Delivers account and operational communications using existing server-side secrets. |
+| Sentry | Flutter, Admin, Go API, and Go worker DSN/release configuration | Attributes errors and traces to the configured runtime and release; the worker DSN can reuse an existing project. |
 | Render Static Site | Hosting for the React administration portal | Simple Git-connected web deployment for operators. |
 | Flutter Rust Bridge | Dart-to-Rust native bridge | Lets the Flutter client use Rust selectively without a separate mobile codebase. |
 
@@ -437,11 +449,13 @@ valid acceptance wins.
 - Firestore, Realtime Database, and Storage rules enforce client access limits.
 - Cloud Run uses a service account and Secret Manager configuration; secrets are
   not stored in the repository or in the Render public build.
-- Flutter, admin, Go, and Firebase Functions report failures to separate Sentry
-  projects so an incident can be attributed to the correct runtime and release.
-- Outbox-driven Node functions perform side effects after committed data changes
-  rather than making notifications, emails, or provider calls part of an
-  irreversible booking transaction.
+- Flutter, Admin, the Go API, and the Go worker have Sentry runtime/release
+  configuration so failures can be traced to the appropriate service. The
+  worker DSN may fall back to the existing Functions or Go project.
+- The private Go worker performs outbox-driven effects after committed data
+  changes. Durable leases and delivery receipts support retries and reduce
+  repeated provider sends; provider acceptance is not proof of device receipt
+  or inbox delivery.
 - LiveKit room credentials are server-issued for the specific booking call.
 - Ride chat and voice calls are scoped to a specific booking and its passenger
   and driver; they are not global channels shared by unrelated rides.
@@ -508,8 +522,8 @@ instant-deletion guarantee.
 | --- | --- |
 | `lib/` | Flutter passenger/driver application, providers, repositories, UI, maps, and calls. |
 | `admin/` | React/TypeScript/Vite system and TODA administrator portal. |
-| `services/voltrike-go/` | Go V2 API, Firebase adapters, domain service, tests, and Cloud Run deployment material. |
-| `functions/` | Node.js Firebase Function integration workers. |
+| `services/voltrike-go/` | Public Go V2 API, private integration worker, account email, Firebase adapters, tests, synthetic-data job, and Cloud Run deployment material. |
+| `functions/` | Retained legacy Node.js Functions, policy helpers, and regression tests; not a target of the current hosted workflow. |
 | `rust/` | Rust native-compute crate exposed through Flutter Rust Bridge. |
 | `rust_builder/` | Flutter package/build integration for the Rust crate. |
 | `contracts/` | OpenAPI and service contracts. |
@@ -524,9 +538,10 @@ instant-deletion guarantee.
 The configured hosting model does **not** require a development computer to
 remain on:
 
-- the Go API runs on Cloud Run;
-- Firebase provides managed authentication, databases, storage, messaging, and
-  functions;
+- the public Go API and private Go integration worker are configured for Cloud Run;
+- Firebase provides managed authentication, databases, storage, and messaging;
+- Eventarc delivers outbox creation events, and Cloud Scheduler invokes private
+  worker maintenance every minute;
 - LiveKit Cloud provides the voice-room service; and
 - the React admin portal is hosted on Render.
 
@@ -538,6 +553,11 @@ requires a dedicated signing key, privacy/compliance review, App Check policy,
 monitored billing/quotas, incident processes, and device/network test coverage.
 Repository configuration is not proof that a hosted release is healthy or that
 all infrastructure policies are deployed.
+
+The hosted workflow deploys Go services and Firebase rules/indexes. It does
+not delete legacy Functions or auxiliary jobs. Complete and verify the
+one-sender cutover before enabling the new worker alongside existing cloud
+resources; retain shared users, tokens, data, and Secret Manager resources.
 
 The current private-testing workflow targets newly rebuilt APKs. Remove obsolete
 test APKs before installing a new build so every test phone uses the same
@@ -596,8 +616,8 @@ missing class, duplicate class, or JNI-link error.
 
 ### Deployment verification
 
-The Cloud Run service exposes unauthenticated health endpoints while protected
-application commands still require Firebase authentication:
+The public Cloud Run API exposes unauthenticated health endpoints while
+protected application commands still require Firebase authentication:
 
 ```powershell
 curl.exe https://voltrike-api-v2-327670792817.asia-southeast1.run.app/health
@@ -623,7 +643,9 @@ manifests before using them.
 | `VOLTRIKE_API_BASE_URL` | Flutter build-time override; the client also has a configured Cloud Run default. |
 | `VOLTRIKE_ENABLE_APP_CHECK` | Mobile default `false` for privately shared builds. |
 | `VOLTRIKE_REQUIRE_EMAIL_VERIFICATION` | Mobile default `false`; this does not disable account, role, ownership, or server-side workflow checks. |
-| `GO_REQUIRE_APP_CHECK` | Server enforcement is independent of the mobile switch. The loader defaults to enforcement outside the demo project; the private deployment instructions explicitly disable it. |
+| `GO_REQUIRE_APP_CHECK` | Server enforcement is independent of the mobile switch. The loader defaults to `false`, and the private deployment explicitly keeps it disabled. |
+| `GO_INTEGRATION_WORKER` | `false` selects the public API; `true` exposes only worker event/maintenance routes and health/readiness routes. Worker network access is restricted through Cloud Run IAM. |
+| `GO_NOTIFICATIONS_ENABLED` | Defaults to `true`; set `false` while staging the replacement sender. The deployment workflow also pauses its maintenance schedule while this switch is off. |
 | `VOLTRIKE_RUST_MODE` | Default `off` for inherited native migration modes; feature-specific overrides select rollout behavior. |
 | `VOLTRIKE_IMAGE_ENGINE` | Default `auto`, with supported native image preparation and Dart fallback. |
 
@@ -649,7 +671,10 @@ roadmaps, compatibility fields, or deployment notes:
 | Public and internal API routing | [http.go](services/voltrike-go/internal/app/http.go), [OpenAPI](contracts/openapi.yaml) |
 | Portal role routing and pages | [App.tsx](admin/src/App.tsx) |
 | Server-scoped count analytics | [admin_analytics.go](services/voltrike-go/internal/firebase/admin_analytics.go) |
-| Active Node integration exports | [index.js](functions/index.js) |
+| Go account email and push registration | [auth_integrations.go](services/voltrike-go/internal/firebase/auth_integrations.go) |
+| Go outbox delivery and retries | [notifications.go](services/voltrike-go/internal/firebase/notifications.go), [notifications_delivery.go](services/voltrike-go/internal/firebase/notifications_delivery.go) |
+| Private Eventarc/Scheduler handlers | [integrations_http.go](services/voltrike-go/internal/app/integrations_http.go) |
+| Retained legacy Node exports | [index.js](functions/index.js) |
 | Private mobile security defaults | [mobile_security_config.dart](lib/core/config/mobile_security_config.dart) |
 | Native rollout modes | [rust_migration_mode.dart](lib/core/native/rust_migration_mode.dart) |
 
@@ -658,7 +683,8 @@ bookings and commands, driver sessions/heartbeats/location, and named
 `/api/v2/operations/{operation}` actions. Operations include registration,
 media finalization, chat/calls, ratings, reports, safety, and scoped
 administration. Internal `/v1/` maintenance and compatibility routes are not a
-mobile fallback around V2 authentication.
+mobile fallback around V2 authentication. The separate private worker registers
+`/events/outbox` and `/tasks/maintenance`; those paths are not public API routes.
 
 Run checks from the indicated directories after installing the matching
 dependencies and toolchains:
@@ -667,13 +693,14 @@ dependencies and toolchains:
 | --- | --- |
 | Repository root | `flutter pub get`, `flutter analyze`, `flutter test` |
 | `services/voltrike-go/` | `go test ./...` |
-| `functions/` | `npm ci`, `npm test` |
+| `functions/` (retained legacy helpers) | `npm ci`, `npm test` |
 | `admin/` | `npm ci`, `npm run build` (TypeScript and production bundle) |
 | Repository root | `cargo test --manifest-path rust/Cargo.toml` |
 
-The repository declares Dart `^3.11.0`, Go `1.26.0`, Node.js `22` for Functions,
-and Rust `1.97.1` as the crate minimum. Check the manifests and lockfiles when
-updating dependencies. Native builds also need the Android and Rust tooling.
+The repository declares Dart `^3.11.0`, Go `1.26.0`, Node.js `22` for the
+retained Functions package, and Rust `1.97.1` as the crate minimum. Check the
+manifests and lockfiles when updating dependencies. Native builds also need the
+Android and Rust tooling.
 Automated checks do not establish live deployment, legal approval, measured
 performance, or end-to-end device compatibility. For manual mobile coverage,
 see [docs/mobile_qa_checklist.md](docs/mobile_qa_checklist.md).

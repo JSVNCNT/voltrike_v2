@@ -126,7 +126,7 @@ const faqs = [
 
 function Footer() {
   return <footer className="site-footer"><div className="container">
-    <div className="footer-top"><div><Brand light /><p>Clean Community Mobility.</p></div><div className="footer-project"><span>A CAPSTONE BY TEAM TRACELOGY</span><p>Jose Vincent Bayoguing III · Denro S. Maban<br />University of Negros Occidental – Recoletos</p></div></div>
+    <div className="footer-top"><div><Brand light /><p>Clean Community Mobility.</p></div><div className="footer-project"><span>A CAPSTONE BY TEAM TRACELOGY</span><p>Jose Vincent III Bayoguing  · Denro S. Maban<br />University of Negros Occidental – Recoletos</p></div></div>
     <div className="footer-bottom"><span>© {new Date().getFullYear()} VolTrike</span><div><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href={RELEASES} target="_blank" rel="noreferrer">Release notes <span className="visually-hidden">(opens in a new tab)</span><Icon name="arrow" size={14} /></a></div><a className="back-top" href="#top">Back to top ↑</a></div>
   </div></footer>;
 }
